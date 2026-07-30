@@ -1,0 +1,13 @@
+version = 1
+
+[[annotations]]
+path = "**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = [
+    "(C) 2026 F. C. Langbein <frank@langbein.org>",
+    "(C) 2026 S. P. O'Neil <sean.oneil@westpoint.edu>",
+    "(C) 2026 S. Schirmer <s.m.shermer@gmail.com>",
+    "(C) 2026 C. A. Weidner <c.weidner@bristol.ac.uk>",
+    "(C) 2026 E. A. Jonckheere <jonckhee@usc.edu>",
+]
+SPDX-License-Identifier = "AGPL-3.0-or-later"

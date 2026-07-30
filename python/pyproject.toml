@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qrobustness"
+version = "1.0.0"
+description = "Fidelity-based robustness margins for finite-time quantum control"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "AGPL-3.0-or-later" }
+authors = [
+    { name = "F. C. Langbein", email = "frank@langbein.org" },
+    { name = "S. P. O'Neil", email = "sean.oneil@westpoint.edu" },
+    { name = "S. Schirmer", email = "s.m.shermer@gmail.com" },
+    { name = "C. A. Weidner", email = "c.weidner@bristol.ac.uk" },
+    { name = "E. A. Jonckheere", email = "jonckhee@usc.edu" },
+]
+keywords = ["quantum control", "robust control", "robustness margin", "gate fidelity"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+dependencies = ["numpy>=1.24", "scipy>=1.10"]
+
+[project.urls]
+Homepage = "https://qyber.black/spinnet/code-quantum-robustness-margins"
+Repository = "https://qyber.black/spinnet/code-quantum-robustness-margins"
+Mirror = "https://github.com/qyber-black/code-quantum-robustness-margins"
+
+[project.optional-dependencies]
+plot = ["matplotlib>=3.7"]
+dev = ["pytest>=7.0", "matplotlib>=3.7"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

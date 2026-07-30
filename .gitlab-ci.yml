@@ -1,0 +1,58 @@
+# Python CI for qrobustness: metadata lint + pytest + sdist/wheel build.
+# MATLAB / full reproduction gate remain local (`make test`, `make check-margins`).
+
+default:
+  image: python:3.11
+
+stages:
+  - lint
+  - test
+  - package
+
+variables:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PYTHONDONTWRITEBYTECODE: "1"
+
+.python_setup: &python_setup
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq git-lfs
+    - git lfs install --local
+    - git lfs pull
+    - python -m pip install -U pip
+    - pip install -e "./python/[dev]"
+
+metadata:
+  stage: lint
+  script:
+    - python -m pip install -U pip
+    - pip install reuse cffconvert
+    - reuse lint
+    - cffconvert --validate
+    - python -c "import json; json.load(open('.zenodo.json'))"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
+pytest:
+  <<: *python_setup
+  stage: test
+  script:
+    - pytest -q python/tests
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
+package:
+  <<: *python_setup
+  stage: package
+  script:
+    - pip install build
+    - python -m build --outdir dist python/
+    - ls -la dist/
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 week
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH

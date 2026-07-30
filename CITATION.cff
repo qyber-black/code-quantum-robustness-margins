@@ -1,0 +1,74 @@
+cff-version: 1.2.0
+message: If you use this software, please cite both the software and the accompanying preprint.
+title: "Fidelity-Based Quantum Robustness Margins"
+abstract: >-
+  Toolbox for analysing (and optionally synthesising) piecewise-constant coherent
+  quantum gate controllers under scalar structured Hamiltonian perturbations.
+  Implements the gate-fidelity sensitivity bound, the Lipschitz constant it
+  induces, and an iterative one-dimensional robustness margin certifying finite
+  perturbations that preserve a prescribed fidelity threshold, with peer Python,
+  Octave and Python implementations, cross-language consistency tests, and full
+  reproduction of the accompanying paper's three-qubit case study. Also provides
+  a supplementary comparison with the Kosut-Lidar-Rabitz fundamental bound
+  (arXiv:2507.01215) specialised to this perturbation model.
+type: software
+authors:
+  - family-names: Langbein
+    given-names: F. C.
+    email: frank@langbein.org
+    affiliation: "School of Computer Science and Informatics, Cardiff University, Cardiff, UK"
+  - family-names: O'Neil
+    given-names: S. P.
+    email: sean.oneil@westpoint.edu
+    affiliation: "Department of Electrical Engineering & Computer Science, United States Military Academy, NY, USA"
+  - family-names: Schirmer
+    given-names: S.
+    email: s.m.shermer@gmail.com
+    affiliation: "Faculty of Science & Engineering, Physics, Swansea University, UK"
+  - family-names: Weidner
+    given-names: C. A.
+    email: c.weidner@bristol.ac.uk
+    affiliation: "Quantum Engineering Technology Laboratories, H. H. Wills Physics Laboratory and Department of Electrical and Electronic Engineering, University of Bristol, Bristol, UK"
+  - family-names: Jonckheere
+    given-names: E. A.
+    email: jonckhee@usc.edu
+    affiliation: "Department of Electrical & Computer Engineering, University of Southern California, CA, USA"
+keywords:
+  - quantum control
+  - robust control
+  - robustness margin
+  - structured uncertainty
+  - gate fidelity
+  - differential sensitivity
+  - Lipschitz bound
+  - GRAPE
+  - MATLAB
+  - Octave
+  - Python
+license: AGPL-3.0-or-later
+version: 1.0.0
+date-released: "2026-07-30"
+repository-code: "https://qyber.black/spinnet/code-quantum-robustness-margins"
+repository: "https://github.com/qyber-black/code-quantum-robustness-margins"
+url: "https://qyber.black/spinnet/code-quantum-robustness-margins"
+preferred-citation:
+  type: unpublished
+  title: "Fidelity-Based Robustness Margins for Finite-Time Quantum Control"
+  authors:
+    - family-names: O'Neil
+      given-names: S. P.
+      affiliation: "Department of Electrical Engineering & Computer Science, United States Military Academy, NY, USA"
+    - family-names: Langbein
+      given-names: F. C.
+      affiliation: "School of Computer Science and Informatics, Cardiff University, Cardiff, UK"
+    - family-names: Weidner
+      given-names: C. A.
+      affiliation: "Quantum Engineering Technology Laboratories, H. H. Wills Physics Laboratory and Department of Electrical and Electronic Engineering, University of Bristol, Bristol, UK"
+    - family-names: Jonckheere
+      given-names: E. A.
+      affiliation: "Department of Electrical & Computer Engineering, University of Southern California, CA, USA"
+    - family-names: Schirmer
+      given-names: S.
+      affiliation: "Faculty of Science & Engineering, Physics, Swansea University, UK"
+  year: 2026
+  notes: Preprint
