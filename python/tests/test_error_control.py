@@ -210,6 +210,103 @@ def test_n_quad_is_accepted_but_ignored(case):
 
 
 # --------------------------------------------------------------------------
+# Nominal-error absorption (their Theorem 1 assumes F_nom = 1)
+# --------------------------------------------------------------------------
+
+
+def test_angular_absorption_dominates_additive(case):
+    """Angular threshold is tighter, so the angular margin never exceeds
+    the additive one, and they coincide at eps0 = 0."""
+    problem, controllers = case
+    c = controllers[0]
+    r = _rates(problem, c, "H1")
+    assert kosut.margin(r, FT, 0.0, absorption="angular") == pytest.approx(
+        kosut.margin(r, FT, 0.0, absorption="additive"), rel=1e-14
+    )
+    for eps0 in (1e-7, 1e-5, 9.9e-5):
+        m_ang = kosut.margin(r, FT, eps0, absorption="angular")
+        m_add = kosut.margin(r, FT, eps0, absorption="additive")
+        assert m_ang <= m_add
+        assert m_ang > 0
+
+
+def test_angular_absorption_vacuous_when_budget_exhausted(case):
+    problem, controllers = case
+    c = controllers[0]
+    r = _rates(problem, c, "H1")
+    # arccos(1-1e-3) exceeds arccos(0.999): nothing certifiable.
+    assert kosut.margin(r, FT, 1.001e-3, absorption="angular") == 0.0
+    assert kosut.effective_threshold(FT, 1.001e-3) == 1.0
+
+
+def test_effective_threshold_matches_the_closed_form():
+    """Direct regression on F_eff = cos(arccos FT - arccos F0)."""
+    for FT in (0.9, 0.99, 0.999, 0.9999):
+        for eps0 in (0.0, 1e-7, 1e-5, 1e-4, 5e-4):
+            F0 = 1.0 - eps0
+            expected = np.cos(np.arccos(FT) - np.arccos(F0))
+            got = kosut.effective_threshold(FT, eps0)
+            if np.arccos(F0) >= np.arccos(FT):
+                assert got == 1.0
+            else:
+                assert got == pytest.approx(expected, rel=0.0, abs=1e-15)
+
+
+def test_angular_absorption_saturates_on_a_collinear_rotation():
+    """Equality case: for collinear single-qubit Z rotations the angles add
+    exactly, so an achieved-gate fidelity of F_eff lands the TARGET fidelity
+    exactly on FT.  This is what makes the angular threshold sufficient and
+    not merely conservative."""
+    SZ = np.array([[1.0, 0.0], [0.0, -1.0]], dtype=complex)
+
+    def rot(theta):  # exp(-i theta Z / 2)
+        return np.diag(np.exp(-0.5j * theta * np.diag(SZ).real))
+
+    def fid(A, B):  # normalised trace-amplitude gate fidelity, N = 2
+        return abs(np.trace(A.conj().T @ B)) / 2.0
+
+    Uf = np.eye(2, dtype=complex)
+    for FT in (0.9, 0.99, 0.999):
+        for eps0 in (1e-6, 1e-4, 1e-3):
+            F0 = 1.0 - eps0
+            F_eff = kosut.effective_threshold(FT, eps0)
+            if F_eff >= 1.0:
+                continue
+            # Nominal gate at exactly F0 from the target, and a perturbation
+            # collinear with it that sits exactly at F_eff from the nominal.
+            a = 2.0 * np.arccos(F0)
+            b = 2.0 * np.arccos(F_eff)
+            U_S, U = rot(a), rot(a + b)
+            assert fid(Uf, U_S) == pytest.approx(F0, abs=1e-12)
+            assert fid(U_S, U) == pytest.approx(F_eff, abs=1e-12)
+            # The angles saturate the triangle inequality: target fidelity
+            # is exactly the threshold, neither above nor below.
+            assert fid(Uf, U) == pytest.approx(FT, abs=1e-12)
+
+
+def test_nominal_error_must_be_a_fidelity_deficit():
+    """1 - eps_0 is a fidelity, so eps_0 outside [0, 1] is rejected."""
+    for bad in (-1e-12, 1.0 + 1e-9, 2.0):
+        with pytest.raises(ValueError):
+            kosut.effective_threshold(0.999, bad)
+        with pytest.raises(ValueError):
+            kosut.threshold_time_bandwidth(0.999, bad)
+    assert kosut.effective_threshold(0.999, 1.0) == 1.0
+
+
+def test_angular_absorption_is_the_sufficient_one(case):
+    """The angular threshold is exactly the triangle-inequality condition:
+    an achieved-gate fidelity at F_eff leaves precisely the target angle."""
+    for FTv in (0.9, 0.99, 0.999):
+        for eps0 in (0.0, 1e-6, 1e-4, 1e-3):
+            F_eff = kosut.effective_threshold(FTv, eps0)
+            if F_eff >= 1.0:
+                continue
+            lhs = np.arccos(F_eff) + np.arccos(1.0 - eps0)
+            assert lhs == pytest.approx(np.arccos(FTv), abs=1e-12)
+
+
+# --------------------------------------------------------------------------
 # Margin
 # --------------------------------------------------------------------------
 

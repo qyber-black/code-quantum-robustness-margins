@@ -105,6 +105,14 @@ def main() -> None:
         help="Evaluate their Theorem 1 literally (F_nom = 1) instead of "
         "absorbing the nominal error eps_0 into the threshold",
     )
+    ap.add_argument(
+        "--absorption",
+        choices=("angular", "additive"),
+        default="angular",
+        help="How eps_0 is absorbed into the threshold: 'angular' (default, "
+        "the sufficient triangle-inequality condition) or 'additive' "
+        "(FT + eps_0; not conservative, reproduces pre-1.0.1 numbers)",
+    )
     ap.add_argument("--no-plots", action="store_true")
     args = ap.parse_args()
     ft = args.FT
@@ -143,7 +151,8 @@ def main() -> None:
             )
             dH = dH_structure(problem["H0"], problem["H1"], problem["H2"], c["u1"], c["u2"], tag)
             rates = uncertainty_rates(H_list, dH, dt)
-            KM = kosut_margin(rates, ft, nominal_error=eps0)
+            KM = kosut_margin(rates, ft, nominal_error=eps0,
+                              absorption=args.absorption)
 
             row[f"M_{tag}"] = M
             row[f"KM_{tag}"] = KM
@@ -169,7 +178,7 @@ def main() -> None:
     print(f"Wrote {csv_path}")
 
     print(f"\nSummary (FT={ft:g}, "
-          f"{'literal F_nom=1' if args.literal_theorem else 'eps_0 absorbed'}, "
+          f"{'literal F_nom=1' if args.literal_theorem else args.absorption + ' eps_0 absorption'}, "
           f"{len(rows)} controllers)")
     print(f"{'struct':>6} {'median M':>12} {'median M^K':>12} {'median M/M^K':>14} "
           f"{'max T*Omega_bnd@M':>18}")

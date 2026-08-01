@@ -25,7 +25,7 @@ results=/home/xis10z/Prj/paper-QuantumRobustnessMarings/code-robustness-margins/
   PASS
 [5] F(+/-M) spot: min(F-FT)=6.055e-07 bad=0 max_overshoot=0.000e+00
   PASS
-[6] max rel|zeta-FD|(h=1e-7)=1.432e-04  max|table-recompute|=0.000e+00
+[6] max rel|zeta-FD|(h=1e-7)=3.549e-05  max|table-recompute|=0.000e+00
   PASS
 [7] max |main.tex TableI - lipschitz-margin-python/correlations| = 0.000e+00
   PASS

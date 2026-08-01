@@ -14,8 +14,57 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-08-02
+
+Patch release correcting the optional `margin_tol` refinement, the target-gate
+composition in the supplementary Kosut layer, and the correlation analysis used
+for Table I. The default Algorithm 1 path, the controller ensemble, the
+robustness-margin values and the figures are unchanged.
+
+### Changed
+
+- `correlations_<FT>.tex` (Table I of the paper) and the MATLAB
+  `correlations_<FT>.csv` now correlate against the sensitivity *magnitudes*
+  \(|\zeta_j|\) rather than the signed \(\zeta_j\). The margin
+  \(M_j = \min\{M_{j,-}, M_{j,+}\}\) is invariant under reversal of the
+  parameter coordinate, while \(\zeta_j\) changes sign, so \(|\zeta_j|\) is the
+  orientation-invariant local comparator; mixing signs was masking the
+  relationship, and
+  `robustness_margins_sensitivity.png` (Fig. 3) already plotted \(|\zeta|\).
+  The drift-structure entries change materially -- \(\varepsilon_0\) against
+  \(|\zeta_0|\) rises from 0.44 to 0.69 (Pearson) and \(M_0\) against
+  \(|\zeta_0|\) from -0.35 to -0.58 -- while the control-structure relations
+  remain weak. `margins_table_<FT>.csv` still records the signed \(\zeta_j\)
+  and is bit-for-bit unchanged, as are the margins themselves.
+
 ### Fixed
 
+- `kosut.margin` / `kosut.threshold_time_bandwidth` (both engines): the nominal
+  fidelity deficit `eps_0` is now absorbed into the threshold through the
+  *angular* relation
+  \(F_{\mathrm{eff}} = \cos(\arccos \mathcal{F}_T - \arccos \mathcal{F}_0)\),
+  exposed as the new `kosut.effective_threshold`. Their Theorem 1 bounds the
+  fidelity to the *achieved* nominal gate, whereas the certificate is stated
+  against the *target*; since `arccos` of the gate fidelity is the angle
+  between the corresponding Choi states, the angles -- not the fidelity
+  deficits -- add. The previous additive form `F_T + eps_0` is looser than the
+  sufficient condition and so was **not** conservative; it remains selectable
+  as `absorption='additive'` (and `--absorption additive` in the drivers) to
+  reproduce pre-1.0.1 numbers. The implied margins `M^K` shrink accordingly,
+  and `docs/time-bandwidth-bound.md` and the README report the recomputed
+  comparison. `effective_threshold` also validates `0 <= nominal_error <= 1`
+  (`1 - eps_0` is a fidelity) rather than clamping impossible inputs, and both
+  engines regression-test the closed form together with the collinear
+  single-qubit rotation that saturates it. The Kosut layer is supplementary and
+  experimental, outside `make check-margins`, and no paper claim depends on it.
+- `kosut.margin` (both engines): the positive root of `a m^2 + b m = y^2` is
+  now evaluated in the rationalised form `2 y^2 / (b + sqrt(b^2 + 4 a y^2))`,
+  which avoids catastrophic cancellation when `a y^2 << b^2` (structures nearly
+  commuting with the nominal evolution) and removes the `a <= 0` special case.
+- `kosut` documentation now states the scope explicitly: the margin is the
+  *constant structured-parameter* specialisation and is **not** a
+  supremum-norm time-varying margin -- a sign-modulated trajectory within the
+  same budget can defeat the coherent averaging behind `Omega_avg`.
 - `iterative_margin(margin_tol=...)`: the optional safe/unsafe bracket
   refinement now applies a certified-promotion rule -- a pointwise-safe
   sample advances the certified lower endpoint only when the gap from the

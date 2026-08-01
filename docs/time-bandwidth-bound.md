@@ -64,27 +64,49 @@ closed form (`margin` / `kosut_margin`); no root find is required.
 
 ## Why the comparison is meaningful
 
-`F_avg^low` (Eq. 24 of the reference) lower-bounds `abs(Tr Util(T)) / d`, which
-is the normalised gate fidelity used in this package up to the global phase.
-Both quantities are therefore certified lower bounds on the same `F_mu`,
-measured in the same units of multiplicative perturbation of `Hhat`.
+`F_avg^low` (Eq. 24 of the reference) lower-bounds `abs(Tr Util(T)) / d`, the
+fidelity to the *achieved* nominal gate `U_S(t_f)`. Up to the nominal-error
+absorption of caveat 1 below, both quantities are certified lower bounds on the
+same `F_mu`, measured in the same units of multiplicative perturbation of
+`Hhat`.
 
 ## Caveats
 
-1. Theorem 1 of the reference assumes `F_nom = 1` exactly. The controllers used
-   here have `eps_0 <= 1e-4`, which is 10% of the `1 - F_T = 1e-3` budget. The
-   drivers absorb `eps_0` additively into the threshold, which is conservative;
-   `--literal-theorem` (Python) and `'literal_theorem', true` (MATLAB) evaluate
-   the bound as stated instead.
-2. The bound covers strictly more uncertainty. It is worst-case over all
+1. Theorem 1 of the reference assumes `F_nom = 1` exactly, and it bounds the
+   fidelity to the *achieved* nominal gate, not to the target. The controllers
+   used here have `eps_0 <= 1e-4`, which is 10% of the `1 - F_T = 1e-3` budget,
+   so the deficit cannot be ignored. Because `arccos` of the gate fidelity is
+   the angle between the corresponding Choi states, it obeys the triangle
+   inequality and the *angles* add, not the fidelity deficits. The sufficient
+   condition on the achieved-gate fidelity is therefore
+
+   ```
+   F_eff = cos( arccos(F_T) - arccos(1 - eps_0) )
+   ```
+
+   (`effective_threshold`, `absorption='angular'`, the default since 1.0.1).
+   The additive form `F_T + eps_0` used before 1.0.1 is *smaller* than `F_eff`
+   whenever `eps_0 > 0` and so was **not** conservative; it remains available
+   as `absorption='additive'` / `--absorption additive` to reproduce the older
+   numbers. When `arccos(1 - eps_0) >= arccos(F_T)` the budget is exhausted and
+   the implied margin is zero. `--literal-theorem` (Python) and
+   `'literal_theorem', true` (MATLAB) evaluate the bound as stated
+   (`eps_0 = 0`) instead.
+2. `M^K` is the **constant structured-parameter** specialisation. `w_avg` and
+   `w_dev` are computed for the fixed structure `delta * Hhat`, so the implied
+   margin certifies constant perturbations `abs(delta) <= M^K`. It is *not* a
+   supremum-norm time-varying margin: a sign-modulated trajectory `delta(t)`
+   within the same budget can defeat the coherent averaging that makes `w_avg`
+   small.
+3. The bound covers strictly more uncertainty. It is worst-case over all
    uncertainty consistent with the norm bounds, including bath coupling and
    unmodelled couplings, whereas Algorithm 1 exploits the known structure
    `Hhat` and the specific controller. A larger margin here quantifies the
    value of structural knowledge; it is not evidence against the bound.
-3. `F_lb` is non-trivial only for `T*Omega_bnd <= 2*sqrt(log(1+sqrt(2)))
+4. `F_lb` is non-trivial only for `T*Omega_bnd <= 2*sqrt(log(1+sqrt(2)))
    = 1.8776` rad (Eq. 32 of the reference); beyond that the bound is vacuous.
    `t_omega_max` / `T_OMEGA_MAX` expose this value.
-4. Both are lower bounds on the true threshold-crossing radius, so the
+5. Both are lower bounds on the true threshold-crossing radius, so the
    comparison ranks conservatism rather than accuracy.
 
 ## Numerical accuracy of the interaction-picture quantities
@@ -131,20 +153,26 @@ an accuracy check, since all three implement the same algorithm.
 
 ## Result for the paper controller set
 
-61 controllers, `F_T = 0.999`, `eps_0` absorbed. `M` is the Algorithm 1 margin
-and `M^K` the margin implied by Theorem 1 of the reference:
+61 controllers, `F_T = 0.999`, `eps_0` absorbed through the angular relation of
+caveat 1. `M` is the Algorithm 1 margin and `M^K` the margin implied by
+Theorem 1 of the reference:
 
 | Structure | median `M` | median `M^K` | ratio `M/M^K` (range) | Pearson |
 |-----------|------------|--------------|-----------------------|---------|
-| `H0`      | 5.70e-3    | 3.07e-3      | 1.84 (1.60-2.07)      | 0.79    |
-| `H1`      | 8.92e-3    | 3.44e-3      | 2.56 (2.00-4.39)      | 0.76    |
-| `H2`      | 9.41e-3    | 3.36e-3      | 2.65 (1.94-3.64)      | 0.84    |
+| `H0`      | 5.70e-3    | 2.75e-3      | 2.12 (1.74-2.50)      | 0.83    |
+| `H1`      | 8.92e-3    | 2.97e-3      | 2.92 (2.13-4.74)      | 0.78    |
+| `H2`      | 9.41e-3    | 3.14e-3      | 3.03 (2.40-4.19)      | 0.82    |
 
 The structured margin is larger for every controller and structure, by a factor
 of roughly 2-3 rather than orders of magnitude, and the two rank controllers
 similarly. The gap widens for the control structures `H1, H2`, where the
 interaction-picture time average captured by `Omega_avg` is less effective at
 exploiting the specific pulse sequence.
+
+Before 1.0.1 the additive absorption gave larger `M^K` (median 3.07e-3, 3.44e-3
+and 3.36e-3) and correspondingly smaller ratios of 1.84, 2.56 and 2.65; those
+values are reproducible with `--absorption additive` but rest on a threshold
+that is not sufficient for the target-gate condition.
 
 Per-controller values, the per-unit rates `w_*`, and `T*Omega_bnd` evaluated at
 the Lipschitz margin are in `kosut_comparison_0.999.csv` in each results tree;

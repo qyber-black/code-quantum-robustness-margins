@@ -1,21 +1,17 @@
-function y = threshold_time_bandwidth(FT, nominal_error)
+function y = threshold_time_bandwidth(FT, nominal_error, absorption)
 %THRESHOLD_TIME_BANDWIDTH T*Omega_bnd at which their F_lb equals the threshold.
 %   Inverts their Eq. 30 in closed form:
 %     F_lb = F_eff  <=>  T*Omega_bnd = 2*sqrt(log(1 + sqrt(2*(1 - F_eff))))
-%   with F_eff = FT + nominal_error.  The nominal_error term absorbs the
-%   nominal fidelity deficit, since their Theorem 1 assumes F_nom = 1
-%   (default 0, i.e. their theorem taken literally).
+%   with F_eff = qrobustness.kosut.effective_threshold(FT, nominal_error,
+%   absorption), which absorbs the nominal fidelity deficit (their Theorem 1
+%   assumes F_nom = 1) through the angular relation by default.
 %
 %   Returns 0 when F_eff >= 1, i.e. no perturbation is certifiable.
 
     if nargin < 2 || isempty(nominal_error); nominal_error = 0; end
-    if ~(FT > 0 && FT < 1)
-        error('qrobustness:kosut:BadFT', 'FT must satisfy 0 < FT < 1.');
-    end
-    if nominal_error < 0
-        error('qrobustness:kosut:BadEps', 'nominal_error must be non-negative.');
-    end
-    eps_t = 1 - FT - nominal_error;
+    if nargin < 3 || isempty(absorption); absorption = 'angular'; end
+    F_eff = qrobustness.kosut.effective_threshold(FT, nominal_error, absorption);
+    eps_t = 1 - F_eff;
     if eps_t <= 0
         y = 0;
         return;

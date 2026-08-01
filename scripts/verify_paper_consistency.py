@@ -322,8 +322,14 @@ def main() -> int:
         R.check(dC < 1e-12)
 
     if T is not None and C_code is not None:
+        # Table I correlates against the sensitivity magnitudes: min(M-, M+)
+        # is invariant under reversal of the parameter coordinate while zeta
+        # changes sign, so |zeta| is the orientation-invariant comparator.
         vars_ = ["err", "M_H0", "M_H1", "M_H2", "zeta_H0", "zeta_H1", "zeta_H2"]
-        X = np.column_stack([T[v] for v in vars_])
+        absolute = {"zeta_H0", "zeta_H1", "zeta_H2"}
+        X = np.column_stack([
+            np.abs(T[v]) if v in absolute else T[v] for v in vars_
+        ])
         C_re = corr_matrix(X)
         dCre = float(np.max(np.abs(np.round(C_re, 2) - C_code)))
         R.log(f"[8] max |round(recomputed,2) - correlations.tex| = {dCre:.3e}")

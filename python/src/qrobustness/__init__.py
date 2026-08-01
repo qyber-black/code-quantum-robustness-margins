@@ -26,10 +26,12 @@ from .core import (
     structure_constant,
 )
 from .kosut import (
+    ABSORPTIONS,
     T_OMEGA_MAX,
     UncertaintyRates,
     fidelity_bound,
     fidelity_bound_at,
+    effective_threshold,
     threshold_time_bandwidth,
     time_bandwidth,
     uncertainty_rates,
@@ -74,7 +76,9 @@ __all__ = [
     "time_bandwidth",
     "fidelity_bound",
     "fidelity_bound_at",
+    "effective_threshold",
     "threshold_time_bandwidth",
+    "ABSORPTIONS",
     "kosut_margin",
     "fidelity_and_gradient",
     "optimize_controller",
@@ -89,4 +93,4 @@ __all__ = [
     "plot_fidelity_error_sweeps",
 ]
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"

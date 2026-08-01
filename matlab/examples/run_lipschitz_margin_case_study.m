@@ -190,20 +190,25 @@ function run_lipschitz_margin_case_study(varargin)
 end
 
 function write_correlations(T, path)
+    % Sensitivities enter as |zeta|: min(M-, M+) is invariant under reversal
+    % of the parameter coordinate while zeta changes sign (see
+    % write_correlation_tex).
     vars = {'err', 'M_H0', 'M_H1', 'M_H2', 'zeta_H0', 'zeta_H1', 'zeta_H2'};
+    names = {'err', 'M_H0', 'M_H1', 'M_H2', 'abs_zeta_H0', 'abs_zeta_H1', 'abs_zeta_H2'};
     X = qrobustness.compat.margins_matrix(T, vars);
+    X(:, 5:7) = abs(X(:, 5:7));
     [P, S] = qrobustness.compat.correlation_matrices(X);
     fid = fopen(path, 'w');
-    fprintf(fid, 'metric,%s\n', strjoin(vars, ','));
+    fprintf(fid, 'metric,%s\n', strjoin(names, ','));
     for i = 1:numel(vars)
-        fprintf(fid, 'pearson_%s', vars{i});
+        fprintf(fid, 'pearson_%s', names{i});
         for j = 1:numel(vars)
             fprintf(fid, ',%.6f', P(i, j));
         end
         fprintf(fid, '\n');
     end
     for i = 1:numel(vars)
-        fprintf(fid, 'spearman_%s', vars{i});
+        fprintf(fid, 'spearman_%s', names{i});
         for j = 1:numel(vars)
             fprintf(fid, ',%.6f', S(i, j));
         end
@@ -213,12 +218,17 @@ function write_correlations(T, path)
 end
 
 function write_correlation_tex(T, path)
+    % M_j = min(M_j-, M_j+) is invariant under reversal of the parameter
+    % coordinate while zeta_j changes sign, so |zeta_j| is the
+    % orientation-invariant local comparator; correlating against signed zeta
+    % can hide a relationship by mixing the two signs.  Matches Fig. 3.
     vars = {'err', 'M_H0', 'M_H1', 'M_H2', 'zeta_H0', 'zeta_H1', 'zeta_H2'};
-    labels = {'$\varepsilon_0$', '$M_0$', '$M_1$', '$M_2$', '$\zeta_0$', '$\zeta_1$', '$\zeta_2$'};
+    labels = {'$\varepsilon_0$', '$M_0$', '$M_1$', '$M_2$', '$|\zeta_0|$', '$|\zeta_1|$', '$|\zeta_2|$'};
     X = qrobustness.compat.margins_matrix(T, vars);
+    X(:, 5:7) = abs(X(:, 5:7));
     [P, S] = qrobustness.compat.correlation_matrices(X);
     fid = fopen(path, 'w');
-    fprintf(fid, '%% Auto-generated: upper Pearson, lower Spearman; signed equation zeta\n');
+    fprintf(fid, '%% Auto-generated: upper Pearson, lower Spearman; |zeta| (see above)\n');
     fprintf(fid, '\\begin{tabular}{@{}lccccccc@{}}\n\\toprule\n');
     fprintf(fid, ' & %s \\\\\n\\midrule\n', strjoin(labels, ' & '));
     for i = 1:7

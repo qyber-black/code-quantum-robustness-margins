@@ -38,13 +38,23 @@ The bound (Eqs. 29-30 of the reference) is
 and is non-trivial only for ``T Omega_bnd <= 2 sqrt(ln(1+sqrt(2)))``
 (:data:`T_OMEGA_MAX`, Eq. 32 of the reference); beyond that it is vacuous.
 
-``F_avg^low`` (Eq. 24 of the reference) lower-bounds ``|Tr Utilde(T)|/d``, which
-is the normalised gate fidelity of this package up to the global phase, so
-``F_lb`` is directly comparable to ``F_mu``.  Theorem 1 assumes exact nominal
-fidelity ``F_nom = 1``; pass ``nominal_error=eps_0`` to :func:`margin` or
+``F_avg^low`` (Eq. 24 of the reference) lower-bounds ``|Tr Utilde(T)|/d``,
+the fidelity to the ACHIEVED nominal gate ``U_S(t_f)``, not the target.
+Theorem 1 further assumes exact nominal fidelity ``F_nom = 1``.  Pass
+``nominal_error=eps_0`` to :func:`margin` or
 :func:`threshold_time_bandwidth` to absorb the nominal deficit into the
-threshold, which is conservative, or leave it at 0 to evaluate the bound as
-stated.
+threshold via the angular relation of :func:`effective_threshold` (the
+sufficient correction; the previously used additive form ``FT + eps_0`` is
+selectable as ``absorption='additive'`` but is NOT conservative), or leave
+it at 0 to evaluate the bound as stated.
+
+Scope: the margin returned here is the *constant structured-parameter*
+specialisation.  The measures ``w_avg`` and ``w_dev`` are computed for the
+fixed structure ``delta * Hhat``, so ``margin`` certifies constant
+perturbations ``|delta| <= M^K``.  It is NOT a supremum-norm time-varying
+margin: a sign-modulated trajectory ``delta(t)`` with ``|delta(t)| <= M^K``
+can defeat the coherent averaging that makes ``w_avg`` small, and
+adversarial counterexamples exist.
 """
 
 from __future__ import annotations
@@ -383,41 +393,88 @@ def fidelity_bound_at(rates: UncertaintyRates, delta: float) -> float:
     return fidelity_bound(time_bandwidth(rates, delta))
 
 
-def threshold_time_bandwidth(FT: float, nominal_error: float = 0.0) -> float:
-    """``T*Omega_bnd`` at which their ``F_lb`` equals the threshold.
+ABSORPTIONS = ("angular", "additive")
 
-    Inverts their Eq. 30 in closed form: ``F_lb = F_eff`` gives
-    ``T*Omega_bnd = 2 sqrt( ln(1 + sqrt(2 (1 - F_eff))) )`` where
-    ``F_eff = FT + nominal_error`` absorbs the nominal fidelity deficit
-    (their Theorem 1 assumes ``F_nom = 1``; see module caveat 1).
 
-    Returns ``0.0`` when ``F_eff >= 1``, i.e. no perturbation is certifiable.
+def effective_threshold(FT: float, nominal_error: float = 0.0,
+                        absorption: str = "angular") -> float:
+    """Threshold on the achieved-gate fidelity implied by ``FT`` on the target.
+
+    Theorem 1 of the reference bounds the fidelity to the ACHIEVED nominal
+    gate, ``|Tr(U_S^dag U)|/N``, whereas the certificate is stated against
+    the TARGET.  Since ``arccos`` of the gate fidelity is the angle between
+    the corresponding Choi states, it satisfies the triangle inequality,
+    and the sufficient condition on the achieved-gate fidelity is
+
+        F_achieved >= cos( arccos(FT) - arccos(1 - nominal_error) )
+
+    (``absorption='angular'``, the default).  When the nominal angle
+    exhausts the budget, ``arccos(1-eps0) >= arccos(FT)``, no perturbation
+    is certifiable and ``1.0`` is returned so the margin is zero.
+
+    ``absorption='additive'`` returns ``FT + nominal_error``.  It is NOT
+    sufficient for the target-gate threshold (it is looser than the
+    angular value whenever ``nominal_error > 0``) and is retained only to
+    reproduce previously published numbers.
     """
     if not (0.0 < FT < 1.0):
         raise ValueError("FT must satisfy 0 < FT < 1")
-    if nominal_error < 0.0:
-        raise ValueError("nominal_error must be non-negative")
-    eps = 1.0 - FT - nominal_error
+    if not (0.0 <= nominal_error <= 1.0):
+        # 1 - eps_0 is a fidelity, so eps_0 > 1 is not a physical input;
+        # reject it rather than clamp it silently.
+        raise ValueError("nominal_error must satisfy 0 <= nominal_error <= 1")
+    if absorption not in ABSORPTIONS:
+        raise ValueError(
+            f"Unknown absorption={absorption!r}; expected one of {ABSORPTIONS}"
+        )
+    if absorption == "additive":
+        return float(min(FT + nominal_error, 1.0))
+    theta_T = np.arccos(FT)
+    theta_nom = np.arccos(1.0 - nominal_error)
+    if theta_nom >= theta_T:
+        return 1.0
+    return float(np.cos(theta_T - theta_nom))
+
+
+def threshold_time_bandwidth(FT: float, nominal_error: float = 0.0,
+                             absorption: str = "angular") -> float:
+    """``T*Omega_bnd`` at which their ``F_lb`` equals the threshold.
+
+    Inverts their Eq. 30 in closed form: ``F_lb = F_eff`` gives
+    ``T*Omega_bnd = 2 sqrt( ln(1 + sqrt(2 (1 - F_eff))) )`` with ``F_eff``
+    from :func:`effective_threshold` (their Theorem 1 assumes
+    ``F_nom = 1``; the angular absorption is the sufficient correction,
+    see the docstring there).
+
+    Returns ``0.0`` when ``F_eff >= 1``, i.e. no perturbation is certifiable.
+    """
+    F_eff = effective_threshold(FT, nominal_error, absorption)
+    eps = 1.0 - F_eff
     if eps <= 0.0:
         return 0.0
     return float(2.0 * np.sqrt(np.log(1.0 + np.sqrt(2.0 * eps))))
 
 
-def margin(rates: UncertaintyRates, FT: float, nominal_error: float = 0.0) -> float:
+def margin(rates: UncertaintyRates, FT: float, nominal_error: float = 0.0,
+           absorption: str = "angular") -> float:
     """Perturbation margin implied by their Theorem 1.
 
-    The largest ``|delta|`` for which their ``F_lb >= FT + nominal_error``,
-    i.e. the analogue of ``iterative_margin(...).M`` obtained from their bound.
-    Since ``T*Omega_bnd`` is monotone in ``|delta|``, this inverts
-    ``a delta^2 + b delta = y*^2`` in closed form with
-    ``y* = threshold_time_bandwidth(FT, nominal_error)``.
+    The largest ``|delta|`` for which their ``F_lb`` meets the effective
+    threshold of :func:`effective_threshold` (angular by default; the
+    previously used additive absorption is selectable but not
+    conservative).  Since ``T*Omega_bnd`` is monotone in ``|delta|``, this
+    inverts ``a delta^2 + b delta = y*^2`` in closed form with
+    ``y* = threshold_time_bandwidth(FT, nominal_error, absorption)``.
+
+    Certifies *constant* perturbations ``|delta| <= M`` only; see the
+    module docstring for why this is not a supremum-norm trajectory margin.
 
     Returns ``0.0`` if no positive perturbation is certifiable, and ``inf`` if
     the perturbation does not enter the bound at all (``w_unc*w_dev = 0`` and
     ``w_avg = 0``, e.g. a structure that is annihilated in the interaction
     picture).
     """
-    y = threshold_time_bandwidth(FT, nominal_error)
+    y = threshold_time_bandwidth(FT, nominal_error, absorption)
     if y <= 0.0:
         return 0.0
     a = rates.T**2 * rates.w_unc * rates.w_dev
@@ -425,6 +482,9 @@ def margin(rates: UncertaintyRates, FT: float, nominal_error: float = 0.0) -> fl
     y2 = y * y
     if a <= 0.0 and b <= 0.0:
         return float("inf")
-    if a <= 0.0:
-        return float(y2 / b)
-    return float((-b + np.sqrt(b * b + 4.0 * a * y2)) / (2.0 * a))
+    # Stable positive root of a m^2 + b m = y2: the textbook form
+    # (-b + sqrt(b^2 + 4 a y2)) / (2a) cancels catastrophically for
+    # a y2 << b^2 (e.g. structures commuting with the nominal evolution,
+    # where w_dev ~ 0); the rationalised form is exact in both limits and
+    # needs no a <= 0 special case.
+    return float(2.0 * y2 / (b + np.sqrt(b * b + 4.0 * a * y2)))

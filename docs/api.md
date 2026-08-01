@@ -170,9 +170,18 @@ gives a larger margin, so the residual error is biased optimistic.
 | `uncertainty_rates(H_list, dH_list, dt, ...)` | Eq. 28 measures per unit `delta` |
 | `time_bandwidth(rates, delta)` | `T*Omega_bnd` (Eq. 29) |
 | `fidelity_bound(T_omega_bnd)` / `fidelity_bound_at(rates, delta)` | `F_lb` (Eq. 30) |
-| `threshold_time_bandwidth(FT, nominal_error=0)` | Closed-form inverse of `F_lb` |
-| `margin(rates, FT, nominal_error=0)` | Implied margin `M^K` (Python re-export: `kosut_margin`) |
+| `effective_threshold(FT, nominal_error=0, absorption='angular')` | Achieved-gate threshold implied by `FT` on the target |
+| `threshold_time_bandwidth(FT, nominal_error=0, absorption='angular')` | Closed-form inverse of `F_lb` |
+| `margin(rates, FT, nominal_error=0, absorption='angular')` | Implied margin `M^K` (Python re-export: `kosut_margin`) |
 | `t_omega_max()` / `T_OMEGA_MAX` | `2*sqrt(log(1+sqrt(2))) = 1.8776`; bound vacuous beyond this |
+
+Their Theorem 1 bounds the fidelity to the *achieved* nominal gate and assumes
+`F_nom = 1`. The nominal deficit is absorbed into the threshold through the
+angular relation `cos(arccos(FT) - arccos(1 - eps_0))`, which is the sufficient
+condition because `arccos` of the gate fidelity is an angle and obeys the
+triangle inequality. `absorption='additive'` (`FT + eps_0`) is not sufficient
+and is retained only to reproduce pre-1.0.1 numbers. `M^K` certifies *constant*
+perturbations only; it is not a supremum-norm trajectory margin.
 
 MATLAB lives in `matlab/+qrobustness/+kosut/`, Python in
 `python/src/qrobustness/kosut.py` (re-exported at package level). Drivers:

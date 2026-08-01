@@ -93,7 +93,9 @@ closed-system scalar structured perturbation model used here, so that the
 margin it implies can be placed alongside the certified Lipschitz margin. It is
 experimental, sits outside the reproduction gate `make check-margins`, and no
 claim in the paper depends on it. The structured margin is larger by a median
-factor of 1.8 to 2.7 across the three perturbation structures.
+factor of 2.1 to 3.0 across the three perturbation structures. The implied
+margin is the constant structured-parameter specialisation, with the nominal
+error absorbed through the angular relation (see the caveats).
 
 See [docs/time-bandwidth-bound.md](docs/time-bandwidth-bound.md) for the
 specialisation, the caveats, the numerical accuracy of the interaction-picture
@@ -166,7 +168,7 @@ If you use this code, please cite the software and the accompanying preprint.
 **Software**
 
 F. C. Langbein, S. P. O'Neil, S. Schirmer, C. A. Weidner, E. A. Jonckheere.
-**Fidelity-Based Quantum Robustness Margins**. Version 1.0.0. Software, 2026.
+**Fidelity-Based Quantum Robustness Margins**. Version 1.0.1. Software, 2026.
 <https://qyber.black/spinnet/code-quantum-robustness-margins>
 (GitHub mirror: <https://github.com/qyber-black/code-quantum-robustness-margins>)
 
@@ -175,7 +177,7 @@ F. C. Langbein, S. P. O'Neil, S. Schirmer, C. A. Weidner, E. A. Jonckheere.
   title   = {Fidelity-Based Quantum Robustness Margins},
   author  = {Langbein, F. C. and O'Neil, S. P. and Schirmer, S.
              and Weidner, C. A. and Jonckheere, E. A.},
-  version = {1.0.0},
+  version = {1.0.1},
   year    = {2026},
   url     = {https://qyber.black/spinnet/code-quantum-robustness-margins},
 }

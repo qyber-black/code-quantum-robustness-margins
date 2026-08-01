@@ -18,6 +18,9 @@ function run_time_bandwidth_bound_comparison(varargin)
 %     'eta'              1e-6
 %     'literal_theorem'  false; true evaluates their Theorem 1 literally
 %                        (F_nom = 1) instead of absorbing eps_0
+%     'absorption'       'angular' (default, the sufficient triangle-
+%                        inequality condition) or 'additive' (FT + eps_0;
+%                        not conservative, reproduces pre-1.0.1 numbers)
 %     'do_plot'          true
 %     'root'             auto-detect repo root
 %     'controller_dir'   '' -> data/controllers/problem9_tf15_K32_quasi-newton
@@ -32,6 +35,7 @@ function run_time_bandwidth_bound_comparison(varargin)
     addParameter(p, 'max_error', 1e-4);
     addParameter(p, 'eta', 1e-6);
     addParameter(p, 'literal_theorem', false);
+    addParameter(p, 'absorption', 'angular');
     addParameter(p, 'do_plot', true);
     addParameter(p, 'root', '');
     addParameter(p, 'controller_dir', '');
@@ -104,7 +108,7 @@ function run_time_bandwidth_bound_comparison(varargin)
             dH = qrobustness.dH_structure( ...
                 problem.H0, problem.H1, problem.H2, c.u1, c.u2, tag);
             rates = qrobustness.kosut.uncertainty_rates(H_list, dH, dt);
-            KM = qrobustness.kosut.margin(rates, opt.FT, eps0);
+            KM = qrobustness.kosut.margin(rates, opt.FT, eps0, opt.absorption);
 
             Tbl.(sprintf('M_%s', tag))(i) = M;
             Tbl.(sprintf('KM_%s', tag))(i) = KM;
@@ -130,7 +134,7 @@ function run_time_bandwidth_bound_comparison(varargin)
     if opt.literal_theorem
         mode = 'literal F_nom=1';
     else
-        mode = 'eps_0 absorbed';
+        mode = sprintf('%s eps_0 absorption', opt.absorption);
     end
     fprintf('\nSummary (FT=%g, %s, %d controllers)\n', opt.FT, mode, n);
     fprintf('%6s %12s %12s %14s %18s\n', 'struct', 'median M', 'median M^K', ...

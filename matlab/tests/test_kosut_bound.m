@@ -32,6 +32,60 @@ function test_kosut_bound()
     assert(qrobustness.kosut.threshold_time_bandwidth(0.999, 2e-3) == 0, ...
            'no headroom -> nothing certifiable');
 
+    % --- nominal-error absorption: angular is the sufficient one -------------
+    for FT = [0.9 0.99 0.999]
+        for eps0 = [0 1e-6 1e-4 1e-3]
+            F_eff = qrobustness.kosut.effective_threshold(FT, eps0);
+            if F_eff >= 1; continue; end
+            assert(abs(acos(F_eff) + acos(1 - eps0) - acos(FT)) < 1e-12, ...
+                'angular absorption must exhaust exactly the target angle');
+        end
+    end
+    assert(abs(qrobustness.kosut.effective_threshold(0.999, 0) - 0.999) < tol, ...
+        'eps0 = 0 leaves the threshold unchanged');
+    % Angular is tighter than additive whenever eps0 > 0, hence conservative.
+    assert(qrobustness.kosut.effective_threshold(0.999, 1e-4) > ...
+           qrobustness.kosut.effective_threshold(0.999, 1e-4, 'additive'), ...
+           'angular threshold must dominate the additive one');
+    assert(qrobustness.kosut.effective_threshold(0.999, 1.001e-3) == 1, ...
+           'exhausted angular budget -> nothing certifiable');
+    % Direct regression on F_eff = cos(acos(FT) - acos(F0)).
+    for FT = [0.9 0.99 0.999 0.9999]
+        for eps0 = [0 1e-7 1e-5 1e-4 5e-4]
+            F0 = 1 - eps0;
+            if acos(F0) >= acos(FT); continue; end
+            assert(abs(qrobustness.kosut.effective_threshold(FT, eps0) - ...
+                       cos(acos(FT) - acos(F0))) < 1e-15, ...
+                'effective_threshold closed form at FT=%g eps0=%g', FT, eps0);
+        end
+    end
+    % Equality case: for collinear single-qubit Z rotations the angles add
+    % exactly, so an achieved-gate fidelity of F_eff lands the TARGET
+    % fidelity exactly on FT.
+    Uf = eye(2);
+    for FT = [0.9 0.99 0.999]
+        for eps0 = [1e-6 1e-4 1e-3]
+            F0 = 1 - eps0;
+            F_eff = qrobustness.kosut.effective_threshold(FT, eps0);
+            if F_eff >= 1; continue; end
+            a = 2 * acos(F0);
+            b = 2 * acos(F_eff);
+            U_S = diag(exp(-0.5i * a * [1; -1]));
+            U = diag(exp(-0.5i * (a + b) * [1; -1]));
+            assert(abs(abs(trace(Uf' * U_S)) / 2 - F0) < 1e-12, 'nominal at F0');
+            assert(abs(abs(trace(U_S' * U)) / 2 - F_eff) < 1e-12, 'achieved at F_eff');
+            assert(abs(abs(trace(Uf' * U)) / 2 - FT) < 1e-12, ...
+                'collinear rotation must saturate the angular threshold');
+        end
+    end
+    % 1 - eps_0 is a fidelity: eps_0 outside [0, 1] is rejected.
+    assert_error(@() qrobustness.kosut.effective_threshold(0.999, -1e-12), ...
+        'negative nominal_error');
+    assert_error(@() qrobustness.kosut.effective_threshold(0.999, 1 + 1e-9), ...
+        'nominal_error above 1');
+    assert(qrobustness.kosut.effective_threshold(0.999, 1) == 1, ...
+        'eps0 = 1 is admissible and vacuous');
+
     % --- rates scale correctly; margin inverts the bound ---------------------
     [H_list, dt] = deterministic_pwc(0, 5, 0.3, SX, SY, SZ);
     dH_list = repmat({0.3 * SX}, 1, numel(H_list));

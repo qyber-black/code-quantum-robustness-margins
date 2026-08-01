@@ -35,19 +35,27 @@
 %   (their Eqs. 29-30), which is monotone in |delta| and therefore invertible
 %   in closed form (margin).
 %
-%   Caveats (see README.md).
-%     1. Their Theorem 1 assumes exact nominal fidelity F_nom = 1; pass
+%   Caveats (see README.md and docs/time-bandwidth-bound.md).
+%     1. Their Theorem 1 assumes exact nominal fidelity F_nom = 1 and bounds
+%        the fidelity to the ACHIEVED nominal gate, not the target; pass
 %        'nominal_error' to absorb the nominal deficit into the threshold.
-%     2. Their bound is worst-case over all uncertainty consistent with the
+%        The absorption is angular by default, F_eff = cos(acos(F_T) -
+%        acos(1 - eps_0)) (effective_threshold), which is the sufficient
+%        condition; the additive form F_T + eps_0 is not.
+%     2. The implied margin is the CONSTANT structured-parameter
+%        specialisation: it certifies constant |delta| <= M^K and is not a
+%        supremum-norm time-varying margin.
+%     3. Their bound is worst-case over all uncertainty consistent with the
 %        norm bounds, including bath coupling; a larger margin here quantifies
 %        the value of structural knowledge, not a defect of either bound.
-%     3. F_lb is non-trivial only for T*Omega_bnd <= t_omega_max().
+%     4. F_lb is non-trivial only for T*Omega_bnd <= t_omega_max().
 %
 %   Functions
 %     uncertainty_rates       - w_unc, w_avg, w_dev, T (their Eq. 28)
 %     time_bandwidth          - T*Omega_bnd (their Eq. 29)
 %     fidelity_bound          - F_lb from T*Omega_bnd (their Eq. 30)
 %     fidelity_bound_at       - F_lb at a given delta
+%     effective_threshold     - achieved-gate threshold implied by F_T
 %     threshold_time_bandwidth- closed-form inverse of F_lb
 %     margin                  - implied perturbation margin
 %     t_omega_max             - 2*sqrt(log(1+sqrt(2))), vacuity threshold

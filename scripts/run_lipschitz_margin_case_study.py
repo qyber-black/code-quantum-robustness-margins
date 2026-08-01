@@ -53,17 +53,28 @@ XLIMS = {
 
 
 def write_correlation_tex(rows: list[dict], path: Path) -> None:
+    # M_j = min(M_j-, M_j+) is invariant under reversal of the parameter
+    # coordinate, while zeta_j changes sign, so |zeta_j| is the
+    # orientation-invariant local comparator: correlating against signed
+    # zeta can hide a relationship by mixing the two signs.  The table
+    # therefore uses |zeta_j|, matching plot_margins_vs_sensitivity (Fig. 3).
     vars_ = ["err", "M_H0", "M_H1", "M_H2", "zeta_H0", "zeta_H1", "zeta_H2"]
+    absolute = {"zeta_H0", "zeta_H1", "zeta_H2"}
     labels = [
         r"$\varepsilon_0$",
         "$M_0$",
         "$M_1$",
         "$M_2$",
-        r"$\zeta_0$",
-        r"$\zeta_1$",
-        r"$\zeta_2$",
+        r"$|\zeta_0|$",
+        r"$|\zeta_1|$",
+        r"$|\zeta_2|$",
     ]
-    X = np.column_stack([np.array([r[v] for r in rows], dtype=float) for v in vars_])
+    X = np.column_stack([
+        np.abs(np.array([r[v] for r in rows], dtype=float))
+        if v in absolute
+        else np.array([r[v] for r in rows], dtype=float)
+        for v in vars_
+    ])
     # Pearson / Spearman
     P = np.corrcoef(X, rowvar=False)
 
@@ -78,7 +89,7 @@ def write_correlation_tex(rows: list[dict], path: Path) -> None:
             S[i, j] = S[j, i] = spearman(X[:, i], X[:, j])
 
     lines = [
-        "% Auto-generated: upper Pearson, lower Spearman; signed equation zeta",
+        "% Auto-generated: upper Pearson, lower Spearman; |zeta| (see above)",
         r"\begin{tabular}{@{}lccccccc@{}}",
         r"\toprule",
         " & " + " & ".join(labels) + r" \\",

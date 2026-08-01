@@ -172,8 +172,12 @@ function verify_paper_consistency(varargin)
 
     %% 8) correlations match recomputed from margins table
     if exist('T', 'var') && exist('C_code', 'var')
+        % Table I correlates against the sensitivity magnitudes: min(M-, M+)
+        % is invariant under reversal of the parameter coordinate while zeta
+        % changes sign, so |zeta| is the orientation-invariant comparator.
         vars = {'err', 'M_H0', 'M_H1', 'M_H2', 'zeta_H0', 'zeta_H1', 'zeta_H2'};
         X = qrobustness.compat.margins_matrix(T, vars);
+        X(:, 5:7) = abs(X(:, 5:7));
         [P, S] = qrobustness.compat.correlation_matrices(X);
         C_re = eye(7);
         for i = 1:7
