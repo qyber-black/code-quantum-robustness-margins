@@ -12,6 +12,25 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- `iterative_margin(margin_tol=...)`: the optional safe/unsafe bracket
+  refinement now applies a certified-promotion rule -- a pointwise-safe
+  sample advances the certified lower endpoint only when the gap from the
+  current certified end is covered by that sample's safe radius
+  \((F - F_T)/L_{\hat{H}}\) or bridged by safe-radius continuation.
+  Previously, with a nonmonotone fidelity, the plain bisection could promote
+  a sample from a disconnected safe island beyond the first threshold
+  crossing and report an inflated margin as `'bracketed'`. The bracket now
+  always encloses the *first* boundary of the nominal safe component; when
+  continuation cannot keep pace with bisection the new reason `'partial'`
+  reports a rigorous bracket whose width exceeds `margin_tol`. The default
+  Algorithm 1 path (no `margin_tol`) is unchanged, and the refined case-study
+  margins are bit-for-bit identical (single-crossing rays remain
+  `'bracketed'`); only the general nonmonotone claim needed the fix.
+
 ## [1.0.0] - 2026-07-30
 
 Initial release.

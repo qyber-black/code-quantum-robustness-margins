@@ -156,3 +156,74 @@ def test_iterative_margin_case_study_certificate():
         assert abs(res.M - float(row["M_H0"])) < 1e-10
         assert abs(res.M_minus - float(row["Mm_H0"])) < 1e-10
         assert abs(res.M_plus - float(row["Mp_H0"])) < 1e-10
+
+
+def test_certified_bracket_does_not_jump_safe_islands():
+    """With a nonmonotone fidelity (an unsafe dip followed by a safe
+    island), the certified lower margin must stop at the nominal
+    component's boundary rather than promoting pointwise-safe island
+    samples (round-2 review, Appendix A semantics)."""
+    import numpy as np
+    from qrobustness import iterative_margin
+
+    FT = 0.9
+    # F: safe plateau to |mu| ~ 0.1, dip below FT on [0.12, 0.2],
+    # safe island beyond. Lipschitz constant consistent with slopes.
+    def fid(mu):
+        x = abs(mu)
+        if x < 0.1:
+            return 0.99 - 0.5 * x
+        if x < 0.16:
+            return 0.94 - 0.5 * (x - 0.1) * 10.0   # crosses FT at 0.108
+        if x < 0.24:
+            return 0.64 + 0.5 * (x - 0.16) * 10.0  # recovers, crosses up at 0.212
+        return 0.99
+
+    L = 5.0  # valid Lipschitz constant for the profile above
+    res = iterative_margin(fid, L, FT, mu0=0.0, eta=1e-6, margin_tol=1e-6)
+    # True first boundary at |mu| = 0.108: certified M must not exceed
+    # it, and the upper witness must lie beyond it but well before the
+    # island could be mistaken for the component (upper < 0.2).
+    assert res.M <= 0.108 + 1e-6
+    assert res.M >= 0.108 - 1e-3
+    assert res.M_upper <= 0.2
+
+
+def test_certified_bracket_partial_when_island_masks_first_crossing():
+    """Discriminating island case: Algorithm 1 stops early on an
+    eta-band plateau, and the outward geometric probe's step grows
+    large enough to leap a narrow unsafe dip straight into a wide safe
+    island.  Uncertified promotion would report the island's far
+    boundary (~0.3) as the margin; the certified-promotion rule must
+    keep M at the nominal component and report a rigorous (if wide)
+    'partial' bracket that still contains the true first crossing."""
+    import numpy as np
+    from qrobustness import iterative_margin
+
+    FT = 0.9
+    # |mu| profile (L = 300 valid throughout):
+    #   descent slope 2 to an eta-band plateau F = FT + 5e-7 from ~0.045,
+    #   narrow dip on [0.1, 0.1005] (slope 100) crossing FT at 0.1+5e-9,
+    #   recovery slope 280 into a safe island at 0.99 up to 0.3,
+    #   final descent slope 300 crossing FT at ~0.3003.
+    def fid(mu):
+        x = abs(mu)
+        if x < 0.1:
+            return max(FT + 5e-7, 0.99 - 2.0 * x)
+        if x < 0.1005:
+            return FT + 5e-7 - 100.0 * (x - 0.1)
+        if x < 0.3:
+            return min(0.99, FT + 5e-7 - 0.05 + 280.0 * (x - 0.1005))
+        return max(0.0, 0.99 - 300.0 * (x - 0.3))
+
+    res = iterative_margin(fid, 300.0, FT, mu0=0.0, eta=1e-6, margin_tol=1e-6)
+    # True first boundary at |mu| ~= 0.1: the certified margin must not
+    # be inflated to the island's far edge (~0.3003) ...
+    assert res.M <= 0.1 + 1e-6
+    assert res.M >= 0.04
+    # ... the bracket must still contain the true first crossing ...
+    assert np.isfinite(res.M_upper)
+    assert res.M_upper >= 0.1
+    # ... and the unreached tolerance must be reported, not hidden.
+    assert res.reason_minus == "partial"
+    assert res.reason_plus == "partial"

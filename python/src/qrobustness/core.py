@@ -546,57 +546,125 @@ def _certify_direction(
     ell: int,
     omega: Tuple[float, float],
     margin_tol: float,
+    L: float = 0.0,
 ) -> Tuple[float, float, str]:
-    """Bracket the true ray margin to a relative width of ``margin_tol``.
+    """Bracket the first component boundary along the ray.
 
-    ``mu_end`` is a point with ``F >= FT`` produced by one of the ray searches,
-    so ``M = |mu0 - mu_end|`` is a *lower* bound on the ray margin.  The
-    stopping rules of those searches are expressed in *fidelity* (``eta``), and
-    the induced uncertainty in ``mu`` is ``~eta/|zeta|``, which is unbounded as
-    ``zeta -> 0`` -- exactly the flat, highly robust controllers of interest.
-    This routine converts that into a *margin* statement: step outward until
-    ``F < FT``, then bisect, so the true ray margin lies in
-    ``[M, M_upper]`` with ``M_upper - M <= margin_tol * max(M, tiny)``.
+    ``mu_end`` is the endpoint of safe-radius continuation from
+    ``mu0``, so ``|mu0 - mu_end|`` is a certified lower bound on the
+    ray margin of the NOMINAL safe component.  This routine (i) probes
+    outward to find an unsafe point -- any unsafe point on the ray is
+    a rigorous UPPER witness for the component margin, since the first
+    boundary precedes it -- and (ii) refines the bracket.
 
-    Returns ``(M_refined, M_upper, reason)``.  ``M_refined >= M`` is the
-    tightened safe end (still certified ``F >= FT``), and ``reason`` is
-    ``'bracketed'`` (an unsafe point was located and refined),
-    ``'boundary'`` (the domain edge was reached while still safe, so the margin
-    is a domain truncation and ``M_upper`` is ``inf``), or ``'exhausted'``.
+    Certified-promotion rule: the certified lower endpoint advances to
+    a pointwise-safe candidate ``cand`` only when the gap from the
+    current certified end is covered by ``cand``'s own safe radius,
+    ``|cand - mu_cert| <= (F(cand) - FT)/L`` (the segment then lies in
+    the safe set and connects ``cand`` to the nominal component); when
+    the gap is larger, safe-radius continuation steps from ``mu_cert``
+    toward ``cand`` bridge as far as they certify.  Pointwise-safe
+    samples are never promoted without this verification, so with a
+    nonmonotone fidelity a safe island beyond the first boundary
+    cannot inflate the certified margin.  Consequently the component
+    margin always lies in ``[M, M_upper]``; the bracket width reaches
+    ``margin_tol`` when continuation keeps pace with bisection (in
+    particular under a single threshold crossing on the ray), and the
+    reason ``'partial'`` reports the cases where it does not.
+
+    Returns ``(M, M_upper, reason)`` with reason ``'bracketed'``
+    (width at tolerance), ``'partial'`` (rigorous bracket, width above
+    tolerance), ``'boundary'`` (domain edge reached while certified
+    safe; ``M_upper = inf``), or ``'exhausted'`` (no unsafe point
+    found; ``M_upper = inf``).
     """
     sign_step = (-1) ** ell
     mu_lo, mu_hi = omega
     scale = max(abs(mu_end - mu0), 1e-12)
+    safe_radius_fn = (lambda F: (F - FT) / L) if L > 0.0 else None
 
-    # Step outward geometrically to find a point with F < FT.
-    mu_safe = mu_end
+    def can_promote(cand: float, cert: float) -> bool:
+        F = fidelity_fn(cand)
+        if F < FT:
+            return False
+        if safe_radius_fn is None:
+            # No radius rule supplied: fall back to continuation-only
+            # promotion (never promote across a gap).
+            return cand == cert
+        return abs(cand - cert) <= safe_radius_fn(F)
+
+    def continue_toward(cert: float, target_pt: float, max_steps: int = 64) -> float:
+        """Safe-radius continuation from ``cert`` toward ``target_pt``;
+        returns the furthest certified point reached."""
+        if safe_radius_fn is None:
+            return cert
+        for _ in range(max_steps):
+            F = fidelity_fn(cert)
+            if F < FT:
+                return cert  # cannot happen for a certified point
+            step_r = safe_radius_fn(F)
+            if step_r <= abs(target_pt - cert) * 1e-15 + 1e-300:
+                return cert  # stalled at the band
+            nxt = cert + sign_step * min(step_r, abs(target_pt - cert))
+            if sign_step * (nxt - target_pt) >= 0:
+                return target_pt if fidelity_fn(target_pt) >= FT else cert
+            cert = nxt
+        return cert
+
+    # Outward geometric probe for an unsafe upper witness; the certified
+    # end advances only under the promotion rule.
+    mu_cert = mu_end
+    frontier = mu_end
     mu_unsafe = None
     step = max(margin_tol * scale, 1e-15)
     for _ in range(200):
-        cand = _clamp(mu_safe + sign_step * step, mu_lo, mu_hi)
-        if cand == mu_safe:
-            return abs(mu0 - mu_safe), float("inf"), "boundary"
+        cand = _clamp(frontier + sign_step * step, mu_lo, mu_hi)
+        if cand == frontier:
+            return abs(mu0 - mu_cert), float("inf"), "boundary"
         if fidelity_fn(cand) < FT:
             mu_unsafe = cand
             break
-        mu_safe = cand
+        if can_promote(cand, mu_cert):
+            mu_cert = cand
+        else:
+            mu_cert = continue_toward(mu_cert, cand)
+            if mu_cert != cand:
+                # A stall below a pointwise-safe sample: the component
+                # boundary lies between mu_cert and cand's far side;
+                # keep probing outward for an unsafe witness.
+                pass
+        frontier = cand
         step *= 2.0
     if mu_unsafe is None:
-        return abs(mu0 - mu_safe), float("inf"), "exhausted"
+        return abs(mu0 - mu_cert), float("inf"), "exhausted"
 
-    # Bisect the safe/unsafe bracket down to the requested relative width.
-    target = max(margin_tol * max(abs(mu_safe - mu0), 1e-300), 1e-16 * max(1.0, abs(mu_safe)))
+    # Refine: unsafe midpoints always tighten the upper witness; safe
+    # midpoints advance the certified end only via the promotion rule
+    # or bridged continuation.
+    target = max(margin_tol * max(abs(mu_cert - mu0), 1e-300),
+                 1e-16 * max(1.0, abs(mu_cert)))
     for _ in range(200):
-        if abs(mu_unsafe - mu_safe) <= target:
+        if abs(mu_unsafe - mu_cert) <= target:
             break
-        mid = 0.5 * (mu_safe + mu_unsafe)
-        if mid == mu_safe or mid == mu_unsafe:
+        mid = 0.5 * (mu_cert + mu_unsafe)
+        if mid == mu_cert or mid == mu_unsafe:
             break  # fp64 floor
-        if fidelity_fn(mid) >= FT:
-            mu_safe = mid
-        else:
+        if fidelity_fn(mid) < FT:
             mu_unsafe = mid
-    return abs(mu0 - mu_safe), abs(mu0 - mu_unsafe), "bracketed"
+            continue
+        if can_promote(mid, mu_cert):
+            mu_cert = mid
+        else:
+            reached = continue_toward(mu_cert, mid)
+            if reached == mu_cert:
+                # Continuation stalled: rigorous bracket, above tolerance.
+                return (abs(mu0 - mu_cert), abs(mu0 - mu_unsafe),
+                        "partial")
+            mu_cert = reached
+    reason = ("bracketed"
+              if abs(mu_unsafe - mu_cert) <= max(target, 2e-16 * max(1.0, abs(mu_cert)))
+              else "partial")
+    return abs(mu0 - mu_cert), abs(mu0 - mu_unsafe), reason
 
 
 def _dispatch_one_direction(
@@ -710,8 +778,8 @@ def iterative_margin(
     if margin_tol is not None:
         if not (margin_tol > 0):
             raise ValueError("margin_tol must be positive")
-        lo_m, up_m, why_m = _certify_direction(counter, mu0, mu_minus, FT, 1, omega, margin_tol)
-        lo_p, up_p, why_p = _certify_direction(counter, mu0, mu_plus, FT, 2, omega, margin_tol)
+        lo_m, up_m, why_m = _certify_direction(counter, mu0, mu_minus, FT, 1, omega, margin_tol, L)
+        lo_p, up_p, why_p = _certify_direction(counter, mu0, mu_plus, FT, 2, omega, margin_tol, L)
         # The refined safe ends are tighter lower bounds than the eta-based ones.
         result.M_minus = max(result.M_minus, lo_m)
         result.M_plus = max(result.M_plus, lo_p)

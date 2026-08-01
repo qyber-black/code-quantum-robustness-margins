@@ -192,12 +192,19 @@ bracket is refined until
 (M_upper - M) / M <= margin_tol
 ```
 
-so the true margin lies in `[M, M_upper]`, and `M` itself is tightened. On the
+so the true margin lies in `[M, M_upper]`, and `M` itself is tightened. The
+bracket refers to the *first* boundary of the nominal safe component: the
+certified end advances to a pointwise-safe sample only when the gap from the
+current certified end is covered by that sample's own safe radius
+`(F - F_T)/L` (or bridged by safe-radius continuation), so with a nonmonotone
+fidelity a safe island beyond the first crossing cannot inflate `M`. On the
 case study `margin_tol=1e-10` reaches `1e-10` in about 90 extra fidelity
 evaluations per controller. `reason_minus/plus` distinguishes `'bracketed'`
-(an unsafe point was located) from `'boundary'` (the domain edge was
-reached while still safe -- then the margin is a *domain truncation*, and
-`M_upper = inf`).
+(width at tolerance) from `'partial'` (the bracket is rigorous but
+continuation stalled before reaching the tolerance), `'boundary'` (the
+domain edge was reached while still safe -- then the margin is a *domain
+truncation*, and `M_upper = inf`), and `'exhausted'` (no unsafe point
+found; `M_upper = inf`).
 
 The paper drivers do not pass `margin_tol`, so the published tables are
 reproduced exactly; the option is there for anyone who needs the true value.
