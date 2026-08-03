@@ -2,7 +2,7 @@
 
 > SPDX-FileCopyrightText: (C) 2026 F. C. Langbein <frank@langbein.org>\
 > SPDX-FileCopyrightText: (C) 2026 S. P. O'Neil <sean.oneil@westpoint.edu>\
-> SPDX-FileCopyrightText: (C) 2026 S. Schirmer <s.m.shermer@gmail.com>
+> SPDX-FileCopyrightText: (C) 2026 S. Schirmer <s.m.shermer@gmail.com>\
 > SPDX-FileCopyrightText: (C) 2026 C. A. Weidner <c.weidner@bristol.ac.uk>\
 > SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>\
 >
@@ -25,13 +25,13 @@ Toolbox for **analysing** (and optionally **synthesising**) piecewise-constant c
 - Dual MATLAB and Python APIs with matching paper-style plots
 - Paper case-study reproduction via `make lipschitz-margin-matlab` / `make lipschitz-margin-python` / `make lipschitz-margin-octave`
 - Supplementary comparison with the Kosut et al. fundamental bound (arXiv:2507.01215) -- experimental, see below
-- Fidelity-maximising controller synthesis (GRAPE + quasi-Newton) via `make synth-matlab` / `make synth-python`
+- Fidelity-maximising controller synthesis (GRAPE + quasi-Newton) via `make synth-matlab` / `make synth-python` / `make synth-octave`
 
 ## Requirements
 
 - **Python** 3.10+ with NumPy, SciPy, pytest; matplotlib for plots (`qrobustness[plot]`). Reference implementation, and the source of the manuscript figures.
-- **MATLAB** R2020b+ (peer; required by `make check-margins`)
-- **Octave** 7+ (optional peer: `make lipschitz-margin-octave`, `make time-bandwidth-bound-octave`)
+- **MATLAB** R2020b+ (peer; required by `make check-margins`). GRAPE synthesis (`optimize_controller`, `make synth-matlab`) additionally needs the Optimization Toolbox for `fminunc`.
+- **Octave** 7+ (optional peer: `make lipschitz-margin-octave`, `make time-bandwidth-bound-octave`, `make synth-octave`). No Octave Forge packages are required: `fminunc` and `optimset` ship in core Octave, and the rank statistics are computed in-package.
 - Git LFS for large `.mat` / `.png` artefacts
 
 ## Quick start
@@ -65,9 +65,7 @@ make lipschitz-margin-python           # -> results/lipschitz-margin-python/
 make lipschitz-margin-octave           # -> results/lipschitz-margin-octave/ (optional peer)
 make compare-full           # Python vs MATLAB margin tables
 make compare-octave         # MATLAB vs Octave margin tables
-make sync-paper-matlab      # publish MATLAB PNGs into ../figures/
-make sync-paper-python      # publish Python PNGs into ../figures/
-make sync-paper-octave      # publish Octave PNGs into ../figures/
+make sync-paper-qrm         # publish paper figures into ../paper-QRM/figures/
 make export-golden          # refresh Python + MATLAB goldens
 make verify-paper-matlab    # -> results/lipschitz-margin-matlab/verify_paper.md
 make verify-paper-python    # -> results/lipschitz-margin-python/verify_paper.md
@@ -157,7 +155,8 @@ Release checklist:
 2. `make time-bandwidth-bound` passes (supplementary; Python vs MATLAB cross-check).
 3. Version agrees across `CITATION.cff`, `.zenodo.json`,
    `python/pyproject.toml`, `python/src/qrobustness/__init__.py` and
-   `../refs.bib`; `CHANGELOG.md` has an entry with the release date.
+   and the paper repository's `refs.bib`; `CHANGELOG.md` has an entry with
+   the release date.
 4. `reuse lint` is clean and `cffconvert --validate` passes (both run in CI).
 5. Tag the release; the GitHub mirror triggers the Zenodo deposition.
 
@@ -168,7 +167,7 @@ If you use this code, please cite the software and the accompanying preprint.
 **Software**
 
 F. C. Langbein, S. P. O'Neil, S. Schirmer, C. A. Weidner, E. A. Jonckheere.
-**Fidelity-Based Quantum Robustness Margins**. Version 1.0.1. Software, 2026.
+**Fidelity-Based Quantum Robustness Margins**. Version 1.0.2. Software, 2026.
 <https://qyber.black/spinnet/code-quantum-robustness-margins>
 (GitHub mirror: <https://github.com/qyber-black/code-quantum-robustness-margins>)
 
@@ -177,7 +176,7 @@ F. C. Langbein, S. P. O'Neil, S. Schirmer, C. A. Weidner, E. A. Jonckheere.
   title   = {Fidelity-Based Quantum Robustness Margins},
   author  = {Langbein, F. C. and O'Neil, S. P. and Schirmer, S.
              and Weidner, C. A. and Jonckheere, E. A.},
-  version = {1.0.1},
+  version = {1.0.2},
   year    = {2026},
   url     = {https://qyber.black/spinnet/code-quantum-robustness-margins},
 }

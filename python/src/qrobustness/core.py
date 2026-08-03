@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Callable, Iterable, List, NamedTuple, Optional, Sequence, Tuple, Union
 
 import numpy as np
 from scipy.io import loadmat
@@ -53,6 +53,24 @@ def lipschitz_constant(FT: float, N: int, C_H: float) -> float:
     return float(B_T * C_H)
 
 
+def traceless(Hhat: Array) -> Array:
+    """Remove the trace part: Hbar = H - (Tr H / N) I.
+
+    The trace-amplitude fidelity is invariant under a global phase, and the
+    trace part of a perturbation structure contributes only such a phase to
+    the propagator.  Centring therefore leaves the fidelity -- and hence the
+    margin -- unchanged while making ``||Hbar||_F <= ||H||_F``, so it can only
+    tighten the Lipschitz constant (paper, Sec. IV).
+    """
+    H = np.asarray(Hhat)
+    if H.ndim != 2 or H.shape[0] != H.shape[1]:
+        raise ValueError("structure matrix must be square")
+    if not np.allclose(H, H.conj().T, rtol=1e-10, atol=1e-12):
+        raise ValueError("structure matrix must be Hermitian")
+    N = H.shape[0]
+    return H - (np.trace(H) / N) * np.eye(N, dtype=H.dtype)
+
+
 def structure_constant(
     kind: str,
     Hhat: Array,
@@ -60,7 +78,14 @@ def structure_constant(
     tau: int,
     controls: Array | None = None,
 ) -> float:
-    nf = float(np.linalg.norm(Hhat, "fro"))
+    """Structure constant C_Hhat bounding sum_k ||dU^(k)/dmu||_F on the safe set.
+
+    The structure is centred to its traceless part first (see ``traceless``):
+    the trace part only shifts the propagator by a global phase, so removing it
+    leaves the certified margin valid while shrinking ``||Hhat||_F``.  For the
+    traceless case-study structures this changes nothing.
+    """
+    nf = float(np.linalg.norm(traceless(Hhat), "fro"))
     kind = kind.lower()
     if kind == "drift":
         return float(tau * dt * nf)
@@ -245,6 +270,19 @@ class MarginResult:
     method: str = "algorithm1"
     n_evals: Optional[int] = None
     n_steps: Optional[int] = None
+    #: Which Algorithm 1 stopping rule fired in each direction. Always
+    #: populated, independently of ``margin_tol``.  A domain-truncated result
+    #: is conceptually different from an eta-band termination: it certifies
+    #: only that the margin is at least the distance to the domain edge, so it
+    #: must not be read as a resolved margin.  ``converged_*`` is retained for
+    #: backward compatibility but conflates the first two.
+    status_minus: str = "unknown"
+    status_plus: str = "unknown"
+    #: True if the bisection safeguard fired at least once in that direction,
+    #: i.e. a floating-point/approximate evaluation reported F < FT after an
+    #: exact-arithmetic-safe step.
+    safeguard_minus: bool = False
+    safeguard_plus: bool = False
     # --- error control (populated when margin_tol is given) --------------
     # M is always a point with F >= FT, hence a LOWER bound on the true
     # margin.  M_upper is the nearest point known to violate F >= FT, so the
@@ -361,6 +399,21 @@ def _bracket_root_safe(
     return _bisect_safe(fidelity_fn, mu_safe, mu_bad, FT, eta)
 
 
+#: Algorithm 1 stopping rules, in the order the algorithm tests them.
+MARGIN_STATUS = ("eta_band", "domain_truncated", "iteration_limit")
+
+
+class _DirOutcome(NamedTuple):
+    """One direction's result: margin, flags, endpoint, and how it stopped."""
+
+    M: float
+    converged: bool
+    mu_end: float
+    n_steps: int
+    status: str = "unknown"
+    safeguard: bool = False
+
+
 def _stop_one_direction(
     mu0: float,
     mu_next: float,
@@ -371,15 +424,15 @@ def _stop_one_direction(
     mu_hi: float,
     k: int,
     k_max: int,
-) -> Tuple[bool, bool, float]:
-    """Return (done, converged, M)."""
+) -> Tuple[bool, bool, float, str]:
+    """Return (done, converged, M, status)."""
     if _on_boundary(mu_next, mu_lo, mu_hi) and (F_next - FT >= eta):
-        return True, True, abs(mu0 - mu_next)
+        return True, True, abs(mu0 - mu_next), "domain_truncated"
     if 0 <= (F_next - FT) < eta:
-        return True, True, abs(mu0 - mu_next)
+        return True, True, abs(mu0 - mu_next), "eta_band"
     if k >= k_max:
-        return True, False, abs(mu0 - mu_next)
-    return False, True, abs(mu0 - mu_next)
+        return True, False, abs(mu0 - mu_next), "iteration_limit"
+    return False, True, abs(mu0 - mu_next), "running"
 
 
 def _one_direction_lipschitz(
@@ -392,28 +445,30 @@ def _one_direction_lipschitz(
     k_max: int,
     ell: int,
     root_solver: str,
-) -> Tuple[float, bool, float, int]:
+) -> _DirOutcome:
     """Certified Lipschitz advance; polish overshoot with root_solver."""
     sign_step = (-1) ** ell
     mu_lo, mu_hi = omega
-    k = 0
+    k = 1  # counts evaluated trial points, so k_max of them are allowed
     n_steps = 0
     mu = mu0
     Fmu = fidelity_fn(mu)
     mu_next = mu
     F_next = Fmu
     converged = True
+    safeguard = False
 
     while True:
         mu_next = _clamp(mu + sign_step * (Fmu - FT) / L, mu_lo, mu_hi)
         F_next = fidelity_fn(mu_next)
         if F_next < FT:
+            safeguard = True
             mu_next, F_next = _bracket_root_safe(fidelity_fn, mu, mu_next, FT, eta, root_solver)
-        done, converged, M = _stop_one_direction(
+        done, converged, M, status = _stop_one_direction(
             mu0, mu_next, F_next, FT, eta, mu_lo, mu_hi, k, k_max
         )
         if done:
-            return M, converged, mu_next, n_steps
+            return _DirOutcome(M, converged, mu_next, n_steps, status, safeguard)
         k += 1
         n_steps += 1
         mu = mu_next
@@ -430,7 +485,7 @@ def _one_direction_doubling(
     k_max: int,
     ell: int,
     root_solver: str,
-) -> Tuple[float, bool, float, int]:
+) -> _DirOutcome:
     """Aggressive geometric probe beyond the Lipschitz radius, then bracket.
 
     Certificate is weaker than Algorithm 1 unless F is monotone on the ray:
@@ -445,30 +500,32 @@ def _one_direction_doubling(
     step = max((F_safe - FT) / L, eta / max(L, 1e-30))
     mu_probe = _clamp(mu_safe + sign_step * step, mu_lo, mu_hi)
     F_probe = fidelity_fn(mu_probe)
-    k = 0
+    k = 1  # counts evaluated trial points, so k_max of them are allowed
 
     while F_probe >= FT:
         if _on_boundary(mu_probe, mu_lo, mu_hi):
-            done, converged, M = _stop_one_direction(
+            done, converged, M, status = _stop_one_direction(
                 mu0, mu_probe, F_probe, FT, eta, mu_lo, mu_hi, k, k_max
             )
-            return M, converged, mu_probe, n_steps
+            return _DirOutcome(M, converged, mu_probe, n_steps, status)
         if 0 <= (F_probe - FT) < eta:
-            return abs(mu0 - mu_probe), True, mu_probe, n_steps
+            return _DirOutcome(abs(mu0 - mu_probe), True, mu_probe, n_steps, "eta_band")
         if k >= k_max:
-            return abs(mu0 - mu_probe), False, mu_probe, n_steps
+            return _DirOutcome(abs(mu0 - mu_probe), False, mu_probe, n_steps, "iteration_limit")
         mu_safe = mu_probe
         F_safe = F_probe
         step *= 2.0
         mu_probe = _clamp(mu_safe + sign_step * step, mu_lo, mu_hi)
         if abs(mu_probe - mu_safe) <= 0.0:
-            return abs(mu0 - mu_safe), True, mu_safe, n_steps
+            # The doubled probe cannot move off mu_safe: the domain edge (or
+            # the fp64 floor) is reached while still safe.
+            return _DirOutcome(abs(mu0 - mu_safe), True, mu_safe, n_steps, "domain_truncated")
         F_probe = fidelity_fn(mu_probe)
         k += 1
         n_steps += 1
 
     mu_end, F_end = _bracket_root_safe(fidelity_fn, mu_safe, mu_probe, FT, eta, root_solver)
-    return abs(mu0 - mu_end), True, mu_end, n_steps
+    return _DirOutcome(abs(mu0 - mu_end), True, mu_end, n_steps, "eta_band", True)
 
 
 def _one_direction_newton_probe(
@@ -482,7 +539,7 @@ def _one_direction_newton_probe(
     ell: int,
     root_solver: str,
     zeta_fn: Callable[[float], float],
-) -> Tuple[float, bool, float, int]:
+) -> _DirOutcome:
     """Safeguarded Newton-sized probes; beyond Lip radius behaves like doubling.
 
     When |zeta| is tiny or the Newton step exceeds the Lipschitz radius, the
@@ -491,12 +548,13 @@ def _one_direction_newton_probe(
     """
     sign_step = (-1) ** ell
     mu_lo, mu_hi = omega
-    k = 0
+    k = 1  # counts evaluated trial points, so k_max of them are allowed
     n_steps = 0
     mu = mu0
     Fmu = fidelity_fn(mu)
     mu_next = mu
     F_next = Fmu
+    safeguard = False
 
     while True:
         lip_step = (Fmu - FT) / L
@@ -511,12 +569,12 @@ def _one_direction_newton_probe(
         F_next = fidelity_fn(mu_next)
         if F_next < FT:
             mu_next, F_next = _bracket_root_safe(fidelity_fn, mu, mu_next, FT, eta, root_solver)
-            return abs(mu0 - mu_next), True, mu_next, n_steps
-        done, converged, M = _stop_one_direction(
+            return _DirOutcome(abs(mu0 - mu_next), True, mu_next, n_steps, "eta_band", True)
+        done, converged, M, status = _stop_one_direction(
             mu0, mu_next, F_next, FT, eta, mu_lo, mu_hi, k, k_max
         )
         if done:
-            return M, converged, mu_next, n_steps
+            return _DirOutcome(M, converged, mu_next, n_steps, status, safeguard)
         # If still far above FT after a large probe, double like ``doubling``.
         if step > lip_step * (1.0 + 1e-12) and (F_next - FT) >= eta:
             step2 = 2.0 * step
@@ -527,7 +585,7 @@ def _one_direction_newton_probe(
                 mu_next, F_next = _bracket_root_safe(
                     fidelity_fn, mu_next, mu_probe, FT, eta, root_solver
                 )
-                return abs(mu0 - mu_next), True, mu_next, n_steps
+                return _DirOutcome(abs(mu0 - mu_next), True, mu_next, n_steps, "eta_band", True)
             mu = mu_next
             Fmu = F_next
             mu_next = mu_probe
@@ -679,7 +737,7 @@ def _dispatch_one_direction(
     method: str,
     root_solver: str,
     zeta_fn: Optional[Callable[[float], float]],
-) -> Tuple[float, bool, float, int]:
+) -> _DirOutcome:
     if method == "algorithm1":
         return _one_direction_lipschitz(
             fidelity_fn, L, FT, mu0, eta, omega, k_max, ell, "bisection"
@@ -743,6 +801,17 @@ def iterative_margin(
         zeta(mu).
     return_diagnostics :
         If True, populate ``n_evals``, ``n_steps``, and ``method`` on the result.
+
+    Notes
+    -----
+    ``status_minus`` / ``status_plus`` always report which Algorithm 1 stopping
+    rule fired -- ``'eta_band'``, ``'domain_truncated'`` or
+    ``'iteration_limit'`` -- independently of ``margin_tol``.  A
+    ``'domain_truncated'`` result certifies only that the margin is at least
+    the distance to the edge of ``omega``, so it must not be read as a resolved
+    margin; ``converged_*`` cannot distinguish the two.  ``reason_*`` is a
+    different quantity: the outcome of the optional ``margin_tol`` bracket
+    refinement.
     """
     if L <= 0:
         raise ValueError("Lipschitz constant L must be positive")
@@ -756,20 +825,25 @@ def iterative_margin(
     if not (FT < F0):
         raise ValueError(f"Require FT < F(mu0); got FT={FT}, F={F0}")
 
-    M_minus, conv_minus, mu_minus, steps_m = _dispatch_one_direction(
+    out_m = _dispatch_one_direction(
         counter, L, FT, mu0, eta, omega, k_max, 1, method, root_solver, zeta_fn
     )
-    M_plus, conv_plus, mu_plus, steps_p = _dispatch_one_direction(
+    out_p = _dispatch_one_direction(
         counter, L, FT, mu0, eta, omega, k_max, 2, method, root_solver, zeta_fn
     )
+    steps_m, steps_p = out_m.n_steps, out_p.n_steps
     result = MarginResult(
-        M_minus=M_minus,
-        M_plus=M_plus,
-        M=min(M_minus, M_plus),
-        converged_minus=conv_minus,
-        converged_plus=conv_plus,
-        mu_minus=mu_minus,
-        mu_plus=mu_plus,
+        M_minus=out_m.M,
+        M_plus=out_p.M,
+        M=min(out_m.M, out_p.M),
+        converged_minus=out_m.converged,
+        converged_plus=out_p.converged,
+        mu_minus=out_m.mu_end,
+        mu_plus=out_p.mu_end,
+        status_minus=out_m.status,
+        status_plus=out_p.status,
+        safeguard_minus=out_m.safeguard,
+        safeguard_plus=out_p.safeguard,
         method=method,
         certificate="segment"
         if method in ("algorithm1", "lipschitz_brent", "lipschitz_toms748")
@@ -778,8 +852,12 @@ def iterative_margin(
     if margin_tol is not None:
         if not (margin_tol > 0):
             raise ValueError("margin_tol must be positive")
-        lo_m, up_m, why_m = _certify_direction(counter, mu0, mu_minus, FT, 1, omega, margin_tol, L)
-        lo_p, up_p, why_p = _certify_direction(counter, mu0, mu_plus, FT, 2, omega, margin_tol, L)
+        lo_m, up_m, why_m = _certify_direction(
+            counter, mu0, out_m.mu_end, FT, 1, omega, margin_tol, L
+        )
+        lo_p, up_p, why_p = _certify_direction(
+            counter, mu0, out_p.mu_end, FT, 2, omega, margin_tol, L
+        )
         # The refined safe ends are tighter lower bounds than the eta-based ones.
         result.M_minus = max(result.M_minus, lo_m)
         result.M_plus = max(result.M_plus, lo_p)

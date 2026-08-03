@@ -32,9 +32,19 @@ function result = iterative_margin(fidelity_fn, L, FT, varargin)
 %   result fields:
 %     M_minus, M_plus, M, converged_minus, converged_plus,
 %     mu_minus, mu_plus, method, certificate,
+%     status_minus, status_plus, safeguard_minus, safeguard_plus,
 %     M_upper_minus, M_upper_plus, M_upper, margin_uncertainty,
 %     reason_minus, reason_plus
 %     [, n_evals, n_steps]
+%
+%     'status_*' reports which Algorithm 1 stopping rule fired in that
+%     direction -- 'eta_band', 'domain_truncated' or 'iteration_limit' -- and
+%     is always populated, independently of margin_tol.  A 'domain_truncated'
+%     result certifies only that the margin is at least the distance to the
+%     edge of omega, so it must not be read as a resolved margin;
+%     'converged_*' cannot distinguish the two and is kept for backward
+%     compatibility.  'safeguard_*' is true if the bisection safeguard fired.
+%     'reason_*' is a different quantity: the margin_tol bracket outcome.
 %
 %   Without margin_tol the bracket fields carry sentinels: M_upper* and
 %   margin_uncertainty are Inf and reason_* is 'unknown'.
@@ -111,9 +121,9 @@ function result = iterative_margin(fidelity_fn, L, FT, varargin)
             'Require FT < F(mu0); got FT=%g, F=%g.', FT, F0);
     end
 
-    [M_minus, conv_minus, mu_minus, steps_m] = dispatch_one_direction( ...
+    [M_minus, conv_minus, mu_minus, steps_m, status_m, guard_m] = dispatch_one_direction( ...
         counted_fn, L, FT, mu0, eta, omega, k_max, 1, method, root_solver, zeta_fn);
-    [M_plus, conv_plus, mu_plus, steps_p] = dispatch_one_direction( ...
+    [M_plus, conv_plus, mu_plus, steps_p, status_p, guard_p] = dispatch_one_direction( ...
         counted_fn, L, FT, mu0, eta, omega, k_max, 2, method, root_solver, zeta_fn);
 
     result = struct();
@@ -124,6 +134,10 @@ function result = iterative_margin(fidelity_fn, L, FT, varargin)
     result.converged_plus = conv_plus;
     result.mu_minus = mu_minus;
     result.mu_plus = mu_plus;
+    result.status_minus = status_m;
+    result.status_plus = status_p;
+    result.safeguard_minus = guard_m;
+    result.safeguard_plus = guard_p;
     result.method = method;
     if any(strcmp(method, {'algorithm1', 'lipschitz_brent', 'lipschitz_toms748'}))
         result.certificate = 'segment';
@@ -226,55 +240,58 @@ function [M_refined, M_upper, reason] = certify_direction(fidelity_fn, mu0, mu_e
     reason = 'bracketed';
 end
 
-function [M, converged, mu_end, n_steps] = dispatch_one_direction( ...
+function [M, converged, mu_end, n_steps, status, guard] = dispatch_one_direction( ...
         fidelity_fn, L, FT, mu0, eta, omega, k_max, ell, method, root_solver, zeta_fn)
+    guard = false;
     switch method
         case 'algorithm1'
-            [M, converged, mu_end, n_steps] = one_direction_lipschitz( ...
+            [M, converged, mu_end, n_steps, status, guard] = one_direction_lipschitz( ...
                 fidelity_fn, L, FT, mu0, eta, omega, k_max, ell, 'bisection');
         case 'lipschitz_brent'
-            [M, converged, mu_end, n_steps] = one_direction_lipschitz( ...
+            [M, converged, mu_end, n_steps, status, guard] = one_direction_lipschitz( ...
                 fidelity_fn, L, FT, mu0, eta, omega, k_max, ell, 'brent');
         case 'lipschitz_toms748'
             % MATLAB has no TOMS748; use fzero (Brent-like) with the same API name.
-            [M, converged, mu_end, n_steps] = one_direction_lipschitz( ...
+            [M, converged, mu_end, n_steps, status, guard] = one_direction_lipschitz( ...
                 fidelity_fn, L, FT, mu0, eta, omega, k_max, ell, 'toms748');
         case 'doubling'
             rs = root_solver;
             if strcmp(rs, 'bisection'), rs = 'toms748'; end
-            [M, converged, mu_end, n_steps] = one_direction_doubling( ...
+            [M, converged, mu_end, n_steps, status, guard] = one_direction_doubling( ...
                 fidelity_fn, L, FT, mu0, eta, omega, k_max, ell, rs);
         case 'newton_probe'
             rs = root_solver;
             if strcmp(rs, 'bisection'), rs = 'toms748'; end
-            [M, converged, mu_end, n_steps] = one_direction_newton_probe( ...
+            [M, converged, mu_end, n_steps, status, guard] = one_direction_newton_probe( ...
                 fidelity_fn, L, FT, mu0, eta, omega, k_max, ell, rs, zeta_fn);
         otherwise
             error('qrobustness:margin:method', 'Unknown method=%s.', method);
     end
 end
 
-function [M, converged, mu_end, n_steps] = one_direction_lipschitz( ...
+function [M, converged, mu_end, n_steps, status, guard] = one_direction_lipschitz( ...
         fidelity_fn, L, FT, mu0, eta, omega, k_max, ell, root_solver)
     sign_step = (-1)^ell;
     mu_lo = omega(1);
     mu_hi = omega(2);
-    k = 0;
+    k = 1;  % counts evaluated trial points, so k_max of them are allowed
     n_steps = 0;
     mu = mu0;
     Fmu = fidelity_fn(mu);
     mu_next = mu;
     F_next = Fmu;
     converged = true;
+    guard = false;
 
     while true
         mu_next = min(max(mu + sign_step * (Fmu - FT) / L, mu_lo), mu_hi);
         F_next = fidelity_fn(mu_next);
         if F_next < FT
+            guard = true;
             [mu_next, F_next] = bracket_root_safe( ...
                 fidelity_fn, mu, mu_next, FT, eta, root_solver);
         end
-        [done, converged, M] = stop_one_direction( ...
+        [done, converged, M, status] = stop_one_direction( ...
             mu0, mu_next, F_next, FT, eta, mu_lo, mu_hi, k, k_max);
         if done
             mu_end = mu_next;
@@ -287,7 +304,7 @@ function [M, converged, mu_end, n_steps] = one_direction_lipschitz( ...
     end
 end
 
-function [M, converged, mu_end, n_steps] = one_direction_doubling( ...
+function [M, converged, mu_end, n_steps, status, guard] = one_direction_doubling( ...
         fidelity_fn, L, FT, mu0, eta, omega, k_max, ell, root_solver)
     sign_step = (-1)^ell;
     mu_lo = omega(1);
@@ -298,11 +315,12 @@ function [M, converged, mu_end, n_steps] = one_direction_doubling( ...
     step = max((F_safe - FT) / L, eta / max(L, 1e-30));
     mu_probe = min(max(mu_safe + sign_step * step, mu_lo), mu_hi);
     F_probe = fidelity_fn(mu_probe);
-    k = 0;
+    k = 1;  % counts evaluated trial points, so k_max of them are allowed
+    guard = false;
 
     while F_probe >= FT
         if on_boundary(mu_probe, mu_lo, mu_hi)
-            [~, converged, M] = stop_one_direction( ...
+            [~, converged, M, status] = stop_one_direction( ...
                 mu0, mu_probe, F_probe, FT, eta, mu_lo, mu_hi, k, k_max);
             mu_end = mu_probe;
             return;
@@ -311,12 +329,14 @@ function [M, converged, mu_end, n_steps] = one_direction_doubling( ...
             M = abs(mu0 - mu_probe);
             converged = true;
             mu_end = mu_probe;
+            status = 'eta_band';
             return;
         end
         if k >= k_max
             M = abs(mu0 - mu_probe);
             converged = false;
             mu_end = mu_probe;
+            status = 'iteration_limit';
             return;
         end
         mu_safe = mu_probe;
@@ -324,9 +344,12 @@ function [M, converged, mu_end, n_steps] = one_direction_doubling( ...
         step = 2 * step;
         mu_probe = min(max(mu_safe + sign_step * step, mu_lo), mu_hi);
         if abs(mu_probe - mu_safe) <= 0
+            % The doubled probe cannot move off mu_safe: the domain edge (or
+            % the fp64 floor) is reached while still safe.
             M = abs(mu0 - mu_safe);
             converged = true;
             mu_end = mu_safe;
+            status = 'domain_truncated';
             return;
         end
         F_probe = fidelity_fn(mu_probe);
@@ -338,19 +361,22 @@ function [M, converged, mu_end, n_steps] = one_direction_doubling( ...
         fidelity_fn, mu_safe, mu_probe, FT, eta, root_solver);
     M = abs(mu0 - mu_end);
     converged = true;
+    status = 'eta_band';
+    guard = true;
 end
 
-function [M, converged, mu_end, n_steps] = one_direction_newton_probe( ...
+function [M, converged, mu_end, n_steps, status, guard] = one_direction_newton_probe( ...
         fidelity_fn, L, FT, mu0, eta, omega, k_max, ell, root_solver, zeta_fn)
     sign_step = (-1)^ell;
     mu_lo = omega(1);
     mu_hi = omega(2);
-    k = 0;
+    k = 1;  % counts evaluated trial points, so k_max of them are allowed
     n_steps = 0;
     mu = mu0;
     Fmu = fidelity_fn(mu);
     mu_next = mu;
     F_next = Fmu;
+    guard = false;
 
     while true
         lip_step = (Fmu - FT) / L;
@@ -369,9 +395,11 @@ function [M, converged, mu_end, n_steps] = one_direction_newton_probe( ...
             M = abs(mu0 - mu_next);
             converged = true;
             mu_end = mu_next;
+            status = 'eta_band';
+            guard = true;
             return;
         end
-        [done, converged, M] = stop_one_direction( ...
+        [done, converged, M, status] = stop_one_direction( ...
             mu0, mu_next, F_next, FT, eta, mu_lo, mu_hi, k, k_max);
         if done
             mu_end = mu_next;
@@ -388,6 +416,8 @@ function [M, converged, mu_end, n_steps] = one_direction_newton_probe( ...
                 M = abs(mu0 - mu_next);
                 converged = true;
                 mu_end = mu_next;
+                status = 'eta_band';
+                guard = true;
                 return;
             end
             mu = mu_next;
@@ -402,18 +432,22 @@ function [M, converged, mu_end, n_steps] = one_direction_newton_probe( ...
     end
 end
 
-function [done, converged, M] = stop_one_direction( ...
+function [done, converged, M, status] = stop_one_direction( ...
         mu0, mu_next, F_next, FT, eta, mu_lo, mu_hi, k, k_max)
     if on_boundary(mu_next, mu_lo, mu_hi) && (F_next - FT >= eta)
-        done = true; converged = true; M = abs(mu0 - mu_next); return;
+        done = true; converged = true; M = abs(mu0 - mu_next);
+        status = 'domain_truncated'; return;
     end
     if (F_next - FT >= 0) && (F_next - FT < eta)
-        done = true; converged = true; M = abs(mu0 - mu_next); return;
+        done = true; converged = true; M = abs(mu0 - mu_next);
+        status = 'eta_band'; return;
     end
     if k >= k_max
-        done = true; converged = false; M = abs(mu0 - mu_next); return;
+        done = true; converged = false; M = abs(mu0 - mu_next);
+        status = 'iteration_limit'; return;
     end
     done = false; converged = true; M = abs(mu0 - mu_next);
+    status = 'running';
 end
 
 function tf = on_boundary(mu, mu_lo, mu_hi)

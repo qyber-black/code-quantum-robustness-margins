@@ -19,7 +19,7 @@ Both languages expose the same conceptual API. Python is the reference implement
 |--------|------|---------|
 | \(\mathcal{F}_T\) | `fidelity_threshold` | `0.999` (case study) |
 | \(\eta\) | `eta` | `1e-6` |
-| \(K_{\max}\) | `k_max` | `10000` |
+| \(K_{\max}\) | `k_max` | `10000` (maximum evaluated steps per direction; `k` starts at 1 and the guard is `k >= k_max`, matching Algorithm 1) |
 | \(\Omega_\mu\) | `omega` | `[-Inf, Inf]` unless set |
 | Consistency tol | `rtol` / `atol` | `1e-8` / `1e-10` (tests) |
 
@@ -45,6 +45,7 @@ Both languages expose the same conceptual API. Python is the reference implement
 
 - `kind`: `"drift"` or `"control"`.
 - Returns \(C_{\hat{H}}\).
+- The structure is centred to its traceless part \(\overline{\hat{H}}_\mu = \hat{H}_\mu - N^{-1}(\operatorname{Tr}\hat{H}_\mu) I\) first (`traceless(Hhat)`), as in the paper: the trace part only rephases the propagator, which the trace-amplitude fidelity ignores, so removing it leaves the certificate valid while shrinking \(\|\hat{H}_\mu\|_F\). For traceless structures -- including the case-study \(H_0, H_1, H_2\) -- nothing changes; for a non-traceless one (e.g. a single-level detuning) the resulting margin is strictly larger. `Hhat` must be square and Hermitian.
 
 ### `differential_sensitivity(H_list, dH_list, dt, Uf, n_quad=32, method="exact")`
 
@@ -82,7 +83,7 @@ Lipschitz + bisection is the recommended certified path; Brent/TOMS748 are optio
 - `zeta_fn(mu)`: required for `newton_probe`.
 - `return_diagnostics=True`: also sets `n_evals`, `n_steps`, `method` on the result.
 - `margin_tol`: if set, certify the margin to this relative precision. The safe/unsafe bracket is refined until `(M_upper - M)/M <= margin_tol`, and `M` itself is tightened. See below.
-- **Returns:** `M_minus`, `M_plus`, `M = min(M_minus, M_plus)`, `converged_minus`, `converged_plus`, `mu_minus`, `mu_plus`, `certificate`; and with `margin_tol`: `M_upper_minus`, `M_upper_plus`, `M_upper`, `margin_uncertainty`, `reason_minus`, `reason_plus`.
+- **Returns:** `M_minus`, `M_plus`, `M = min(M_minus, M_plus)`, `converged_minus`, `converged_plus`, `mu_minus`, `mu_plus`, `status_minus`, `status_plus`, `safeguard_minus`, `safeguard_plus`, `certificate`; and with `margin_tol`: `M_upper_minus`, `M_upper_plus`, `M_upper`, `margin_uncertainty`, `reason_minus`, `reason_plus`.
 
 #### Accuracy of the margin
 
@@ -91,6 +92,8 @@ Lipschitz + bisection is the recommended certified path; Brent/TOMS748 are optio
 `eta` is a fidelity band, not a margin band. The induced uncertainty in `mu` is `~eta/|zeta|`, unbounded as `zeta -> 0` (i.e. for the flattest, most robust controllers). On the case study the default `eta=1e-6` leaves about 5e-4 relative error in `M`, so `margins_table_0.999.csv` carries ~3-4 significant figures of margin despite printing 6. Pass `margin_tol` to fix this: `margin_tol=1e-10` reaches 1e-10 in about 90 extra fidelity evaluations. Paper drivers do not pass it, so published tables reproduce exactly.
 
 `certificate` is `'segment'` when every point between `mu0` and the endpoint is covered by a safe-radius certificate (`algorithm1`, `lipschitz_*`), and `'endpoint'` when only the endpoint is verified (`doubling`, `newton_probe` probe beyond the Lipschitz radius). `reason_*` is `'bracketed'` (width at tolerance), `'partial'` (rigorous bracket, width above tolerance -- safe-radius continuation stalled), `'boundary'` (domain edge reached while still safe -- the margin is a domain truncation, `M_upper = inf`), or `'exhausted'` (no unsafe point found, `M_upper = inf`). The bracket targets the *first* boundary of the nominal safe component: pointwise-safe samples are promoted to the certified end only when connected by their safe radius `(F - F_T)/L` or by safe-radius continuation, so safe islands beyond the first crossing cannot inflate `M`.
+
+`status_*` reports which Algorithm 1 stopping rule fired in that direction -- `'eta_band'`, `'domain_truncated'` or `'iteration_limit'` -- and is always populated, independently of `margin_tol`. A `'domain_truncated'` result certifies only that the margin is at least the distance to the edge of `omega`, so it must not be read as a resolved margin; `converged_*` is `True` in both cases and is kept only for backward compatibility. `safeguard_*` is `True` if the bisection safeguard fired, i.e. a floating-point evaluation reported `F < FT` after a step that cannot overshoot in exact arithmetic. Note `reason_*` is a *different* quantity: the outcome of the optional `margin_tol` bracket refinement.
 
 `fidelity_fn(mu)` must return \(\mathcal{F}_\mu\). See [margin-solvers-notes.md](margin-solvers-notes.md) for guarantees and the bench harness.
 
@@ -120,7 +123,7 @@ Install: `pip install 'qrobustness[plot]'`. Full paper runs:
 - `make check-margins` -> `lipschitz-margin-matlab` + `lipschitz-margin-python` + `compare-full` + `verify-paper` (release gate)
 - `make synth-matlab` / `make synth-python` -> `results/synth-*/` (does not touch paper controllers)
 - `make analyse-synth-matlab` / `make analyse-synth-python` -> margin trees for synth sets
-- `make sync-paper-matlab` / `make sync-paper-python` / `make sync-paper-octave` -> `../figures/`
+- `make sync-paper-qrm` -> `$(PAPER_ROOT)/figures/` (a sibling repository; see `docs/layout.md`)
 
 ### Case-study helpers
 

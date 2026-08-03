@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qrobustness"
-version = "1.0.1"
+version = "1.0.2"
 description = "Fidelity-based robustness margins for finite-time quantum control"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -41,3 +41,6 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+# Ensemble-wide accuracy checks are minutes, not seconds: deselect with
+# `-m "not slow"` for a fast run; `make test-python` runs them.
+markers = ["slow: full-ensemble checks (61 controllers x 3 structures)"]

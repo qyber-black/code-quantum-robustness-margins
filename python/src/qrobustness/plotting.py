@@ -213,7 +213,7 @@ def plot_margins_vs_sensitivity(
     )
     ax1.set_xlabel(r"$|\zeta|$")
     ax1.set_ylabel("Robustness margin")
-    ax1.legend(loc="lower right")
+    ax1.legend(loc="upper left")
     log10_axis(ax1, "x", [float(z0.min()) * 0.8, float(z0.max()) * 1.2])
     ax1.tick_params(labelsize=12)
     # Match MATLAB-style scientific offset on the H0 panel
@@ -241,7 +241,7 @@ def plot_margins_vs_sensitivity(
     )
     ax2.set_xlabel(r"$|\zeta|$")
     ax2.set_ylabel("Robustness margin")
-    ax2.legend(loc="lower right")
+    ax2.legend(loc="upper left")
     z12 = np.concatenate([z1, z2])
     log10_axis(ax2, "x", [float(z12.min()) * 0.8, float(z12.max()) * 1.2])
     ax2.tick_params(labelsize=12)

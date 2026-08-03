@@ -227,3 +227,197 @@ def test_certified_bracket_partial_when_island_masks_first_crossing():
     # ... and the unreached tolerance must be reported, not hidden.
     assert res.reason_minus == "partial"
     assert res.reason_plus == "partial"
+
+
+# --------------------------------------------------------------------------
+# Traceless centring of the perturbation structure (paper Sec. IV)
+# --------------------------------------------------------------------------
+
+
+def test_traceless_centring_removes_only_the_trace():
+    import numpy as np
+    from qrobustness import structure_constant
+    from qrobustness.core import traceless
+
+    rng = np.random.default_rng(0)
+    A = rng.normal(size=(4, 4)) + 1j * rng.normal(size=(4, 4))
+    H = A + A.conj().T
+    Hc = traceless(H)
+    assert abs(np.trace(Hc)) < 1e-12
+    # Centring is a projection: it removes only the identity component.
+    assert np.allclose(Hc, traceless(Hc))
+    assert np.linalg.norm(Hc, "fro") <= np.linalg.norm(H, "fro") + 1e-12
+
+
+def test_structure_constant_is_gauge_invariant():
+    """C_Hhat must not change when a multiple of I is added to the structure.
+
+    The trace part contributes only a global phase to the propagator, which
+    the trace-amplitude fidelity ignores, so a constant shift of the structure
+    must leave the certificate untouched.
+    """
+    import numpy as np
+    from qrobustness import structure_constant
+
+    rng = np.random.default_rng(1)
+    A = rng.normal(size=(4, 4)) + 1j * rng.normal(size=(4, 4))
+    H = A + A.conj().T
+    u = rng.normal(size=7)
+    for c in (-3.0, 0.5, 11.0):
+        assert structure_constant("drift", H + c * np.eye(4), 0.3, 7) == pytest.approx(
+            structure_constant("drift", H, 0.3, 7), rel=1e-12
+        )
+        assert structure_constant(
+            "control", H + c * np.eye(4), 0.3, 7, u
+        ) == pytest.approx(structure_constant("control", H, 0.3, 7, u), rel=1e-12)
+
+
+def test_structure_constant_vanishes_for_identity_structure():
+    """A pure-identity structure only rephases U, so it cannot move F."""
+    import numpy as np
+    from qrobustness import structure_constant
+
+    assert structure_constant("drift", np.eye(8), 0.5, 32) == 0.0
+    assert structure_constant("control", 2.5 * np.eye(8), 0.5, 32, np.ones(32)) == 0.0
+
+
+def test_structure_constant_tightens_for_nontraceless_sparse_structure():
+    """A sparse, non-traceless Hermitian structure -- e.g. a detuning on one
+    level -- is exactly the case the centring is for: the constant must be
+    strictly smaller than the uncentred one, hence the margin strictly larger."""
+    import numpy as np
+    from qrobustness import lipschitz_constant, structure_constant
+
+    N = 8
+    H = np.zeros((N, N), dtype=complex)
+    H[0, 0] = 1.0  # single-level detuning: Tr = 1, not traceless
+    C = structure_constant("drift", H, 0.5, 32)
+    C_uncentred = 32 * 0.5 * float(np.linalg.norm(H, "fro"))
+    assert C < C_uncentred
+    assert C == pytest.approx(32 * 0.5 * np.sqrt(1.0 - 1.0 / N))
+    # A smaller constant is a smaller Lipschitz constant, hence a larger
+    # certified radius for the same fidelity surplus.
+    assert lipschitz_constant(0.999, N, C) < lipschitz_constant(0.999, N, C_uncentred)
+
+
+def test_case_study_structures_are_unaffected_by_centring():
+    """The three case-study structures are traceless, so nothing moves."""
+    import numpy as np
+    from qrobustness import load_problem, structure_constant
+
+    CTRL = ROOT / "data/controllers/problem9_tf15_K32_quasi-newton"
+    problem = load_problem(CTRL / "problem9.mat")
+    for tag in ("H0", "H1", "H2"):
+        H = problem[tag]
+        assert abs(np.trace(H)) < 1e-12
+        assert structure_constant("drift", H, 0.46875, 32) == pytest.approx(
+            32 * 0.46875 * float(np.linalg.norm(H, "fro")), rel=1e-15
+        )
+
+
+def test_structure_constant_rejects_bad_structures():
+    import numpy as np
+    from qrobustness import structure_constant
+
+    with pytest.raises(ValueError, match="square"):
+        structure_constant("drift", np.ones((2, 3)), 0.5, 4)
+    with pytest.raises(ValueError, match="Hermitian"):
+        structure_constant("drift", np.array([[0.0, 1.0], [0.0, 0.0]]), 0.5, 4)
+
+
+# --------------------------------------------------------------------------
+# Algorithm 1 stopping status
+# --------------------------------------------------------------------------
+
+
+def _tent(FT=0.999, surplus=0.01):
+    """F is a tent of slope 1 peaking at mu=0; crossing at |mu| = surplus."""
+    return lambda mu: FT + surplus - abs(mu)
+
+
+def test_status_reports_eta_band_in_both_directions():
+    from qrobustness import iterative_margin
+
+    r = iterative_margin(_tent(), 1.0, 0.999, eta=1e-6)
+    assert r.status_minus == "eta_band"
+    assert r.status_plus == "eta_band"
+    assert r.converged_minus and r.converged_plus
+
+
+def test_status_reports_domain_truncation_in_both_directions():
+    """A domain-truncated margin is not a resolved margin; converged_* alone
+    cannot tell them apart, which is why status_* exists."""
+    from qrobustness import iterative_margin
+
+    r = iterative_margin(_tent(), 1.0, 0.999, eta=1e-6, omega=(-0.002, 0.002))
+    assert r.status_minus == "domain_truncated"
+    assert r.status_plus == "domain_truncated"
+    assert r.M == pytest.approx(0.002)
+    # ... and the flag that predates it cannot distinguish the two cases.
+    assert r.converged_minus and r.converged_plus
+
+
+def test_status_reports_domain_truncation_on_one_side_only():
+    from qrobustness import iterative_margin
+
+    r = iterative_margin(_tent(), 1.0, 0.999, eta=1e-6, omega=(-0.002, np.inf))
+    assert r.status_minus == "domain_truncated"
+    assert r.status_plus == "eta_band"
+
+
+def test_k_max_counts_evaluated_steps_exactly():
+    """K_max is the number of evaluated trial points per direction, matching
+    the paper's Algorithm 1 (k starts at 1 and the guard is k >= K_max).
+
+    The off-by-one matters only when the limit actually binds, but the paper
+    and both engines must agree on the convention.
+    """
+    from qrobustness import iterative_margin
+
+    for k_max in (1, 2, 3):
+        n = [0]
+
+        def counted(mu, n=n):
+            n[0] += 1
+            return _tent()(mu)
+
+        # L far above the true slope, so the eta band is never reached first.
+        r = iterative_margin(counted, 1e4, 0.999, eta=1e-12, k_max=k_max,
+                             return_diagnostics=True)
+        assert r.status_minus == "iteration_limit"
+        # n_steps counts recentrings, one fewer than the evaluated steps.
+        assert r.n_steps // 2 == k_max - 1
+
+
+def test_status_reports_iteration_limit():
+    from qrobustness import iterative_margin
+
+    # L far larger than the true slope makes every certified step tiny, so the
+    # eta band is never reached within k_max.
+    r = iterative_margin(_tent(), 1e4, 0.999, eta=1e-12, k_max=2)
+    assert r.status_minus == "iteration_limit"
+    assert r.status_plus == "iteration_limit"
+    assert not r.converged_minus
+    assert not r.converged_plus
+
+
+def test_status_is_populated_without_margin_tol():
+    """The whole point: the default path reports how it stopped."""
+    from qrobustness import iterative_margin
+    from qrobustness.core import MARGIN_STATUS
+
+    r = iterative_margin(_tent(), 1.0, 0.999)
+    assert r.status_minus in MARGIN_STATUS
+    assert r.status_plus in MARGIN_STATUS
+    # reason_* is a different quantity and stays unset without margin_tol.
+    assert r.reason_minus == "unknown"
+
+
+def test_safeguard_flag_tracks_the_bisection_fallback():
+    from qrobustness import iterative_margin
+
+    # An under-estimated L is precisely the case the safeguard exists for:
+    # the "certified" step overshoots the threshold and must be bisected back.
+    assert iterative_margin(_tent(), 0.5, 0.999, eta=1e-6).safeguard_minus
+    # A valid L cannot overshoot in exact arithmetic, so it never fires.
+    assert not iterative_margin(_tent(), 2.0, 0.999, eta=1e-6).safeguard_minus

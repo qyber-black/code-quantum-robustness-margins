@@ -97,8 +97,11 @@ cancellation and no magnitude threshold to tune; only the literal `X == 0`
 entries (the diagonal and exact degeneracies) are masked. See
 `core._dU_dmu_exact` / `qrobustness.dU_dmu_exact`.
 
-Sign convention: `zeta` is signed, as in `eq:sens`. Table I of the paper
-correlates the signed values.
+Sign convention: `zeta` is signed, as in `eq:sens`, and
+`margins_table_<FT>.csv` records the signed value. Table I of the paper
+correlates the *magnitudes* `|zeta_j|`: the margin `M_j = min(M_j-, M_j+)` is
+invariant under reversal of the parameter coordinate while `zeta_j` changes
+sign, so `|zeta_j|` is the orientation-invariant comparator (since 1.0.1).
 
 ---
 
@@ -120,8 +123,17 @@ L_Hhat = B_T * C_Hhat,        B_T = sqrt((1 - F_T^2)/N)
 
   | `kind` | `C_Hhat` | used for |
   |---|---|---|
-  | `drift` | `tau * Delta * ||Hhat||_F` | `H0` |
-  | `control` | `Delta * ||f||_1 * ||H_m||_F` | `H1`, `H2` (`f` = that control) |
+  | `drift` | `tau * Delta * ||Hbar||_F` | `H0` |
+  | `control` | `Delta * ||f||_1 * ||Hbar_m||_F` | `H1`, `H2` (`f` = that control) |
+
+  The structure is centred to its traceless part first,
+  `Hbar = H - (Tr H / N) I` (`traceless`), as in the paper: the trace part
+  contributes only a global phase to the propagator, which the trace-amplitude
+  fidelity ignores, so removing it leaves the certificate valid while shrinking
+  `||Hhat||_F`. It is therefore a tightening, never a relaxation. For traceless
+  structures -- including the case-study `H0`, `H1`, `H2` -- nothing changes;
+  for a non-traceless one (say a single-level detuning) the resulting margin is
+  strictly larger. `Hhat` must be square and Hermitian (since 1.0.2).
 
 Both are closed-form and exact given their inputs. Note that exactness of
 the *formula* is not the same as `L_Hhat` being a valid Lipschitz constant for
@@ -167,8 +179,17 @@ the one used for the paper).
   endpoint was verified -- those methods deliberately probe beyond the Lipschitz
   radius, so a dip below `F_T` in between is not excluded. These methods are
   intended for exploration rather than certification.
-* `converged_minus/plus` records only that *a stopping rule fired*. It does not
-  by itself certify accuracy -- see below.
+* `status_minus/plus` records *which* stopping rule fired: `'eta_band'`,
+  `'domain_truncated'` or `'iteration_limit'`. It is always populated, whether
+  or not `margin_tol` was requested. A `'domain_truncated'` result certifies
+  only that the margin is at least the distance to the edge of `omega` and must
+  not be read as a resolved margin.
+* `converged_minus/plus` records only *that* a stopping rule fired, and is
+  `True` for both of the first two cases, so it cannot distinguish them. It is
+  retained for backward compatibility and does not by itself certify accuracy
+  -- see below. `safeguard_minus/plus` records whether the bisection safeguard
+  fired, i.e. whether a floating-point evaluation reported `F < FT` after a step
+  that cannot overshoot in exact arithmetic.
 
 Note on terminology: *interval* denotes a constant-control time slice of length
 `Delta`, and is what the `segment_*` helpers operate on. The certificate class
@@ -181,7 +202,9 @@ lie on different axes.
 `0 <= F - F_T < eta`. The induced uncertainty in `mu` is roughly `eta/|zeta|`,
 which grows without bound as `zeta -> 0`, that is, for precisely the flat,
 highly robust controllers of interest. On the case study the
-default `eta` leaves about 5e-4 relative error in `M`, so
+default `eta` leaves about 5e-4 relative error in `M` (measured over the full
+paper ensemble of 61 controllers x 3 structures: median 4.4e-4, maximum
+5.4e-4), so
 `margins_table_0.999.csv` carries about 3-4 significant figures of margin, not
 the 6 it prints. The error is one-sided (`M` under-estimates).
 

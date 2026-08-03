@@ -17,8 +17,10 @@ from __future__ import annotations
 import argparse
 import csv
 from pathlib import Path
+from typing import Sequence
 
 import numpy as np
+from scipy.stats import kendalltau, spearmanr
 from qrobustness import (
     dH_structure,
     differential_sensitivity,
@@ -52,6 +54,76 @@ XLIMS = {
 }
 
 
+#: The three margin-versus-sensitivity comparisons of interest. The paper
+#: reports Table I descriptively (Pearson and Spearman); the rank tests below
+#: are a code-level cross-check that the descriptive reading holds up, with a
+#: Holm correction across the family so the multiplicity is fixed in advance.
+FOCAL_PAIRS = tuple((f"M_H{j}", f"zeta_H{j}") for j in range(3))
+
+
+def holm(pvals: Sequence[float]) -> list[float]:
+    """Holm-Bonferroni step-down adjusted p-values (monotone, capped at 1)."""
+    m = len(pvals)
+    order = sorted(range(m), key=lambda i: pvals[i])
+    adj = [0.0] * m
+    running = 0.0
+    for rank, idx in enumerate(order):
+        running = max(running, (m - rank) * pvals[idx])
+        adj[idx] = min(1.0, running)
+    return adj
+
+
+def focal_tests(rows: list[dict]) -> list[dict]:
+    """Rank correlations and two-sided tests for M_j vs |zeta_j|.
+
+    A cross-check, not a paper claim: Table I is reported descriptively.
+    Spearman's rho matches Table I's lower triangle; Kendall's tau_b is the
+    other standard rank statistic and is computed alongside it to confirm the
+    reading does not depend on which one is used. Each carries its own Holm
+    correction across the same family of three.
+    """
+    out = []
+    for j, (mkey, zkey) in enumerate(FOCAL_PAIRS):
+        M = np.array([r[mkey] for r in rows], dtype=float)
+        Z = np.abs(np.array([r[zkey] for r in rows], dtype=float))
+        rho = spearmanr(M, Z)
+        tau, tau_p = kendalltau(M, Z, variant="b")
+        out.append({
+            "j": j,
+            "rho": float(rho.statistic),
+            "p": float(rho.pvalue),
+            "tau_b": float(tau),
+            "tau_p": float(tau_p),
+        })
+    for rec, padj in zip(out, holm([r["p"] for r in out])):
+        rec["p_holm"] = padj
+    for rec, padj in zip(out, holm([r["tau_p"] for r in out])):
+        rec["tau_p_holm"] = padj
+    return out
+
+
+def write_focal_tests(rows: list[dict], path: Path) -> list[dict]:
+    """Emit the focal inference so the paper prose is generated, not typed."""
+    recs = focal_tests(rows)
+    # lineterminator="\n": every other CSV in the tree is LF, and csv.writer
+    # defaults to CRLF.
+    with path.open("w", newline="") as f:
+        w = csv.writer(f, lineterminator="\n")
+        w.writerow([
+            "comparison", "n",
+            "spearman_rho", "p_two_sided", "p_holm",
+            "kendall_tau_b", "kendall_p_two_sided", "kendall_p_holm",
+        ])
+        for r in recs:
+            w.writerow([
+                f"M_H{r['j']}_vs_abs_zeta_H{r['j']}",
+                len(rows),
+                f"{r['rho']:.6f}", f"{r['p']:.6e}", f"{r['p_holm']:.6e}",
+                f"{r['tau_b']:.6f}", f"{r['tau_p']:.6e}", f"{r['tau_p_holm']:.6e}",
+            ])
+    return recs
+
+
 def write_correlation_tex(rows: list[dict], path: Path) -> None:
     # M_j = min(M_j-, M_j+) is invariant under reversal of the parameter
     # coordinate, while zeta_j changes sign, so |zeta_j| is the
@@ -75,21 +147,18 @@ def write_correlation_tex(rows: list[dict], path: Path) -> None:
         else np.array([r[v] for r in rows], dtype=float)
         for v in vars_
     ])
-    # Pearson / Spearman
+    # Pearson (upper) / Spearman rho (lower): linear and monotone-rank
+    # association side by side, both descriptive.  Reporting the pair shows a
+    # result is not an artefact of linear scaling alone or of outliers.
     P = np.corrcoef(X, rowvar=False)
-
-    def spearman(a, b):
-        ra = np.argsort(np.argsort(a)).astype(float)
-        rb = np.argsort(np.argsort(b)).astype(float)
-        return np.corrcoef(ra, rb)[0, 1]
 
     S = np.eye(7)
     for i in range(7):
         for j in range(i):
-            S[i, j] = S[j, i] = spearman(X[:, i], X[:, j])
+            S[i, j] = S[j, i] = spearmanr(X[:, i], X[:, j]).statistic
 
     lines = [
-        "% Auto-generated: upper Pearson, lower Spearman; |zeta| (see above)",
+        "% Auto-generated: upper Pearson r, lower Spearman rho; |zeta| (see above)",
         r"\begin{tabular}{@{}lccccccc@{}}",
         r"\toprule",
         " & " + " & ".join(labels) + r" \\",
@@ -215,6 +284,13 @@ def main() -> None:
 
     tex_name = f"correlations_{ft:g}.tex"
     write_correlation_tex(rows, out / tex_name)
+    focal = write_focal_tests(rows, out / f"focal_tests_{ft:g}.csv")
+    for rec in focal:
+        print(
+            f"  focal M_{rec['j']} vs |zeta_{rec['j']}|: "
+            f"rho={rec['rho']:+.3f} p_holm={rec['p_holm']:.3g} "
+            f"| tau_b={rec['tau_b']:+.3f} p_holm={rec['tau_p_holm']:.3g}"
+        )
     print(f"Wrote {out / tex_name}")
 
     if args.no_plots:

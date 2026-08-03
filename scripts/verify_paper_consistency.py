@@ -14,9 +14,11 @@ Writes results/<results_id>/verify_paper.md
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 from qrobustness import (
@@ -37,6 +39,14 @@ from scipy.stats import pearsonr, spearmanr
 
 ROOT = Path(__file__).resolve().parents[1]
 CTRL = ROOT / "data/controllers/problem9_tf15_K32_quasi-newton"
+# The paper is a sibling repository, not a parent of this one. Candidates are
+# tried in order; the legacy nested layout (code repo inside the paper) is kept
+# last so old checkouts still verify. Override with --paper-source or
+# QRM_PAPER_SOURCE.
+PAPER_SOURCE_CANDIDATES = (
+    ROOT.parent / "paper-QRM" / "main.tex",
+    ROOT.parent / "main.tex",
+)
 FT = 0.999
 STRUCTURES = ("H0", "H1", "H2")
 NEED = (
@@ -125,6 +135,23 @@ def parse_corr_from_main(path: Path) -> np.ndarray:
     return C
 
 
+def resolve_paper_source(explicit: Optional[str] = None) -> Optional[Path]:
+    """Locate the paper's main.tex outside this repository.
+
+    Order: explicit ``--paper-source``, then ``QRM_PAPER_SOURCE``, then the
+    known sibling checkouts. Returns None when the paper is not checked out,
+    so the reproduction gate still runs on a code-only clone.
+    """
+    for cand in (explicit, os.environ.get("QRM_PAPER_SOURCE")):
+        if cand:
+            p = Path(cand).expanduser()
+            return p if p.is_file() else None
+    for p in PAPER_SOURCE_CANDIDATES:
+        if p.is_file():
+            return p
+    return None
+
+
 def load_margins_csv(path: Path) -> dict[str, np.ndarray]:
     import csv
 
@@ -142,6 +169,7 @@ def load_margins_csv(path: Path) -> dict[str, np.ndarray]:
 
 
 def corr_matrix(X: np.ndarray) -> np.ndarray:
+    """Upper triangle Pearson r, lower triangle Spearman rho (Table I)."""
     n = X.shape[1]
     C = np.eye(n)
     for i in range(n):
@@ -156,8 +184,15 @@ def corr_matrix(X: np.ndarray) -> np.ndarray:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--results-id", default="lipschitz-margin-python")
+    ap.add_argument(
+        "--paper-source",
+        default=None,
+        help="path to the paper's main.tex (default: sibling paper checkout, "
+        "or $QRM_PAPER_SOURCE)",
+    )
     args = ap.parse_args()
     results_id = args.results_id
+    paper_source = resolve_paper_source(args.paper_source)
     results_dir = ROOT / "results" / results_id
     results_dir.mkdir(parents=True, exist_ok=True)
     build = ROOT / "build"
@@ -169,6 +204,7 @@ def main() -> int:
     R.log(f"=== Paper consistency verification ({results_id}) ===")
     R.log(f"root={ROOT}")
     R.log(f"results={results_dir}")
+    R.log(f"paper={paper_source if paper_source is not None else '(not checked out)'}")
     R.log()
 
     problem = load_problem(CTRL / "problem9.mat")
@@ -314,11 +350,14 @@ def main() -> int:
     if not corr_tex.is_file():
         R.log(f"[7] MISSING {corr_tex}")
         R.check(False)
+    elif paper_source is None:
+        C_code = parse_corr_tex(corr_tex)
+        R.log("[7] SKIP (paper not checked out alongside this repository)")
     else:
         C_code = parse_corr_tex(corr_tex)
-        C_paper = parse_corr_from_main(ROOT.parent / "main.tex")
+        C_paper = parse_corr_from_main(paper_source)
         dC = float(np.max(np.abs(C_code - C_paper)))
-        R.log(f"[7] max |main.tex TableI - {results_id}/correlations| = {dC:.3e}")
+        R.log(f"[7] max |{paper_source.name} TableI - {results_id}/correlations| = {dC:.3e}")
         R.check(dC < 1e-12)
 
     if T is not None and C_code is not None:

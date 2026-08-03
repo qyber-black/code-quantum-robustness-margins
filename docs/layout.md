@@ -42,12 +42,31 @@ which LaTeX source `verify_paper_consistency` reads -- plus the `sync-paper-*`
 and `verify-paper-*` targets that use it. A second paper is a new block there,
 not a code change.
 
+The paper lives in a **sibling repository**, not inside this one:
+
+```
+QRM/
+  code-robustness-margins/          # this repository
+  paper-QRM/                        # the paper (PAPER_ROOT)
+```
+
+So publishing means copying results across a repository boundary. The target is
+named after the **paper**, not the language: `sync-paper-qrm` (aliased as
+`sync-paper`) pushes the Python PNGs into `$(PAPER_ROOT)/figures/`. Python is
+the reference implementation and the only published tree; MATLAB and Octave are
+peers, compared (`make compare-full`, `make compare-octave`) but never
+published. The path is a Make variable -- pass `PAPER_ROOT=` for a different
+checkout. `verify_paper_consistency` locates the paper the same way
+(`--paper-source`, `$QRM_PAPER_SOURCE`, then the sibling checkout) and skips its
+paper checks on a code-only clone rather than failing.
+
 ## Lipschitz-margin deliverables (each of `results/lipschitz-margin-matlab/`, `results/lipschitz-margin-python/`, `results/lipschitz-margin-octave/`)
 
 - `H0_all.png`, `H1_all.png`, `H2_all.png`
 - `robustness_margins_fid_err.png`
 - `robustness_margins_sensitivity.png`
-- `correlations_0.999.tex` (Table I source)
+- `correlations_0.999.tex` (Table I source; upper triangle Pearson \(r\), lower triangle Spearman \(\rho\), both descriptive)
+- `focal_tests_0.999.csv` (rank-statistic cross-check on \(M_j\) vs \(|\zeta_j|\): Spearman \(\rho\) and Kendall \(\tau_b\), each with Holm-corrected two-sided \(p\). Not a paper claim -- it confirms the descriptive reading of Table I does not depend on the rank statistic chosen.)
 - `margins_table_0.999.csv` (for `make compare-full` / `make compare-octave`)
 - `verify_paper.md` (consistency report for that tree)
 
@@ -65,9 +84,7 @@ make lipschitz-margin-python           # Python -> results/lipschitz-margin-pyth
 make lipschitz-margin-octave           # Octave -> results/lipschitz-margin-octave/ (optional peer)
 make compare-full           # compare Python vs MATLAB margin tables
 make compare-octave         # compare Python vs Octave margin tables
-make sync-paper-matlab      # copy MATLAB PNGs -> ../figures/
-make sync-paper-python      # copy Python PNGs -> ../figures/
-make sync-paper-octave      # copy Octave PNGs -> ../figures/ (same filenames)
+make sync-paper-qrm         # paper figures (Python results) -> $(PAPER_ROOT)/figures/
 make export-golden          # Python + MATLAB goldens -> data/reference/
 make verify-paper-matlab    # -> results/lipschitz-margin-matlab/verify_paper.md
 make verify-paper-python    # -> results/lipschitz-margin-python/verify_paper.md

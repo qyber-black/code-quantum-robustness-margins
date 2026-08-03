@@ -185,8 +185,48 @@ function run_lipschitz_margin_case_study(varargin)
     write_correlation_tex(T, fullfile(out_build, tex_name));
     copyfile(fullfile(out_build, tex_name), fullfile(out_publish, tex_name));
 
+    focal_name = sprintf('focal_tests_%g.csv', FT);
+    write_focal_tests(T, fullfile(out_build, focal_name));
+    copyfile(fullfile(out_build, focal_name), fullfile(out_publish, focal_name));
+
     fprintf('Wrote build artefacts to %s\n', out_build);
     fprintf('Published paper deliverables to %s\n', out_publish);
+end
+
+function write_focal_tests(T, path)
+    % Cross-check, not a paper claim: Table I is reported descriptively.
+    % Kendall's tau_b confirms the reading does not depend on the choice of
+    % rank statistic, with a Holm correction across the family of three so
+    % the multiplicity is fixed in advance.
+    n = numel(T.M_H0);
+    taus = zeros(1, 3);
+    pvals = zeros(1, 3);
+    for j = 0:2
+        M = T.(sprintf('M_H%d', j));
+        Z = abs(T.(sprintf('zeta_H%d', j)));
+        [taus(j+1), pvals(j+1)] = qrobustness.compat.kendall_tau_b(M, Z);
+    end
+    padj = holm(pvals);
+    fid = fopen(path, 'w');
+    fprintf(fid, 'comparison,n,kendall_tau_b,kendall_p_two_sided,kendall_p_holm\n');
+    for j = 0:2
+        fprintf(fid, 'M_H%d_vs_abs_zeta_H%d,%d,%.6f,%.6e,%.6e\n', ...
+            j, j, n, taus(j+1), pvals(j+1), padj(j+1));
+    end
+    fclose(fid);
+end
+
+function adj = holm(pvals)
+    % Holm-Bonferroni step-down adjusted p-values (monotone, capped at 1).
+    m = numel(pvals);
+    [~, order] = sort(pvals);
+    adj = zeros(1, m);
+    running = 0;
+    for rank = 1:m
+        idx = order(rank);
+        running = max(running, (m - rank + 1) * pvals(idx));
+        adj(idx) = min(1, running);
+    end
 end
 
 function write_correlations(T, path)
@@ -228,7 +268,7 @@ function write_correlation_tex(T, path)
     X(:, 5:7) = abs(X(:, 5:7));
     [P, S] = qrobustness.compat.correlation_matrices(X);
     fid = fopen(path, 'w');
-    fprintf(fid, '%% Auto-generated: upper Pearson, lower Spearman; |zeta| (see above)\n');
+    fprintf(fid, '%% Auto-generated: upper Pearson r, lower Spearman rho; |zeta| (see above)\n');
     fprintf(fid, '\\begin{tabular}{@{}lccccccc@{}}\n\\toprule\n');
     fprintf(fid, ' & %s \\\\\n\\midrule\n', strjoin(labels, ' & '));
     for i = 1:7

@@ -1,0 +1,4 @@
+comparison,n,kendall_tau_b,kendall_p_two_sided,kendall_p_holm
+M_H0_vs_abs_zeta_H0,61,-0.330055,1.708391e-04,5.125173e-04
+M_H1_vs_abs_zeta_H1,61,-0.180328,4.001812e-02,8.003623e-02
+M_H2_vs_abs_zeta_H2,61,-0.030601,7.274773e-01,7.274773e-01

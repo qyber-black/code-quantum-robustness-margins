@@ -7,37 +7,53 @@ ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 MATLAB ?= matlab
 OCTAVE ?= octave
 PYTHON := $(ROOT)/.venv/bin/python
-PIP := $(ROOT)/.venv/bin/pip
-PYTEST := $(ROOT)/.venv/bin/pytest
+# Console scripts in a venv hard-code the absolute path they were created at,
+# so they break when the checkout moves; module invocation does not.
+PIP := $(PYTHON) -m pip
+PYTEST := $(PYTHON) -m pytest
 VENV := $(ROOT)/.venv
 BUILD := $(ROOT)/build
 
 # Analyses are named after the method they implement, not after a paper.
-LIPSCHITZ_MATLAB := $(ROOT)/results/lipschitz-margin-matlab
+# Only the Python tree is published (see the sync-paper-* targets); the MATLAB
+# and Octave trees are peers, compared but not published.
 LIPSCHITZ_PYTHON := $(ROOT)/results/lipschitz-margin-python
-LIPSCHITZ_OCTAVE := $(ROOT)/results/lipschitz-margin-octave
 TBBOUND_MATLAB := $(ROOT)/results/time-bandwidth-bound-matlab
 TBBOUND_PYTHON := $(ROOT)/results/time-bandwidth-bound-python
 TBBOUND_OCTAVE := $(ROOT)/results/time-bandwidth-bound-octave
 SYNTH_MATLAB := $(ROOT)/results/synth-matlab
 SYNTH_PYTHON := $(ROOT)/results/synth-python
+SYNTH_OCTAVE := $(ROOT)/results/synth-octave
 
 # --- Paper-specific layer -----------------------------------------------
 # The only paper-aware part of the build: which analysis a given paper
 # publishes, where its figures go, and which LaTeX source the verifier reads.
 # A second paper is a new block here, not a code change.
+#
+# The paper lives in a SIBLING repository, not inside this one, so results are
+# copied across a repository boundary. Override PAPER_ROOT if your checkout
+# uses a different directory name.
 PAPER_ID := lcss2026
-PAPER_ROOT := $(ROOT)/..
+PAPER_ROOT ?= $(ROOT)/../paper-QRM
 PAPER_FIGURES := $(PAPER_ROOT)/figures
 PAPER_SOURCE := $(PAPER_ROOT)/main.tex
 PAPER_ANALYSIS := lipschitz-margin
 # ------------------------------------------------------------------------
 
+# Fail with a usable message instead of a stray `cp` error when a paper repo
+# is not checked out next to this one.
+define require_paper
+	@test -d "$(1)" || { \
+	  echo "ERROR: paper repository not found at $(1)"; \
+	  echo "       check it out next to this repository, or pass $(2)=/path/to/paper"; \
+	  exit 1; }
+endef
+
 .PHONY: help venv test test-fast test-matlab test-python test-consistency \
 	export-golden lipschitz-margin-matlab lipschitz-margin-python lipschitz-margin-octave compare-full compare-octave \
-	sync-paper-matlab sync-paper-python sync-paper-octave \
+	sync-paper sync-paper-qrm \
 	verify-paper-matlab verify-paper-python verify-paper-octave verify-paper check-margins \
-	synth-matlab synth-python synth-smoke \
+	synth-matlab synth-python synth-octave synth-smoke \
 	time-bandwidth-bound time-bandwidth-bound-matlab time-bandwidth-bound-python \
 	time-bandwidth-bound-octave compare-time-bandwidth-bound \
 	analyse-synth-matlab analyse-synth-python \
@@ -56,9 +72,9 @@ help:
 	@echo "  make lipschitz-margin-octave         Full case study (Octave) -> results/lipschitz-margin-octave/"
 	@echo "  make compare-full         Compare Python vs MATLAB margin tables"
 	@echo "  make compare-octave       Compare Python vs Octave margin tables"
-	@echo "  make sync-paper-matlab    Copy results/lipschitz-margin-matlab/*.png -> ../figures/"
-	@echo "  make sync-paper-python    Copy results/lipschitz-margin-python/*.png -> ../figures/"
-	@echo "  make sync-paper-octave    Copy results/lipschitz-margin-octave/*.png -> ../figures/"
+	@echo "  make sync-paper-qrm       Publish paper-QRM figures (Python results) -> \$$(PAPER_ROOT)/figures/"
+	@echo "  make sync-paper           Alias for sync-paper-qrm"
+	@echo "                            (the paper is a sibling repo: PAPER_ROOT=$(PAPER_ROOT))"
 	@echo "  make verify-paper-matlab  Checks vs results/lipschitz-margin-matlab/ -> verify_paper.md there"
 	@echo "  make verify-paper-python  Checks vs results/lipschitz-margin-python/ -> verify_paper.md there"
 	@echo "  make verify-paper-octave  Checks vs results/lipschitz-margin-octave/ -> verify_paper.md there"
@@ -66,6 +82,7 @@ help:
 	@echo "  make check-margins        lipschitz-margin-python/matlab + compare-full + verify-paper (release gate)"
 	@echo "  make synth-matlab         Optimize 100 controllers -> results/synth-matlab/"
 	@echo "  make synth-python         Optimize 100 controllers -> results/synth-python/"
+	@echo "  make synth-octave         Optimize 100 controllers -> results/synth-octave/ (core Octave only)"
 	@echo "  make synth-smoke          2-start synthesis smoke (Python + MATLAB)"
 	@echo "  make analyse-synth-matlab Margins for synth-matlab -> results/synth-matlab-margins/"
 	@echo "  make analyse-synth-python Margins for synth-python -> results/synth-python-margins/"
@@ -124,41 +141,30 @@ compare-full: venv
 compare-octave: venv
 	$(PYTHON) $(ROOT)/scripts/compare_matlab_octave_full.py
 
-sync-paper-matlab:
-	mkdir -p $(PAPER_FIGURES)
-	cp -f $(LIPSCHITZ_MATLAB)/H0_all.png $(PAPER_FIGURES)/
-	cp -f $(LIPSCHITZ_MATLAB)/H1_all.png $(PAPER_FIGURES)/
-	cp -f $(LIPSCHITZ_MATLAB)/H2_all.png $(PAPER_FIGURES)/
-	cp -f $(LIPSCHITZ_MATLAB)/robustness_margins_fid_err.png $(PAPER_FIGURES)/
-	cp -f $(LIPSCHITZ_MATLAB)/robustness_margins_sensitivity.png $(PAPER_FIGURES)/
-	@echo "Synced PNGs from $(LIPSCHITZ_MATLAB) into $(PAPER_FIGURES)"
-
-sync-paper-python:
+# Publishing is per PAPER, not per language: Python is the reference
+# implementation and produces the manuscript figures (MATLAB and Octave are
+# peers held to it by compare-full / compare-octave, not publication paths).
+sync-paper-qrm:
+	$(call require_paper,$(PAPER_ROOT),PAPER_ROOT)
 	mkdir -p $(PAPER_FIGURES)
 	cp -f $(LIPSCHITZ_PYTHON)/H0_all.png $(PAPER_FIGURES)/
 	cp -f $(LIPSCHITZ_PYTHON)/H1_all.png $(PAPER_FIGURES)/
 	cp -f $(LIPSCHITZ_PYTHON)/H2_all.png $(PAPER_FIGURES)/
 	cp -f $(LIPSCHITZ_PYTHON)/robustness_margins_fid_err.png $(PAPER_FIGURES)/
 	cp -f $(LIPSCHITZ_PYTHON)/robustness_margins_sensitivity.png $(PAPER_FIGURES)/
-	@echo "Synced PNGs from $(LIPSCHITZ_PYTHON) into $(PAPER_FIGURES)"
+	@echo "Published paper-QRM figures from $(LIPSCHITZ_PYTHON) into $(PAPER_FIGURES)"
 
-sync-paper-octave:
-	mkdir -p $(PAPER_FIGURES)
-	cp -f $(LIPSCHITZ_OCTAVE)/H0_all.png $(PAPER_FIGURES)/
-	cp -f $(LIPSCHITZ_OCTAVE)/H1_all.png $(PAPER_FIGURES)/
-	cp -f $(LIPSCHITZ_OCTAVE)/H2_all.png $(PAPER_FIGURES)/
-	cp -f $(LIPSCHITZ_OCTAVE)/robustness_margins_fid_err.png $(PAPER_FIGURES)/
-	cp -f $(LIPSCHITZ_OCTAVE)/robustness_margins_sensitivity.png $(PAPER_FIGURES)/
-	@echo "Synced PNGs from $(LIPSCHITZ_OCTAVE) into $(PAPER_FIGURES)"
+sync-paper: sync-paper-qrm
 
 verify-paper-matlab:
-	$(MATLAB) -batch "addpath('$(ROOT)/matlab'); addpath('$(ROOT)/scripts'); verify_paper_consistency('results_id','lipschitz-margin-matlab')"
+	$(MATLAB) -batch "addpath('$(ROOT)/matlab'); addpath('$(ROOT)/scripts'); verify_paper_consistency('results_id','lipschitz-margin-matlab','paper_source','$(PAPER_SOURCE)')"
 
 verify-paper-python: venv
-	PYTHONPATH=$(ROOT)/python/src $(PYTHON) $(ROOT)/scripts/verify_paper_consistency.py --results-id lipschitz-margin-python
+	PYTHONPATH=$(ROOT)/python/src $(PYTHON) $(ROOT)/scripts/verify_paper_consistency.py \
+		--results-id lipschitz-margin-python --paper-source $(PAPER_SOURCE)
 
 verify-paper-octave:
-	$(OCTAVE) --no-gui --eval "addpath('$(ROOT)/matlab'); addpath('$(ROOT)/scripts'); verify_paper_consistency('results_id','lipschitz-margin-octave');"
+	$(OCTAVE) --no-gui --eval "addpath('$(ROOT)/matlab'); addpath('$(ROOT)/scripts'); verify_paper_consistency('results_id','lipschitz-margin-octave','paper_source','$(PAPER_SOURCE)');"
 
 verify-paper: verify-paper-python verify-paper-matlab
 
@@ -174,6 +180,11 @@ synth-matlab:
 
 synth-python: venv
 	PYTHONPATH=$(ROOT)/python/src $(PYTHON) $(ROOT)/scripts/run_synthesize_controllers.py --out $(SYNTH_PYTHON)
+
+# Uses core Octave only: fminunc and optimset ship with Octave, so no Forge
+# package is needed (optimoptions is MATLAB-only and is not used there).
+synth-octave:
+	$(OCTAVE) --no-gui --eval "addpath('$(ROOT)/matlab'); addpath('$(ROOT)/matlab/examples'); run_synthesize_controllers('out','$(SYNTH_OCTAVE)');"
 
 synth-smoke: venv
 	$(MATLAB) -batch "addpath('$(ROOT)/matlab'); addpath('$(ROOT)/matlab/examples'); run_synthesize_controllers('n_opt',2,'maxiter',30,'out','$(BUILD)/synth-smoke-matlab')"

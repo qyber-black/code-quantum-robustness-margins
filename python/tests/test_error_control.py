@@ -378,3 +378,48 @@ def test_margin_tol_must_be_positive(case):
     fn, L = _margin_inputs(problem, controllers[0], "H0")
     with pytest.raises(ValueError, match="margin_tol must be positive"):
         iterative_margin(fn, L, FT, margin_tol=0.0)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("structure", STRUCTURES)
+def test_eta_gap_bound_holds_over_the_full_ensemble(case, structure):
+    """Pin the accuracy figure the paper and docs quote.
+
+    The paper states that every reported margin lies within 5.5e-4 relative of
+    the first threshold boundary. That is a claim about the *whole* ensemble,
+    not one controller, so check it on all 61 -- otherwise the quoted bound is
+    only ever spot-checked. Marked slow: this is 61 refined searches per
+    structure.
+    """
+    problem, controllers = case
+    gaps = []
+    for c in controllers:
+        fn, L = _margin_inputs(problem, c, structure)
+        coarse = iterative_margin(fn, L, FT)
+        fine = iterative_margin(fn, L, FT, margin_tol=1e-10)
+        # Certified: true boundary is at or below M_upper, reported value is M.
+        gaps.append((fine.M_upper - coarse.M) / coarse.M)
+    gaps = np.array(gaps)
+    assert gaps.min() > 0.0, "the refined bracket must lie beyond the reported margin"
+    assert gaps.max() < 5.5e-4, f"quoted bound violated: max gap {gaps.max():.3e}"
+
+
+@pytest.mark.slow
+def test_refinement_does_not_move_the_quoted_spreads(case):
+    """The paper quotes margin spreads of 1.6 (H0) and 2.7-2.9 (H1, H2).
+
+    Those ratios must survive the eta-to-boundary refinement, or the reported
+    figures would be an artefact of where the search happened to stop.
+    """
+    problem, controllers = case
+    for structure, quoted in (("H0", 1.6), ("H1", 2.7), ("H2", 2.9)):
+        coarse, fine = [], []
+        for c in controllers:
+            fn, L = _margin_inputs(problem, c, structure)
+            coarse.append(iterative_margin(fn, L, FT).M)
+            fine.append(iterative_margin(fn, L, FT, margin_tol=1e-10).M)
+        r_coarse = max(coarse) / min(coarse)
+        r_fine = max(fine) / min(fine)
+        assert abs(r_fine - r_coarse) / r_coarse < 1e-3
+        assert round(r_coarse, 1) == quoted
+        assert round(r_fine, 1) == quoted

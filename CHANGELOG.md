@@ -14,6 +14,76 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-08-03
+
+Patch release aligning the toolbox with the paper's structure constant and
+making the Algorithm 1 stopping rule observable, plus the rank statistic used
+for Table I. The case-study margins are bit-for-bit unchanged.
+
+### Changed
+
+- `structure_constant` (both engines) now centres the perturbation structure to
+  its traceless part, \(\overline{\hat{H}}_\mu = \hat{H}_\mu - N^{-1}(\operatorname{Tr}
+  \hat{H}_\mu) I\), before taking the Frobenius norm, as the paper's
+  \(C_{\hat{H}}\) specifies. The trace part contributes only a global phase to
+  the propagator, which the trace-amplitude fidelity ignores, so this is a
+  *tightening*: previously reported margins remain valid but were unnecessarily
+  conservative for non-traceless user structures (e.g. a single-level detuning).
+  The case-study structures \(H_0, H_1, H_2\) are traceless, so every published
+  number is unchanged. The structure is now also validated as square and
+  Hermitian. New `qrobustness.traceless` / `qrobustness.traceless` (MATLAB).
+- `plot_margins_vs_sensitivity` (both engines): legends moved to the top left,
+  where they no longer sit over the data.
+
+### Added
+
+- `MarginResult.status_minus` / `status_plus` (MATLAB: `result.status_*`) report
+  *which* Algorithm 1 stopping rule fired -- `eta_band`, `domain_truncated` or
+  `iteration_limit` -- and are populated on the default path, independently of
+  `margin_tol`. A domain-truncated result certifies only that the margin is at
+  least the distance to the edge of `omega` and must not be read as a resolved
+  margin; the pre-existing `converged_*` flag cannot distinguish the two and is
+  retained for backward compatibility. `safeguard_*` records whether the
+  bisection safeguard fired. `reason_*` keeps its distinct meaning: the outcome
+  of the optional `margin_tol` bracket refinement.
+- `focal_tests_<FT>.csv` and `qrobustness.compat.kendall_tau_b` (MATLAB /
+  Octave): a rank-statistic cross-check for the three margin-versus-sensitivity
+  comparisons \(M_j\) versus \(|\zeta_j|\). Table I stays descriptive --
+  Pearson \(r\) and Spearman \(\rho\), unchanged -- and the paper makes no
+  inferential claim; the CSV records Spearman \(\rho\) and Kendall
+  \(\tau_b\) with Holm-corrected two-sided \(p\) for each, confirming that
+  the descriptive reading (appreciable for \(H_0\), weak for \(H_1\),
+  negligible for \(H_2\)) does not depend on the choice of rank statistic.
+  Both engines share a closed-form asymptotic \(\tau_b\) p-value, so MATLAB,
+  Octave and the SciPy reference agree exactly and the Python and MATLAB CSVs
+  are byte-identical.
+
+### Fixed
+
+- `iterative_margin` (both engines): the step counter now starts at 1 rather
+  than 0, so `k_max` is exactly the number of evaluated trial points per
+  direction instead of one fewer than the number permitted. The paper's
+  Algorithm 1 and both engines now share this convention. Only reachable when
+  the limit actually binds, which no case-study run does (the default is
+  10 000 and every direction terminates in the \(\eta\) band), so no reported
+  value changes.
+- The paper now lives in a sibling repository rather than containing this one,
+  so `PAPER_ROOT` no longer points at the parent directory. The publishing
+  target is named after the paper (`sync-paper-qrm`, aliased `sync-paper`)
+  rather than the engine, and publishes the Python tree. `verify_paper_consistency`
+  resolves the paper via `--paper-source` / `$QRM_PAPER_SOURCE` / the sibling
+  checkout and skips its paper checks on a code-only clone instead of failing.
+- `pip` and `pytest` are invoked as modules, so a moved checkout no longer
+  breaks the venv console scripts.
+- `optimize_controller` now runs under Octave. It called `optimoptions`, which
+  is MATLAB-only, so GRAPE synthesis and `test_optimize_controller` failed on
+  the Octave peer with a misleading "install the optim package" message. Octave
+  ships `fminunc` and `optimset` in core, so the option struct is now built with
+  `optimset` there -- same quasi-Newton objective-and-gradient path, no Octave
+  Forge package and no Optimization Toolbox emulation required. The `output`
+  struct is also read defensively, since Octave supplies no `message` field.
+  The full Octave suite (15/15) now passes.
+
 ## [1.0.1] - 2026-08-02
 
 Patch release correcting the optional `margin_tol` refinement, the target-gate
