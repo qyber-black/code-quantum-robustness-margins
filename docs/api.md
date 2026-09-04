@@ -19,7 +19,7 @@ Both languages expose the same conceptual API. Python is the reference implement
 |--------|------|---------|
 | \(\mathcal{F}_T\) | `fidelity_threshold` | `0.999` (case study) |
 | \(\eta\) | `eta` | `1e-6` |
-| \(K_{\max}\) | `k_max` | `10000` |
+| \(K_{\max}\) | `k_max` | `10000` (maximum evaluated steps per direction; `k` starts at 1 and the guard is `k >= k_max`, matching Algorithm 1) |
 | \(\Omega_\mu\) | `omega` | `[-Inf, Inf]` unless set |
 | Consistency tol | `rtol` / `atol` | `1e-8` / `1e-10` (tests) |
 
@@ -45,6 +45,7 @@ Both languages expose the same conceptual API. Python is the reference implement
 
 - `kind`: `"drift"` or `"control"`.
 - Returns \(C_{\hat{H}}\).
+- The structure is centred to its traceless part \(\overline{\hat{H}}_\mu = \hat{H}_\mu - N^{-1}(\operatorname{Tr}\hat{H}_\mu) I\) first (`traceless(Hhat)`), as in the paper: the trace part only rephases the propagator, which the trace-amplitude fidelity ignores, so removing it leaves the certificate valid while shrinking \(\|\hat{H}_\mu\|_F\). For traceless structures -- including the case-study \(H_0, H_1, H_2\) -- nothing changes; for a non-traceless one (e.g. a single-level detuning) the resulting margin is strictly larger. `Hhat` must be square and Hermitian.
 
 ### `differential_sensitivity(H_list, dH_list, dt, Uf, n_quad=32, method="exact")`
 
@@ -82,7 +83,7 @@ Lipschitz + bisection is the recommended certified path; Brent/TOMS748 are optio
 - `zeta_fn(mu)`: required for `newton_probe`.
 - `return_diagnostics=True`: also sets `n_evals`, `n_steps`, `method` on the result.
 - `margin_tol`: if set, certify the margin to this relative precision. The safe/unsafe bracket is refined until `(M_upper - M)/M <= margin_tol`, and `M` itself is tightened. See below.
-- **Returns:** `M_minus`, `M_plus`, `M = min(M_minus, M_plus)`, `converged_minus`, `converged_plus`, `mu_minus`, `mu_plus`, `certificate`; and with `margin_tol`: `M_upper_minus`, `M_upper_plus`, `M_upper`, `margin_uncertainty`, `reason_minus`, `reason_plus`.
+- **Returns:** `M_minus`, `M_plus`, `M = min(M_minus, M_plus)`, `converged_minus`, `converged_plus`, `mu_minus`, `mu_plus`, `status_minus`, `status_plus`, `safeguard_minus`, `safeguard_plus`, `certificate`; and with `margin_tol`: `M_upper_minus`, `M_upper_plus`, `M_upper`, `margin_uncertainty`, `reason_minus`, `reason_plus`.
 
 #### Accuracy of the margin
 
@@ -90,7 +91,9 @@ Lipschitz + bisection is the recommended certified path; Brent/TOMS748 are optio
 
 `eta` is a fidelity band, not a margin band. The induced uncertainty in `mu` is `~eta/|zeta|`, unbounded as `zeta -> 0` (i.e. for the flattest, most robust controllers). On the case study the default `eta=1e-6` leaves about 5e-4 relative error in `M`, so `margins_table_0.999.csv` carries ~3-4 significant figures of margin despite printing 6. Pass `margin_tol` to fix this: `margin_tol=1e-10` reaches 1e-10 in about 90 extra fidelity evaluations. Paper drivers do not pass it, so published tables reproduce exactly.
 
-`certificate` is `'segment'` when every point between `mu0` and the endpoint is covered by a safe-radius certificate (`algorithm1`, `lipschitz_*`), and `'endpoint'` when only the endpoint is verified (`doubling`, `newton_probe` probe beyond the Lipschitz radius). `reason_*` is `'bracketed'` (width at tolerance), `'partial'` (rigorous bracket, width above tolerance -- safe-radius continuation stalled), `'boundary'` (domain edge reached while still safe -- the margin is a domain truncation, `M_upper = inf`), or `'exhausted'` (no unsafe point found, `M_upper = inf`). The bracket targets the *first* boundary of the nominal safe component: pointwise-safe samples are promoted to the certified end only when connected by their safe radius `(F - F_T)/L` or by safe-radius continuation, so safe islands beyond the first crossing cannot inflate `M`.
+`certificate` is `'segment'` when every point between `mu0` and the endpoint is covered by a safe-radius certificate (`algorithm1`, `lipschitz_*`), and `'endpoint'` when only the endpoint is verified (`doubling`, `newton_probe` probe beyond the Lipschitz radius). `reason_*` is `'bracketed'` (width at tolerance), `'partial'` (rigorous bracket, width above tolerance -- safe-radius continuation stalled), `'boundary'` (domain edge reached while still safe -- the margin is a domain truncation, `M_upper = inf`), or `'exhausted'` (no unsafe point found, `M_upper = inf`). The bracket targets the *first* boundary of the nominal safe component: pointwise-safe samples are promoted to the certified end only when connected by their safe radius `(F - F_T)/L` or by safe-radius continuation, so safe islands beyond the first crossing cannot inflate `M`. The radius rule is pluggable via `safe_radius_fn` (default `(F - F_T)/L`); `multiparam.directional_margin(..., angular_gauge=...)` supplies the dominating Choi-angular radius.
+
+`status_*` reports which Algorithm 1 stopping rule fired in that direction -- `'eta_band'`, `'domain_truncated'` or `'iteration_limit'` -- and is always populated, independently of `margin_tol`. A `'domain_truncated'` result certifies only that the margin is at least the distance to the edge of `omega`, so it must not be read as a resolved margin; `converged_*` is `True` in both cases and is kept only for backward compatibility. `safeguard_*` is `True` if the bisection safeguard fired, i.e. a floating-point evaluation reported `F < FT` after a step that cannot overshoot in exact arithmetic. Note `reason_*` is a *different* quantity: the outcome of the optional `margin_tol` bracket refinement.
 
 `fidelity_fn(mu)` must return \(\mathcal{F}_\mu\). See [margin-solvers-notes.md](margin-solvers-notes.md) for guarantees and the bench harness.
 
@@ -112,15 +115,19 @@ Mirrors MATLAB `+qrobustness` helpers. Decade axes use \(\log_{10}\) of values o
 
 Install: `pip install 'qrobustness[plot]'`. Full paper runs:
 
-- `make lipschitz-margin-matlab` -> `results/lipschitz-margin-matlab/`
-- `make lipschitz-margin-python` -> `results/lipschitz-margin-python/`
-- `make lipschitz-margin-octave` -> `results/lipschitz-margin-octave/` (optional peer; not in `check-margins`)
-- `make verify-paper-matlab` / `make verify-paper-python` / `make verify-paper-octave` -> `verify_paper.md` in each tree
-- `make compare-octave` -> MATLAB vs Octave margin tables
-- `make check-margins` -> `lipschitz-margin-matlab` + `lipschitz-margin-python` + `compare-full` + `verify-paper` (release gate)
-- `make synth-matlab` / `make synth-python` -> `results/synth-*/` (does not touch paper controllers)
-- `make analyse-synth-matlab` / `make analyse-synth-python` -> margin trees for synth sets
-- `make sync-paper-matlab` / `make sync-paper-python` / `make sync-paper-octave` -> `../figures/`
+`ENGINE` selects the implementation for every target (`python`, the
+reference, by default; `matlab`; `octave`). `PAPER` is `QRM` or `xQRM`.
+
+- `make paper-PAPER` -> every experiment of one paper; `make paper-PAPER-EXPNAME` -> one experiment
+- `make reproduce-PAPER` -> recompute into a scratch tree and compare (does the tree come back the same?)
+- `make check-PAPER` -> falsifiable property checks (are the numbers right?); `check-xQRM-theorems`, `check-xQRM-synth`, `check-xQRM-paper`, `check-QRM-consistency`
+- `make sync-PAPER` -> copy generated artefacts into the sibling paper repository (see `docs/layout.md`)
+- `make test` -> tests for `ENGINE`, synthesis smoke, then parity against Python; `make test-parity-all` covers both peers
+- `make test-synth` -> synthesis on unseen controllers; never a paper input
+
+`make help` lists the full set. Driver flags are defined once in
+`scripts/_invocations.py` and shared by the Makefile and
+`scripts/check_reproducible.py`.
 
 ### Case-study helpers
 
@@ -143,7 +150,7 @@ Ensemble drivers write `results/synth-*/{controllers.csv,meta.json,problem9.mat}
 
 ### Kosut et al. time-bandwidth bound (`qrobustness.kosut`)
 
-Supplementary and experimental; outside the reproduction gate `make check-margins`.
+Supplementary and experimental; outside the reproduction gate `make reproduce-QRM-margins`.
 See [time-bandwidth-bound.md](time-bandwidth-bound.md) for the specialisation,
 the caveats and the results.
 
@@ -189,5 +196,32 @@ MATLAB lives in `matlab/+qrobustness/+kosut/`, Python in
 `matlab/examples/run_time_bandwidth_bound_comparison.m`; both write the CSV
 columns fixed by `CSV_HEADERS` (Python) and
 `qrobustness.compat.kosut_csv_headers` (MATLAB). Compare with
-`scripts/compare_time_bandwidth_bound.py` (`make compare-time-bandwidth-bound`).
+`scripts/compare_time_bandwidth_bound.py`, run by `make test-parity` for a
+non-Python `ENGINE`.
+
+## Paper-2 extensions (branch `dev-xQRM`; unreleased)
+
+Python is the reference implementation. MATLAB/Octave peers exist for
+`lengthspace`, `multiparam`, `timevarying`, `lindblad` and `berberich`
+(struct-based rather than `classdef`, so they run under both engines).
+`verify` and `synthesis` remain Python-only: the first is a test layer,
+the second an optimiser-dependent workflow. The open-system layer is no
+longer blocked on an SDP solver -- the diamond norm is computed from a
+feasible point of the Watrous program and refined, needing no CVX or
+SDPT3. See `docs/verification.md` for the parity table and the accuracy
+this achieves.
+
+- `multiparam`: `structure_constants`, `safe_polytope`,
+  `directional_margin` (reuses `iterative_margin`; `margin_tol` passes
+  through), `SafeUnion`, direction designs.
+- `timevarying`: `uniform_margin`, `tv_fidelity_and_gradient`,
+  `adversarial_upper_bound` -> bracket `[r_0, m_ub]` on `M_tv`.
+- `lindblad`: builders (`hamiltonian_superop`, `dissipator`, `generator`),
+  `channel`, `process_fidelity`, `average_gate_fidelity`,
+  `frechet_derivative` (block method), `diamond_norm` (Watrous SDP;
+  requires `qrobustness[open]`, i.e. cvxpy), `open_structure_constants`,
+  `open_margin`. Column-stacking convention throughout.
+
+See `docs/theory.md` section 7 for accuracy classification and
+the `paper-xQRM` repository (sibling checkout) for the mathematics.
 

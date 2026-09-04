@@ -2,9 +2,9 @@
 
 > SPDX-FileCopyrightText: (C) 2026 F. C. Langbein <frank@langbein.org>\
 > SPDX-FileCopyrightText: (C) 2026 S. P. O'Neil <sean.oneil@westpoint.edu>\
-> SPDX-FileCopyrightText: (C) 2026 S. Schirmer <s.m.shermer@gmail.com>
+> SPDX-FileCopyrightText: (C) 2026 S. Schirmer <s.m.shermer@gmail.com>\
 > SPDX-FileCopyrightText: (C) 2026 C. A. Weidner <c.weidner@bristol.ac.uk>\
-> SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>\
+> SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 >
 > SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -23,15 +23,18 @@ Toolbox for **analysing** (and optionally **synthesising**) piecewise-constant c
 - Differential sensitivity \(\zeta\), with the segment derivative in exact closed form (Gauss-Legendre quadrature selectable via `method='quadrature'`)
 - Iterative one-dimensional robustness margin (Algorithm 1 default; selectable solvers)
 - Dual MATLAB and Python APIs with matching paper-style plots
-- Paper case-study reproduction via `make lipschitz-margin-matlab` / `make lipschitz-margin-python` / `make lipschitz-margin-octave`
+- Paper case-study reproduction via `make paper-QRM-margins` in any engine
 - Supplementary comparison with the Kosut et al. fundamental bound (arXiv:2507.01215) -- experimental, see below
-- Fidelity-maximising controller synthesis (GRAPE + quasi-Newton) via `make synth-matlab` / `make synth-python`
+- Fidelity-maximising controller synthesis (GRAPE + quasi-Newton), smoke-tested
+  by `make test-synth`; run `scripts/run_synthesize_controllers.py` (or its
+  MATLAB peer) directly to generate a full ensemble. Synthesis is a separate
+  experiment: the frozen ensemble remains the sole paper input.
 
 ## Requirements
 
 - **Python** 3.10+ with NumPy, SciPy, pytest; matplotlib for plots (`qrobustness[plot]`). Reference implementation, and the source of the manuscript figures.
-- **MATLAB** R2020b+ (peer; required by `make check-margins`)
-- **Octave** 7+ (optional peer: `make lipschitz-margin-octave`, `make time-bandwidth-bound-octave`)
+- **MATLAB** R2020b+ (peer; required by `make test-parity ENGINE=matlab`). GRAPE synthesis (`optimize_controller`, `make test-synth ENGINE=matlab`) additionally needs the Optimization Toolbox for `fminunc`.
+- **Octave** 7+ (peer: any target with `ENGINE=octave`). No Octave Forge packages are required: `fminunc` and `optimset` ship in core Octave, and the rank statistics are computed in-package.
 - Git LFS for large `.mat` / `.png` artefacts
 
 ## Quick start
@@ -52,7 +55,7 @@ help qrobustness.iterative_margin
 ```
 
 ```bash
-make test-matlab
+make test ENGINE=matlab
 ```
 
 ## Reproduce paper results
@@ -60,30 +63,26 @@ make test-matlab
 Inputs: [`data/controllers/problem9_tf15_K32_quasi-newton/`](data/controllers/problem9_tf15_K32_quasi-newton/)
 
 ```bash
-make lipschitz-margin-matlab           # -> results/lipschitz-margin-matlab/
-make lipschitz-margin-python           # -> results/lipschitz-margin-python/
-make lipschitz-margin-octave           # -> results/lipschitz-margin-octave/ (optional peer)
-make compare-full           # Python vs MATLAB margin tables
-make compare-octave         # MATLAB vs Octave margin tables
-make sync-paper-matlab      # publish MATLAB PNGs into ../figures/
-make sync-paper-python      # publish Python PNGs into ../figures/
-make sync-paper-octave      # publish Octave PNGs into ../figures/
-make export-golden          # refresh Python + MATLAB goldens
-make verify-paper-matlab    # -> results/lipschitz-margin-matlab/verify_paper.md
-make verify-paper-python    # -> results/lipschitz-margin-python/verify_paper.md
-make verify-paper-octave    # -> results/lipschitz-margin-octave/verify_paper.md
-make verify-paper           # Python + MATLAB verifiers
-make check-margins            # lipschitz-margin-matlab/python + compare-full + verify-paper (release gate)
-make synth-matlab           # new controllers -> results/synth-matlab/
-make synth-python           # new controllers -> results/synth-python/
-make analyse-synth-matlab   # margins for a synth set
-make analyse-synth-python
-make test
-make clean                  # remove build/
-make distclean              # remove build/ and venv
+make test                 # every test for ENGINE, synthesis smoke, then parity
+                          # against Python (a no-op when ENGINE=python)
+make paper-PAPER          # produce one paper's results (PAPER = QRM | xQRM)
+make reproduce-PAPER      # recompute separately and compare against the tree
+make check-PAPER          # falsifiable property checks on that paper's results
+make sync-PAPER           # copy the generated artefacts into the paper repo
 ```
 
-Python is the reference implementation and produces the manuscript figures. MATLAB and Octave are peers, held to it by `make compare-full`, `make compare-octave` and the golden fixtures in `data/reference/`. The release gate is `make check-margins` (Python and MATLAB); Octave is optional and not required by it.
+`ENGINE` selects the implementation for every target and defaults to
+`python`, the reference: `make paper-xQRM-multiparam ENGINE=octave`. A
+target with no implementation for the chosen engine fails rather than
+falling back to Python, so a pass always means the work actually ran.
+Add `-EXPNAME` to `paper-` or `check-` for a single experiment, and
+`make help` lists the names.
+
+The paper repositories must be sibling directories; pass `PAPER_ROOT` or
+`XPAPER_ROOT` to override their locations. Python is the reference
+implementation. MATLAB and Octave are peers, held to it by cross-engine
+comparisons and the golden fixtures in `data/reference/`. `make help` lists
+the lower-level analysis, comparison, synthesis, and cleanup targets.
 
 ## Comparison with the Kosut-Lidar-Rabitz time-bandwidth bound
 
@@ -91,7 +90,7 @@ A supplementary layer implements Theorem 1 of
 [arXiv:2507.01215](https://arxiv.org/abs/2507.01215), specialised to the
 closed-system scalar structured perturbation model used here, so that the
 margin it implies can be placed alongside the certified Lipschitz margin. It is
-experimental, sits outside the reproduction gate `make check-margins`, and no
+experimental, sits outside the reproduction gate `make reproduce-QRM`, and no
 claim in the paper depends on it. The structured margin is larger by a median
 factor of 2.1 to 3.0 across the three perturbation structures. The implied
 margin is the constant structured-parameter specialisation, with the nominal
@@ -99,11 +98,11 @@ error absorbed through the angular relation (see the caveats).
 
 See [docs/time-bandwidth-bound.md](docs/time-bandwidth-bound.md) for the
 specialisation, the caveats, the numerical accuracy of the interaction-picture
-quantities, the full results and the `make time-bandwidth-bound*` targets.
+quantities, the full results and the `make paper-QRM-time-bandwidth*` targets.
 
 ## CI
 
-GitLab CI ([`.gitlab-ci.yml`](.gitlab-ci.yml)) on push/MR runs **Python** `pytest` and an sdist/wheel build (`python -m build`). It pulls Git LFS so case-study `.mat` fixtures are available. MATLAB tests and the full paper gate (`make check-margins`) stay local. Pipelines: <https://qyber.black/lw1660/code-robustness-margins/-/pipelines>.
+GitLab CI ([`.gitlab-ci.yml`](.gitlab-ci.yml)) on push/MR runs **Python** `pytest` and an sdist/wheel build (`python -m build`). It pulls Git LFS so case-study `.mat` fixtures are available. MATLAB tests and the full paper gate (`make check`) stay local. Pipelines: <https://qyber.black/lw1660/code-robustness-margins/-/pipelines>.
 
 Each of [`results/lipschitz-margin-matlab/`](results/lipschitz-margin-matlab/), [`results/lipschitz-margin-python/`](results/lipschitz-margin-python/), and [`results/lipschitz-margin-octave/`](results/lipschitz-margin-octave/) contains:
 
@@ -153,11 +152,13 @@ release history.
 
 Release checklist:
 
-1. `make check-margins` (Python + MATLAB reproduction gate) and `make test` pass.
-2. `make time-bandwidth-bound` passes (supplementary; Python vs MATLAB cross-check).
+1. `make reproduce` (both papers recomputed and compared), `make check`
+   (property checks) and `make test` pass.
+2. `make paper-QRM-time-bandwidth` passes (supplementary; Python vs MATLAB cross-check).
 3. Version agrees across `CITATION.cff`, `.zenodo.json`,
    `python/pyproject.toml`, `python/src/qrobustness/__init__.py` and
-   `../refs.bib`; `CHANGELOG.md` has an entry with the release date.
+   and the paper repository's `refs.bib`; `CHANGELOG.md` has an entry with
+   the release date.
 4. `reuse lint` is clean and `cffconvert --validate` passes (both run in CI).
 5. Tag the release; the GitHub mirror triggers the Zenodo deposition.
 
@@ -168,7 +169,7 @@ If you use this code, please cite the software and the accompanying preprint.
 **Software**
 
 F. C. Langbein, S. P. O'Neil, S. Schirmer, C. A. Weidner, E. A. Jonckheere.
-**Fidelity-Based Quantum Robustness Margins**. Version 1.0.1. Software, 2026.
+**Fidelity-Based Quantum Robustness Margins**. Version 1.0.2. Software, 2026.
 <https://qyber.black/spinnet/code-quantum-robustness-margins>
 (GitHub mirror: <https://github.com/qyber-black/code-quantum-robustness-margins>)
 
@@ -177,7 +178,7 @@ F. C. Langbein, S. P. O'Neil, S. Schirmer, C. A. Weidner, E. A. Jonckheere.
   title   = {Fidelity-Based Quantum Robustness Margins},
   author  = {Langbein, F. C. and O'Neil, S. P. and Schirmer, S.
              and Weidner, C. A. and Jonckheere, E. A.},
-  version = {1.0.1},
+  version = {1.0.2},
   year    = {2026},
   url     = {https://qyber.black/spinnet/code-quantum-robustness-margins},
 }

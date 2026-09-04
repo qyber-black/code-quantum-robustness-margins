@@ -131,7 +131,8 @@ function rates = uncertainty_rates(H_list, dH_list, dt, n_quad, n_dev, dev_tol, 
     achieved = inf(1, tau);
     for k = 1:tau
         cycles(k) = (max(lams{k}) - min(lams{k})) * dt / (2 * pi);
-        n_seed(k) = min(max([round(n_dev), 3, ceil(dev_samples_per_cycle * cycles(k)) + 1]), n_dev_max);
+        % fix, not round: the Python peer uses int(n_dev), which truncates.
+        n_seed(k) = min(max([fix(n_dev), 3, ceil(dev_samples_per_cycle * cycles(k)) + 1]), n_dev_max);
         if cycles(k) > 0
             achieved(k) = (n_seed(k) - 1) / cycles(k);
         end

@@ -18,8 +18,6 @@ from qrobustness import (
     differential_sensitivity,
     iterative_margin,
     lipschitz_constant,
-    load_controllers,
-    load_problem,
     make_fidelity_fn,
     perturbed_hamiltonians,
     structure_constant,
@@ -27,8 +25,9 @@ from qrobustness import (
 )
 from qrobustness.kosut import margin as kosut_margin
 
+from _drivers import load_ensemble
+
 ROOT = Path(__file__).resolve().parents[1]
-CTRL = ROOT / "data/controllers/problem9_tf15_K32_quasi-newton"
 OUT = ROOT / "data/reference/case_study_subset.json"
 
 FT = 0.999
@@ -52,14 +51,23 @@ def _record(problem, controllers, idx: int, tag: str) -> dict:
         C = structure_constant("control", problem["H2"], dt, c["tau"], c["u2"])
     L = lipschitz_constant(FT, problem["dim"], C)
     fid_fn = make_fidelity_fn(
-        problem["H0"], problem["H1"], problem["H2"], c["u1"], c["u2"], problem["Uf"], dt, tag
+        problem["H0"],
+        problem["H1"],
+        problem["H2"],
+        c["u1"],
+        c["u2"],
+        problem["Uf"],
+        dt,
+        tag,
     )
     F0 = fid_fn(0.0)
     margin = iterative_margin(fid_fn, L, FT, mu0=0.0, eta=ETA)
     H_list = perturbed_hamiltonians(
         problem["H0"], problem["H1"], problem["H2"], c["u1"], c["u2"], tag, 0.0
     )
-    dH = dH_structure(problem["H0"], problem["H1"], problem["H2"], c["u1"], c["u2"], tag)
+    dH = dH_structure(
+        problem["H0"], problem["H1"], problem["H2"], c["u1"], c["u2"], tag
+    )
     zeta = differential_sensitivity(H_list, dH, dt, problem["Uf"], n_quad=32)
     # Supplementary Kosut et al. bound (arXiv:2507.01215); see qrobustness/kosut.py.
     rates = uncertainty_rates(H_list, dH, dt, n_quad=KOSUT_N_QUAD, n_dev=KOSUT_N_DEV)
@@ -84,8 +92,7 @@ def _record(problem, controllers, idx: int, tag: str) -> dict:
 
 
 def main() -> None:
-    problem = load_problem(CTRL / "problem9.mat")
-    controllers = load_controllers(CTRL / "controllers.csv", 1e-4)
+    problem, controllers = load_ensemble()
     records = []
     for idx in INDICES:
         for tag in STRUCTURES:

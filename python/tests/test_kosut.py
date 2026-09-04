@@ -160,7 +160,9 @@ def test_csv_headers_match_matlab_peer():
     per = re.search(r"per = \{([^}]*)\}", m).group(1)
     tags = re.findall(r"'([^']+)'", tags)
     per = re.findall(r"'([^']+)'", per)
-    matlab_headers = ["controller", "fid", "err"] + [f"{f}_{t}" for t in tags for f in per]
+    matlab_headers = ["controller", "fid", "err"] + [
+        f"{f}_{t}" for t in tags for f in per
+    ]
 
     src = (root / "scripts/run_time_bandwidth_bound_comparison.py").read_text()
     ns: dict = {}
@@ -171,3 +173,23 @@ def test_csv_headers_match_matlab_peer():
         f"{f}_{t}" for t in ns["STRUCTURES"] for f in ns["PER_STRUCTURE"]
     ]
     assert py_headers == matlab_headers
+
+
+def test_margin_stable_in_commuting_limit():
+    """w_dev ~ 0 (structure commutes with the nominal evolution) must not
+    trigger cancellation in the closed-form root: regression for the
+    single-qubit amplitude example, where the naive quadratic formula
+    returned a margin ~3x the true threshold crossing."""
+    import numpy as np
+    from qrobustness import kosut
+
+    SX = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=complex)
+    H = 0.5 * np.pi * SX
+    r = kosut.uncertainty_rates([H] * 8, [H] * 8, 1.0 / 8)
+    assert r.w_dev < 1e-12
+    m = kosut.margin(r, 0.999)
+    y2 = kosut.threshold_time_bandwidth(0.999) ** 2
+    assert m == pytest.approx(y2 / (4.0 * r.T * r.w_avg), rel=1e-9)
+    # The margin must not exceed the analytic constant crossing
+    # delta* = (2/pi) arccos(FT) of the pi-pulse amplitude error.
+    assert m <= 2.0 / np.pi * np.arccos(0.999)

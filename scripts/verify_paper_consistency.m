@@ -3,6 +3,10 @@ function verify_paper_consistency(varargin)
 %
 %   verify_paper_consistency()
 %   verify_paper_consistency('results_id', 'lipschitz-margin-matlab')
+%   verify_paper_consistency('paper_source', '/path/to/paper/main.tex')
+%
+% The paper is a sibling repository, not a parent of this one; when it is
+% not checked out, check [7] is skipped so a code-only clone still verifies.
 %
 % Writes results/<results_id>/verify_paper.md
     root = fileparts(fileparts(mfilename('fullpath')));
@@ -10,8 +14,10 @@ function verify_paper_consistency(varargin)
 
     p = inputParser;
     addParameter(p, 'results_id', 'lipschitz-margin-matlab');
+    addParameter(p, 'paper_source', '');
     parse(p, varargin{:});
     results_id = p.Results.results_id;
+    paper_source = resolve_paper_source(root, p.Results.paper_source);
     results_dir = fullfile(root, 'results', results_id);
     if ~exist(results_dir, 'dir'); mkdir(results_dir); end
 
@@ -25,7 +31,11 @@ function verify_paper_consistency(varargin)
     CTRL = fullfile(root, 'data', 'controllers', 'problem9_tf15_K32_quasi-newton');
 
     logmsg(fid, '=== Paper consistency verification (%s) ===\n', results_id);
-    logmsg(fid, 'root=%s\nresults=%s\n\n', root, results_dir);
+    if isempty(paper_source)
+        logmsg(fid, 'root=%s\nresults=%s\npaper=(not checked out)\n\n', root, results_dir);
+    else
+        logmsg(fid, 'root=%s\nresults=%s\npaper=%s\n\n', root, results_dir, paper_source);
+    end
 
     %% 1) Case-study inputs
     problem = qrobustness.load_problem(fullfile(CTRL, 'problem9.mat'));
@@ -162,9 +172,12 @@ function verify_paper_consistency(varargin)
     if ~isfile(corr_tex)
         logmsg(fid, '[7] MISSING %s\n', corr_tex);
         pass = check(pass, fid, false);
+    elseif isempty(paper_source)
+        C_code = parse_corr_tex(corr_tex);
+        logmsg(fid, '[7] SKIP (paper not checked out alongside this repository)\n');
     else
         C_code = parse_corr_tex(corr_tex);
-        C_paper = parse_corr_from_main(fullfile(fileparts(root), 'main.tex'));
+        C_paper = parse_corr_from_main(paper_source);
         dC = max(abs(C_code(:) - C_paper(:)));
         logmsg(fid, '[7] max |main.tex TableI - %s/correlations| = %.3e\n', results_id, dC);
         pass = check(pass, fid, dC < 1e-12);
@@ -252,6 +265,30 @@ function verify_paper_consistency(varargin)
     fprintf('Wrote %s and %s\n', report_txt, report_md);
     if ~pass
         error('verify_paper_consistency:Fail', 'Checks failed; see %s', report_md);
+    end
+end
+
+function src = resolve_paper_source(root, explicit)
+%RESOLVE_PAPER_SOURCE Locate the paper's main.tex outside this repository.
+%   Order: explicit argument, then $QRM_PAPER_SOURCE, then the known sibling
+%   checkouts (the legacy nested layout is tried last). Returns '' when the
+%   paper is not available.
+    if nargin >= 2 && ~isempty(explicit)
+        src = tern(isfile(explicit), explicit, '');
+        return
+    end
+    env = getenv('QRM_PAPER_SOURCE');
+    if ~isempty(env)
+        src = tern(isfile(env), env, '');
+        return
+    end
+    up = fileparts(root);
+    cands = { ...
+        fullfile(up, 'paper-QRM', 'main.tex'), ...
+        fullfile(up, 'main.tex')};
+    src = '';
+    for i = 1:numel(cands)
+        if isfile(cands{i}); src = cands{i}; return; end
     end
 end
 

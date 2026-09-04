@@ -100,7 +100,7 @@ def main() -> None:
             }
         )
         print(
-            f"[{i+1}/{args.n_opt}] seed={seed_i} "
+            f"[{i + 1}/{args.n_opt}] seed={seed_i} "
             f"fid_init={res.fid_init:.6g} fid={res.fid:.6g} err={res.error:.3e} "
             f"iters={res.n_iter}",
             flush=True,

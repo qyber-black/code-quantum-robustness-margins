@@ -46,8 +46,8 @@ keywords:
   - Octave
   - Python
 license: AGPL-3.0-or-later
-version: 1.0.1
-date-released: "2026-08-02"
+version: 1.0.2
+date-released: "2026-08-03"
 repository-code: "https://qyber.black/spinnet/code-quantum-robustness-margins"
 repository: "https://github.com/qyber-black/code-quantum-robustness-margins"
 url: "https://qyber.black/spinnet/code-quantum-robustness-margins"

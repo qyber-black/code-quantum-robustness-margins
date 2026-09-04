@@ -34,7 +34,9 @@ def test_default_matches_algorithm1_explicit():
     fidelity_fn = lambda mu: max(0.0, 1.0 - 0.05 * abs(mu))
     L = 0.05
     a = iterative_margin(fidelity_fn, L, FT, mu0=0.0, eta=1e-8, k_max=1000)
-    b = iterative_margin(fidelity_fn, L, FT, mu0=0.0, eta=1e-8, k_max=1000, method="algorithm1")
+    b = iterative_margin(
+        fidelity_fn, L, FT, mu0=0.0, eta=1e-8, k_max=1000, method="algorithm1"
+    )
     assert abs(a.M - b.M) < 1e-14
     assert abs(a.M_minus - b.M_minus) < 1e-14
     assert abs(a.M_plus - b.M_plus) < 1e-14
@@ -45,8 +47,12 @@ def test_lipschitz_polish_matches_algorithm1(method):
     FT = 0.99
     fidelity_fn = lambda mu: max(0.0, 1.0 - 0.05 * abs(mu))
     L = 0.05
-    base = iterative_margin(fidelity_fn, L, FT, mu0=0.0, eta=1e-8, k_max=1000, method="algorithm1")
-    alt = iterative_margin(fidelity_fn, L, FT, mu0=0.0, eta=1e-8, k_max=1000, method=method)
+    base = iterative_margin(
+        fidelity_fn, L, FT, mu0=0.0, eta=1e-8, k_max=1000, method="algorithm1"
+    )
+    alt = iterative_margin(
+        fidelity_fn, L, FT, mu0=0.0, eta=1e-8, k_max=1000, method=method
+    )
     assert abs(alt.M - base.M) < 1e-6
     assert abs(alt.M_minus - base.M_minus) < 1e-6
     assert abs(alt.M_plus - base.M_plus) < 1e-6
@@ -59,7 +65,9 @@ def test_large_L_overshoot_methods(method):
     base = iterative_margin(
         fidelity_fn, 10.0, FT, mu0=0.0, eta=1e-6, k_max=5000, method="algorithm1"
     )
-    alt = iterative_margin(fidelity_fn, 10.0, FT, mu0=0.0, eta=1e-6, k_max=5000, method=method)
+    alt = iterative_margin(
+        fidelity_fn, 10.0, FT, mu0=0.0, eta=1e-6, k_max=5000, method=method
+    )
     assert abs(alt.M - base.M) < 5e-4
 
 
@@ -67,7 +75,9 @@ def test_doubling_monotone_agrees():
     FT = 0.99
     fidelity_fn = lambda mu: max(0.0, 1.0 - 0.05 * abs(mu))
     L = 0.05
-    base = iterative_margin(fidelity_fn, L, FT, mu0=0.0, eta=1e-8, k_max=1000, method="algorithm1")
+    base = iterative_margin(
+        fidelity_fn, L, FT, mu0=0.0, eta=1e-8, k_max=1000, method="algorithm1"
+    )
     dbl = iterative_margin(
         fidelity_fn,
         L,
@@ -95,7 +105,9 @@ def test_newton_probe_monotone():
         return -0.05
 
     L = 0.05
-    base = iterative_margin(fidelity_fn, L, FT, mu0=0.0, eta=1e-8, k_max=1000, method="algorithm1")
+    base = iterative_margin(
+        fidelity_fn, L, FT, mu0=0.0, eta=1e-8, k_max=1000, method="algorithm1"
+    )
     newt = iterative_margin(
         fidelity_fn,
         L,
@@ -201,7 +213,9 @@ def test_case_study_doubling_and_newton_smoke():
             "H0",
             mu,
         )
-        dH = dH_structure(problem["H0"], problem["H1"], problem["H2"], c["u1"], c["u2"], "H0")
+        dH = dH_structure(
+            problem["H0"], problem["H1"], problem["H2"], c["u1"], c["u2"], "H0"
+        )
         return differential_sensitivity(H_list, dH, dt, problem["Uf"], n_quad=16)
 
     base = iterative_margin(fid_fn, L, FT, mu0=0.0, eta=eta, method="algorithm1")

@@ -1,0 +1,4 @@
+comparison,n,spearman_rho,p_two_sided,p_holm,kendall_tau_b,kendall_p_two_sided,kendall_p_holm
+M_H0_vs_abs_zeta_H0,61,-0.463776,1.669499e-04,5.008498e-04,-0.330055,1.708391e-04,5.125173e-04
+M_H1_vs_abs_zeta_H1,61,-0.261079,4.212311e-02,8.424623e-02,-0.180328,4.001812e-02,8.003623e-02
+M_H2_vs_abs_zeta_H2,61,-0.055579,6.705195e-01,6.705195e-01,-0.030601,7.274773e-01,7.274773e-01

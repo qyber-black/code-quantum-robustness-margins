@@ -59,14 +59,23 @@ def _compute_python_record(problem, controllers, idx, tag, FT=0.999, eta=1e-6):
         C = structure_constant("control", problem["H2"], dt, c["tau"], c["u2"])
     L = lipschitz_constant(FT, problem["dim"], C)
     fid_fn = make_fidelity_fn(
-        problem["H0"], problem["H1"], problem["H2"], c["u1"], c["u2"], problem["Uf"], dt, tag
+        problem["H0"],
+        problem["H1"],
+        problem["H2"],
+        c["u1"],
+        c["u2"],
+        problem["Uf"],
+        dt,
+        tag,
     )
     F0 = fid_fn(0.0)
     margin = iterative_margin(fid_fn, L, FT, mu0=0.0, eta=eta)
     H_list = perturbed_hamiltonians(
         problem["H0"], problem["H1"], problem["H2"], c["u1"], c["u2"], tag, 0.0
     )
-    dH = dH_structure(problem["H0"], problem["H1"], problem["H2"], c["u1"], c["u2"], tag)
+    dH = dH_structure(
+        problem["H0"], problem["H1"], problem["H2"], c["u1"], c["u2"], tag
+    )
     zeta = differential_sensitivity(H_list, dH, dt, problem["Uf"], n_quad=32)
     rates = uncertainty_rates(H_list, dH, dt, n_quad=KOSUT_N_QUAD, n_dev=KOSUT_N_DEV)
     return {
@@ -83,6 +92,9 @@ def _compute_python_record(problem, controllers, idx, tag, FT=0.999, eta=1e-6):
         "k_w_avg": rates.w_avg,
         "k_w_dev": rates.w_dev,
         "k_T": rates.T,
+        # Both goldens record the angular absorption of 1.0.1, and the MATLAB
+        # peer now implements it too, so the default is what both engines
+        # must agree on.
         "k_M": kosut_margin(rates, FT, nominal_error=c["error"]),
     }
 
@@ -104,7 +116,11 @@ def test_python_matches_golden(golden):
         )
         keys = FIELDS + tuple(f for f in KOSUT_FIELDS if f in rec)
         for key in keys:
-            _close(got[key], rec[key], f"{rec['structure']}[{rec['controller_index']}].{key}")
+            _close(
+                got[key],
+                rec[key],
+                f"{rec['structure']}[{rec['controller_index']}].{key}",
+            )
         assert got["converged_minus"] is True
         assert got["converged_plus"] is True
         assert rec["converged_minus"] is True

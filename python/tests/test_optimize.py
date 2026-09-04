@@ -153,7 +153,9 @@ def test_csv_roundtrip_synth_smoke(tmp_path):
     row = [9, 1, 15, 32, res.error] + list(x)
     csv_path = tmp_path / "controllers.csv"
     with csv_path.open("w") as f:
-        f.write(",".join(repr(float(v)) if i >= 4 else str(v) for i, v in enumerate(row)))
+        f.write(
+            ",".join(repr(float(v)) if i >= 4 else str(v) for i, v in enumerate(row))
+        )
         f.write("\n")
     # load with loose filter
     loaded = load_controllers(csv_path, max_error=1.0)

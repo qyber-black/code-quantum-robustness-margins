@@ -13,13 +13,20 @@ what qrobustness.core._dU_dmu_exact computes in closed form.  These tests pin
 the closed form down directly (finite differences, commuting case, degenerate
 spectra) and then assert that the two paths agree on the real case-study data.
 """
+
 from pathlib import Path
 
 import numpy as np
 import pytest
 from scipy.linalg import expm
 
-from qrobustness import DU_METHODS, dH_structure, differential_sensitivity, load_controllers, load_problem
+from qrobustness import (
+    DU_METHODS,
+    dH_structure,
+    differential_sensitivity,
+    load_controllers,
+    load_problem,
+)
 from qrobustness.core import _dU_dmu_exact, _segment_eig, _segment_propagator
 from qrobustness.optimize import fidelity_and_gradient
 
@@ -105,7 +112,9 @@ def test_zeta_exact_matches_quadrature_on_case_study(structure):
         H_list = [H0 + c["u1"][k] * H1 + c["u2"][k] * H2 for k in range(c["tau"])]
         dH_list = dH_structure(H0, H1, H2, c["u1"], c["u2"], structure)
         z_exact = differential_sensitivity(H_list, dH_list, dt, Uf, method="exact")
-        z_quad = differential_sensitivity(H_list, dH_list, dt, Uf, 48, method="quadrature")
+        z_quad = differential_sensitivity(
+            H_list, dH_list, dt, Uf, 48, method="quadrature"
+        )
         assert z_exact == pytest.approx(z_quad, rel=1e-7, abs=1e-12)
 
 
@@ -115,7 +124,9 @@ def test_gradient_exact_matches_quadrature_on_case_study():
     H0, H1, H2, Uf = problem["H0"], problem["H1"], problem["H2"], problem["Uf"]
     dt = c["tf"] / c["tau"]
 
-    Fe, g1e, g2e = fidelity_and_gradient(H0, H1, H2, c["u1"], c["u2"], Uf, dt, method="exact")
+    Fe, g1e, g2e = fidelity_and_gradient(
+        H0, H1, H2, c["u1"], c["u2"], Uf, dt, method="exact"
+    )
     Fq, g1q, g2q = fidelity_and_gradient(
         H0, H1, H2, c["u1"], c["u2"], Uf, dt, 48, method="quadrature"
     )

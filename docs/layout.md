@@ -17,22 +17,34 @@
 | `results/time-bandwidth-bound-matlab/` | Supplementary Kosut et al. bound comparison (MATLAB). |
 | `results/time-bandwidth-bound-python/` | Supplementary Kosut et al. bound comparison (Python). |
 | `results/time-bandwidth-bound-octave/` | Supplementary Kosut et al. bound comparison (Octave peer). |
+| `results/multiparameter-margin-python/` | xQRM Scenario J: joint static margins, gauge regions, slice scans, trajectory brackets. |
+| `results/time-bandwidth-bound-python/` | xQRM Scenario T as well: universal-bound comparison, adversarial validity sweeps, budget sweep, Berberich comparison. |
+| `results/single-qubit-python/` | xQRM single-qubit case against analytic truth. |
+| `results/cnot-python/` | xQRM CNOT transfer: margins, duration sweep, robustified-vs-nominal selection study. |
+| `results/scaling-python/` | xQRM four-qubit scaling demonstration. |
+| `results/lindblad-margin-python/` | xQRM Scenario D: Lindblad rate margins, amplitude damping, threshold sweep, mixed coherent-dissipative, coherent-through-open comparison. |
+| `results/verification-python/` | xQRM certificate verification harness: every theorem probed over the ensemble. |
+| `results/paper-xqrm/` | Generated xQRM paper artefacts (tables, figures, macros), copied to the paper repository by `make sync-xQRM`. |
 | `build/` | Regenerable scratch (compare logs, smoke). Gitignored. |
 | `docs/` | Theory (what is computed + accuracy), API contract, time-bandwidth bound, layout, margin-solver notes. |
 
 All `results/lipschitz-margin-*` trees correspond to controller set `problem9_tf15_K32_quasi-newton`.
+The xQRM trees above are Python-only: the peers implement the paper-1
+certificates, not the joint, trajectory and Lindblad extensions. Which driver
+writes each file is recorded in `scripts/_paper.py` and checked against the
+Makefile by `test_paper_driver_map_matches_the_makefile`.
 Synthesis writes new ensembles under `results/synth-*` and never overwrites `data/controllers/`.
 
 Conventions: Python is the reference implementation and produces the manuscript
-figures; MATLAB and Octave are peers, held to it by `make compare-full`,
-`make compare-octave` and the golden fixtures. Sources and documentation are
+figures; MATLAB and Octave are peers, held to it by `make test-parity
+ENGINE=matlab` / `ENGINE=octave` and the golden fixtures. Sources and documentation are
 ASCII, with mathematical symbols in LaTeX-like notation. Prose uses British
 spelling; identifiers keep the spelling they are declared with.
 
 Octave figures are rendered with the qt toolkit when a display is available and
 with gnuplot otherwise, so Octave PNGs are not byte-identical across
 environments. Only the CSV tables are compared between engines
-(`make compare-octave`), so this does not affect any gate.
+(`make test-parity ENGINE=octave`), so this does not affect any gate.
 
 Result trees are named after the **method** they implement (`lipschitz-margin`,
 `time-bandwidth-bound`), not after the paper that happens to publish them. The
@@ -42,13 +54,34 @@ which LaTeX source `verify_paper_consistency` reads -- plus the `sync-paper-*`
 and `verify-paper-*` targets that use it. A second paper is a new block there,
 not a code change.
 
+Papers live in **sibling repositories**, not inside this one:
+
+```
+QRM/
+  code-robustness-margins/          # this repository
+  paper-QRM/                        # paper 1 (PAPER_ROOT)
+  paper-xQRM/                       # paper 2 (XPAPER_ROOT)
+```
+
+So publishing means copying results across a repository boundary. The targets
+are named after the **paper**, not the language: `sync-paper-qrm` pushes the
+Python PNGs into `$(PAPER_ROOT)/figures/`, `sync-paper-xqrm` regenerates paper
+2's tables and figures from this tree into `$(XPAPER_ROOT)/`, and `sync-paper`
+does both. Python is the reference implementation and the only published tree;
+MATLAB and Octave are peers, compared (`make test-parity ENGINE=matlab` /
+`ENGINE=octave`) but never published. Both paths are Make variables -- pass `PAPER_ROOT=` or
+`XPAPER_ROOT=` for a different checkout. `verify_paper_consistency` locates the
+paper the same way (`--paper-source`, `$QRM_PAPER_SOURCE`, then the sibling
+checkout) and skips its Table I check on a code-only clone rather than failing.
+
 ## Lipschitz-margin deliverables (each of `results/lipschitz-margin-matlab/`, `results/lipschitz-margin-python/`, `results/lipschitz-margin-octave/`)
 
 - `H0_all.png`, `H1_all.png`, `H2_all.png`
 - `robustness_margins_fid_err.png`
 - `robustness_margins_sensitivity.png`
-- `correlations_0.999.tex` (Table I source)
-- `margins_table_0.999.csv` (for `make compare-full` / `make compare-octave`)
+- `correlations_0.999.tex` (Table I source; upper triangle Pearson \(r\), lower triangle Spearman \(\rho\), both descriptive)
+- `focal_tests_0.999.csv` (rank-statistic cross-check on \(M_j\) vs \(|\zeta_j|\): Spearman \(\rho\) and Kendall \(\tau_b\), each with Holm-corrected two-sided \(p\). Not a paper claim -- it confirms the descriptive reading of Table I does not depend on the rank statistic chosen.)
+- `margins_table_0.999.csv` (for `make test-parity`)
 - `verify_paper.md` (consistency report for that tree)
 
 ## Synthesis deliverables (`results/synth-matlab/`, `results/synth-python/`)
@@ -63,17 +96,18 @@ not a code change.
 make lipschitz-margin-matlab           # MATLAB -> results/lipschitz-margin-matlab/
 make lipschitz-margin-python           # Python -> results/lipschitz-margin-python/ (includes H*_all sweeps)
 make lipschitz-margin-octave           # Octave -> results/lipschitz-margin-octave/ (optional peer)
-make compare-full           # compare Python vs MATLAB margin tables
-make compare-octave         # compare Python vs Octave margin tables
-make sync-paper-matlab      # copy MATLAB PNGs -> ../figures/
-make sync-paper-python      # copy Python PNGs -> ../figures/
-make sync-paper-octave      # copy Octave PNGs -> ../figures/ (same filenames)
+make test-parity ENGINE=matlab   # compare MATLAB against Python, the reference
+make test-parity ENGINE=octave   # compare Octave against Python
+make sync-paper-qrm         # paper 1 figures (Python results) -> $(PAPER_ROOT)/figures/
+make sync-paper-xqrm        # paper 2 tables+figures -> $(XPAPER_ROOT)/
+make sync-paper             # both papers
 make export-golden          # Python + MATLAB goldens -> data/reference/
 make verify-paper-matlab    # -> results/lipschitz-margin-matlab/verify_paper.md
 make verify-paper-python    # -> results/lipschitz-margin-python/verify_paper.md
 make verify-paper-octave    # -> results/lipschitz-margin-octave/verify_paper.md
 make verify-paper           # Python + MATLAB verifiers
-make check-margins            # lipschitz-margin-matlab/python + compare-full + verify-paper (release gate)
+make reproduce-QRM-margins    # recompute the QRM margins and compare (release gate)
+make check-QRM-consistency    # falsifiable checks against the paper
 make time-bandwidth-bound       # Kosut et al. bound: Python + MATLAB + compare-time-bandwidth-bound
 make compare-time-bandwidth-bound          # Python vs MATLAB Kosut tables -> build/
 make synth-matlab           # optimise 100 controllers -> results/synth-matlab/

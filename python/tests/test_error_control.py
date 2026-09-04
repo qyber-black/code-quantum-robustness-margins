@@ -15,6 +15,7 @@ Two quantities in the package are not exact to roundoff:
 Both must (a) be conservative in a stated direction and (b) reach a requested
 precision when asked.
 """
+
 from pathlib import Path
 
 import numpy as np
@@ -66,8 +67,14 @@ def _margin_inputs(problem, c, structure):
         C = structure_constant("control", Hhat, dt, c["tau"], controls)
     L = lipschitz_constant(FT, problem["dim"], C)
     fn = make_fidelity_fn(
-        problem["H0"], problem["H1"], problem["H2"], c["u1"], c["u2"],
-        problem["Uf"], dt, structure,
+        problem["H0"],
+        problem["H1"],
+        problem["H2"],
+        c["u1"],
+        c["u2"],
+        problem["Uf"],
+        dt,
+        structure,
     )
     return fn, L
 
@@ -184,14 +191,16 @@ def test_w_dev_grid_scales_with_interval_length(case):
     dt_long = 20.0 * c["tf"] / c["tau"]
 
     derived = kosut.uncertainty_rates(H_list, dH_list, dt_long)
-    fixed = kosut.uncertainty_rates(H_list, dH_list, dt_long, n_dev=17, adaptive_dev=False)
+    fixed = kosut.uncertainty_rates(
+        H_list, dH_list, dt_long, n_dev=17, adaptive_dev=False
+    )
     reference = kosut.uncertainty_rates(
         H_list, dH_list, dt_long, n_dev=40001, n_dev_max=40001, adaptive_dev=False
     ).w_dev
 
-    assert derived.dev_cycles_max > 10.0          # a stress case
+    assert derived.dev_cycles_max > 10.0  # a stress case
     assert derived.dev_resolved
-    assert derived.n_dev_used > 17                # grid grew with the bandwidth
+    assert derived.n_dev_used > 17  # grid grew with the bandwidth
     # A sampled reference can only under-estimate, so the polished value is above it.
     assert derived.w_dev >= reference - 1e-12
     # And the derived grid is far closer to the truth than the fixed one.
@@ -378,3 +387,200 @@ def test_margin_tol_must_be_positive(case):
     fn, L = _margin_inputs(problem, controllers[0], "H0")
     with pytest.raises(ValueError, match="margin_tol must be positive"):
         iterative_margin(fn, L, FT, margin_tol=0.0)
+
+
+# --------------------------------------------------------------------------
+# constant vs trajectory uncertainty classes
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("structure", STRUCTURES)
+def test_trajectory_rates_dominate_constant(case, structure):
+    """The trajectory measures upper-bound the constant-delta ones."""
+    problem, controllers = case
+    for c in controllers[:4]:
+        r = _rates(problem, c, structure)
+        assert np.isfinite(r.w_avg_traj) and np.isfinite(r.w_dev_traj)
+        assert r.w_avg <= r.w_avg_traj + 1e-12
+        assert r.w_avg_traj <= r.w_unc + 1e-12  # mean <= max of ||Hhat^(k)||
+        assert r.w_dev_traj == pytest.approx(r.w_unc + r.w_avg_traj)
+        # and the true (sampled) deviation cannot exceed its trajectory bound
+        assert r.w_dev <= r.w_dev_traj + 1e-12
+
+
+@pytest.mark.parametrize("structure", STRUCTURES)
+def test_trajectory_margin_below_constant_margin(case, structure):
+    """M^K_tv <= M^K: the sup-norm-valid margin is the smaller one."""
+    problem, controllers = case
+    for c in controllers[:4]:
+        r = _rates(problem, c, structure)
+        m_const = kosut.margin(r, FT, c["error"])
+        m_traj = kosut.margin(r, FT, c["error"], uncertainty="trajectory")
+        assert 0 < m_traj <= m_const
+
+
+# --------------------------------------------------------------------------
+# Fubini-Study trajectory margin
+# --------------------------------------------------------------------------
+
+
+def test_fs_margin_closed_form(case):
+    """r_fs is the closed-form angle budget over the certified speed."""
+    from qrobustness.timevarying import fs_margin
+
+    problem, controllers = case
+    c = controllers[0]
+    dt = c["tf"] / c["tau"]
+    dH = dH_structure(
+        problem["H0"], problem["H1"], problem["H2"], c["u1"], c["u2"], "H1"
+    )
+    F0 = c["fid"]
+    res = fs_margin(dH, dt, F0, FT)
+    # Exact Choi speed: traceless Frobenius over sqrt(N); never larger
+    # than the half-spread constant (kept as a diagnostic).
+    N = dH[0].shape[0]
+    s = (
+        dt
+        * sum(np.linalg.norm(H - np.trace(H) / N * np.eye(N), "fro") for H in dH)
+        / np.sqrt(N)
+    )
+    assert res.speed == pytest.approx(s)
+    assert res.speed <= res.speed_halfspread + 1e-12
+    assert res.r_fs == pytest.approx((np.arccos(FT) - np.arccos(F0)) / res.speed)
+    # Tightening the threshold or degrading the nominal fidelity shrinks it.
+    assert fs_margin(dH, dt, F0, 0.9995).r_fs < res.r_fs
+    assert fs_margin(dH, dt, F0 - 5e-4, FT).r_fs < res.r_fs
+    # max(r0, r_fs) semantics
+    assert fs_margin(dH, dt, F0, FT, r0=1.0).r == 1.0
+
+
+def test_fs_margin_certificate_holds_adversarially(case):
+    """The adversary cannot break the FS certificate, even with fast
+    sub-interval trajectories (x8 refinement)."""
+    from qrobustness.timevarying import adversarial_fidelity, fs_margin
+
+    problem, controllers = case
+    c = controllers[0]
+    dt = c["tf"] / c["tau"]
+    H_list = [
+        problem["H0"] + c["u1"][k] * problem["H1"] + c["u2"][k] * problem["H2"]
+        for k in range(c["tau"])
+    ]
+    dH = dH_structure(
+        problem["H0"], problem["H1"], problem["H2"], c["u1"], c["u2"], "H1"
+    )
+    res = fs_margin(dH, dt, c["fid"], FT)
+    q = 8
+    Hr = [H for H in H_list for _ in range(q)]
+    dHr = [H for H in dH for _ in range(q)]
+    Fmin, _ = adversarial_fidelity(
+        Hr, dHr, dt / q, problem["Uf"], res.r_fs, n_starts=3, maxiter=150, seed=7
+    )
+    assert Fmin >= FT
+    # ... and the guaranteed floor cos(theta_0 + m * speed) holds too.
+    floor = np.cos(res.theta_0 + res.r_fs * res.speed)
+    assert Fmin >= floor - 1e-12
+    assert floor == pytest.approx(FT, abs=1e-12)
+
+
+def test_fs_margin_dominates_r0(case):
+    """Dominance theorem: r_fs >= r0 for every structure (same L data)."""
+    from qrobustness.timevarying import fs_margin, uniform_margin
+
+    problem, controllers = case
+    for c in controllers[:6]:
+        dt = c["tf"] / c["tau"]
+        for structure in STRUCTURES:
+            dH = dH_structure(
+                problem["H0"],
+                problem["H1"],
+                problem["H2"],
+                c["u1"],
+                c["u2"],
+                structure,
+            )
+            fn, L = _margin_inputs(problem, c, structure)
+            r0 = uniform_margin(L, c["fid"], FT)
+            res = fs_margin(dH, dt, c["fid"], FT, r0=r0)
+            assert res.r_fs >= r0 - 1e-15
+
+
+def test_fs_margin_joint_reduces_to_scalar(case):
+    """The joint gauge with one structure matches the scalar certificate."""
+    from qrobustness.timevarying import fs_margin, fs_margin_joint
+
+    problem, controllers = case
+    c = controllers[0]
+    dt = c["tf"] / c["tau"]
+    dH = dH_structure(
+        problem["H0"], problem["H1"], problem["H2"], c["u1"], c["u2"], "H1"
+    )
+    ell, budget = fs_margin_joint([dH], dt, c["fid"], FT)
+    res = fs_margin(dH, dt, c["fid"], FT)
+    m = res.r_fs
+    assert ell([m]) == pytest.approx(res.speed * m, rel=1e-12)
+    assert budget == pytest.approx(res.theta_T - res.theta_0)
+
+
+def test_fs_joint_vertex_gauge_sharper_than_separable(case):
+    """The vertex Gram-gauge path length never exceeds the separable
+    sum, and is strictly smaller when structures overlap."""
+    from qrobustness.timevarying import fs_margin, fs_margin_joint
+
+    problem, controllers = case
+    c = controllers[0]
+    dt = c["tf"] / c["tau"]
+    dHs = [
+        dH_structure(problem["H0"], problem["H1"], problem["H2"], c["u1"], c["u2"], tag)
+        for tag in ("H0", "H1", "H2")
+    ]
+    ell, budget = fs_margin_joint(dHs, dt, c["fid"], FT)
+    s = [fs_margin(dH, dt, c["fid"], FT).speed for dH in dHs]
+    m = np.array([1.0, 1.0, 1.0])
+    assert ell(m) <= float(np.dot(s, m)) + 1e-12
+    assert ell(m) < 0.999 * float(np.dot(s, m))  # strict on this ensemble
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("structure", STRUCTURES)
+def test_eta_gap_bound_holds_over_the_full_ensemble(case, structure):
+    """Pin the accuracy figure the paper and docs quote.
+
+    The paper states that every reported margin lies within 5.5e-4 relative of
+    the first threshold boundary. That is a claim about the *whole* ensemble,
+    not one controller, so check it on all 61 -- otherwise the quoted bound is
+    only ever spot-checked. Marked slow: this is 61 refined searches per
+    structure.
+    """
+    problem, controllers = case
+    gaps = []
+    for c in controllers:
+        fn, L = _margin_inputs(problem, c, structure)
+        coarse = iterative_margin(fn, L, FT)
+        fine = iterative_margin(fn, L, FT, margin_tol=1e-10)
+        # Certified: true boundary is at or below M_upper, reported value is M.
+        gaps.append((fine.M_upper - coarse.M) / coarse.M)
+    gaps = np.array(gaps)
+    assert gaps.min() > 0.0, "the refined bracket must lie beyond the reported margin"
+    assert gaps.max() < 5.5e-4, f"quoted bound violated: max gap {gaps.max():.3e}"
+
+
+@pytest.mark.slow
+def test_refinement_does_not_move_the_quoted_spreads(case):
+    """The paper quotes margin spreads of 1.6 (H0) and 2.7-2.9 (H1, H2).
+
+    Those ratios must survive the eta-to-boundary refinement, or the reported
+    figures would be an artefact of where the search happened to stop.
+    """
+    problem, controllers = case
+    for structure, quoted in (("H0", 1.6), ("H1", 2.7), ("H2", 2.9)):
+        coarse, fine = [], []
+        for c in controllers:
+            fn, L = _margin_inputs(problem, c, structure)
+            coarse.append(iterative_margin(fn, L, FT).M)
+            fine.append(iterative_margin(fn, L, FT, margin_tol=1e-10).M)
+        r_coarse = max(coarse) / min(coarse)
+        r_fine = max(fine) / min(fine)
+        assert abs(r_fine - r_coarse) / r_coarse < 1e-3
+        assert round(r_coarse, 1) == quoted
+        assert round(r_fine, 1) == quoted

@@ -10,6 +10,7 @@
 from .core import (
     DU_METHODS,
     MARGIN_METHODS,
+    MARGIN_STATUS,
     ROOT_SOLVERS,
     MarginResult,
     dH_structure,
@@ -24,6 +25,7 @@ from .core import (
     perturbed_hamiltonians,
     propagator,
     structure_constant,
+    traceless,
 )
 from .kosut import (
     ABSORPTIONS,
@@ -58,12 +60,14 @@ __all__ = [
     "gate_fidelity",
     "lipschitz_constant",
     "structure_constant",
+    "traceless",
     "perturbed_hamiltonians",
     "dH_structure",
     "differential_sensitivity",
     "iterative_margin",
     "DU_METHODS",
     "MARGIN_METHODS",
+    "MARGIN_STATUS",
     "ROOT_SOLVERS",
     "MarginResult",
     "fidelity_vs_delta",
@@ -93,4 +97,4 @@ __all__ = [
     "plot_fidelity_error_sweeps",
 ]
 
-__version__ = "1.0.1"
+__version__ = "1.0.2"

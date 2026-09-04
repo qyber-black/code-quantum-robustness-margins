@@ -3,8 +3,8 @@
   "description": "<p>Toolbox for <strong>analysing</strong> (and optionally <strong>synthesising</strong>) piecewise-constant coherent quantum gate controllers under scalar structured Hamiltonian perturbations, accompanying the paper <em>Fidelity-Based Robustness Margins for Finite-Time Quantum Control</em>.</p><p>It implements the gate-fidelity sensitivity bound, the Lipschitz constant it induces, and an iterative one-dimensional robustness margin that certifies finite perturbations preserving a prescribed fidelity threshold. MATLAB, Octave and Python implementations are peers, cross-checked by golden fixtures and consistency tests, and reproduce the paper's three-qubit case study end to end. A supplementary layer implements the Kosut-Lidar-Rabitz fundamental bound (arXiv:2507.01215) specialised to this closed-system coherent perturbation model, so the margin it implies can be compared with the certified Lipschitz margin.</p>",
   "license": "AGPL-3.0-or-later",
   "upload_type": "software",
-  "version": "1.0.0",
-  "publication_date": "2026-07-30",
+  "version": "1.0.2",
+  "publication_date": "2026-08-03",
   "language": "eng",
   "access_right": "open",
   "creators": [

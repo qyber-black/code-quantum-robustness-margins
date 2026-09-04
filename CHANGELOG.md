@@ -14,6 +14,145 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `verify.fidelity_cross_check` compared a computation against itself. It
+  promised two independent propagator routes, but `core.propagator` already
+  is the `expm` loop and the second route repeated it, so the discrepancy
+  was identically zero and the returned allowance was the unitarity defect
+  alone. The second route now uses the eigendecomposition path.
+- A `CheckReport` that ran no probe reported `passed=True`: `min_slack`
+  stays at `+inf` when every probe is skipped. It now requires
+  `n_checks > 0`, and `check_absorption` and `check_lipschitz_pairs` report
+  the probes they ran rather than the number requested.
+- `run_cnot_case_study` and `run_scaling_example` wrote their synthesised
+  ensembles into `data/` regardless of `--out`, defeating the guard
+  `check_reproducible` has to protect the reference tree.
+- `run_slice_scan` accepted `--FT` and then read the 0.999 table.
+- Three production `assert`s, which `python -O` strips, including the
+  analytic cross-check that is the point of `run_single_qubit_example`.
+- `berberich.margin` returned a silent `nan` for out-of-range
+  `nominal_error` where `kosut.effective_threshold` rejects it.
+- `multiparam` annotated `HList` without importing it.
+- `gen_paper_xqrm_macros` parsed `--allow-missing` and never read it.
+- MATLAB `iterative_margin` lacked the certified-promotion rule, so with a
+  nonmonotone fidelity it could report an *optimistic* margin, against the
+  guarantee in its own header. Ported from the Python reference; the
+  shipped ensemble is unaffected.
+- MATLAB `kendall_tau_b` had the tie term of the asymptotic variance at a
+  quarter of SciPy's, so any tie made the p-value too small.
+- MATLAB `run_open_system_case_study` took the Lipschitz constant from
+  controller 1 and applied it to all.
+- `lindblad.generator` and `plotting.plot_fidelity_error_sweeps` zipped
+  independently supplied sequences without a length check, silently
+  dropping a dissipator or a curve; both are now `strict`.
+- `tv_bracket_<FT>.csv`, `kosut_comparison_<FT>.csv`,
+  `kosut_comparison_<FT>_angular_tv.csv` and `validity_<FT>_tv.csv` were
+  read by the paper but produced by no Make recipe, so they were never
+  regenerated. `validity_<FT>_tv.csv` still carried a schema three weeks
+  out of date.
+- `make reproduce` could not pass: `compare_csv` compared wall-clock
+  columns that vary by a factor of two between runs.
+
+### Added
+
+- `scripts/_invocations.py`, the single source of driver flags and the BLAS
+  thread environment, shared by the Makefile and `check_reproducible`;
+  guarded by `test_invocation_parity`, each assertion checked against a
+  deliberately reintroduced fault.
+- `scripts/_drivers.py` and `scripts/_paper.py`, the plumbing the drivers
+  and paper generators had been repeating.
+- `qrobustness.lindblad.local_ops` / `local_dephasing_ops`, previously
+  copied into five drivers and imported from one of them via `sys.path`.
+- `check-xQRM-synth`: the certificate harness run on freshly synthesised
+  controllers, which the frozen ensemble cannot test. It immediately found
+  that every certificate assumes nominal fidelity above threshold and the
+  harness raised instead of skipping when it was not.
+- `test_scripts_importable`: the 33 scripts were imported by no test, which
+  is how a syntax error reached a six-hour regeneration.
+- ruff as linter and formatter.
+
+### Changed
+
+- BLAS threads pinned for every driver. Measured on the 61-controller
+  sweeps: `run_open_system_case_study` 3h30m to 1m17s,
+  `run_open_amplitude_damping` 3h52m to 4m53s. Results move by at most
+  5.6e-14.
+- `check-*` targets renamed to `reproduce-*`, and `check-*` now means the
+  falsifiable property checks.
+- `tab_scaling` reports off-nominal fidelity evaluations instead of
+  wall-clock, which is deterministic and made the table reproducible.
+
+## [1.0.2] - 2026-08-03
+
+Patch release aligning the toolbox with the paper's structure constant and
+making the Algorithm 1 stopping rule observable, plus the rank statistic used
+for Table I. The case-study margins are bit-for-bit unchanged.
+
+### Changed
+
+- `structure_constant` (both engines) now centres the perturbation structure to
+  its traceless part, \(\overline{\hat{H}}_\mu = \hat{H}_\mu - N^{-1}(\operatorname{Tr}
+  \hat{H}_\mu) I\), before taking the Frobenius norm, as the paper's
+  \(C_{\hat{H}}\) specifies. The trace part contributes only a global phase to
+  the propagator, which the trace-amplitude fidelity ignores, so this is a
+  *tightening*: previously reported margins remain valid but were unnecessarily
+  conservative for non-traceless user structures (e.g. a single-level detuning).
+  The case-study structures \(H_0, H_1, H_2\) are traceless, so every published
+  number is unchanged. The structure is now also validated as square and
+  Hermitian. New `qrobustness.traceless` / `qrobustness.traceless` (MATLAB).
+- `plot_margins_vs_sensitivity` (both engines): legends moved to the top left,
+  where they no longer sit over the data.
+
+### Added
+
+- `MarginResult.status_minus` / `status_plus` (MATLAB: `result.status_*`) report
+  *which* Algorithm 1 stopping rule fired -- `eta_band`, `domain_truncated` or
+  `iteration_limit` -- and are populated on the default path, independently of
+  `margin_tol`. A domain-truncated result certifies only that the margin is at
+  least the distance to the edge of `omega` and must not be read as a resolved
+  margin; the pre-existing `converged_*` flag cannot distinguish the two and is
+  retained for backward compatibility. `safeguard_*` records whether the
+  bisection safeguard fired. `reason_*` keeps its distinct meaning: the outcome
+  of the optional `margin_tol` bracket refinement.
+- `focal_tests_<FT>.csv` and `qrobustness.compat.kendall_tau_b` (MATLAB /
+  Octave): a rank-statistic cross-check for the three margin-versus-sensitivity
+  comparisons \(M_j\) versus \(|\zeta_j|\). Table I stays descriptive --
+  Pearson \(r\) and Spearman \(\rho\), unchanged -- and the paper makes no
+  inferential claim; the CSV records Spearman \(\rho\) and Kendall
+  \(\tau_b\) with Holm-corrected two-sided \(p\) for each, confirming that
+  the descriptive reading (appreciable for \(H_0\), weak for \(H_1\),
+  negligible for \(H_2\)) does not depend on the choice of rank statistic.
+  Both engines share a closed-form asymptotic \(\tau_b\) p-value, so MATLAB,
+  Octave and the SciPy reference agree exactly and the Python and MATLAB CSVs
+  are byte-identical.
+
+### Fixed
+
+- `iterative_margin` (both engines): the step counter now starts at 1 rather
+  than 0, so `k_max` is exactly the number of evaluated trial points per
+  direction instead of one fewer than the number permitted. The paper's
+  Algorithm 1 and both engines now share this convention. Only reachable when
+  the limit actually binds, which no case-study run does (the default is
+  10 000 and every direction terminates in the \(\eta\) band), so no reported
+  value changes.
+- The paper now lives in a sibling repository rather than containing this one,
+  so `PAPER_ROOT` no longer points at the parent directory. The publishing
+  target is named after the paper (`sync-paper-qrm`, aliased `sync-paper`)
+  rather than the engine, and publishes the Python tree. `verify_paper_consistency`
+  resolves the paper via `--paper-source` / `$QRM_PAPER_SOURCE` / the sibling
+  checkout and skips its paper checks on a code-only clone instead of failing.
+- `pip` and `pytest` are invoked as modules, so a moved checkout no longer
+  breaks the venv console scripts.
+- `optimize_controller` now runs under Octave. It called `optimoptions`, which
+  is MATLAB-only, so GRAPE synthesis and `test_optimize_controller` failed on
+  the Octave peer with a misleading "install the optim package" message. Octave
+  ships `fminunc` and `optimset` in core, so the option struct is now built with
+  `optimset` there -- same quasi-Newton objective-and-gradient path, no Octave
+  Forge package and no Optimization Toolbox emulation required. The `output`
+  struct is also read defensively, since Octave supplies no `message` field.
+  The full Octave suite (15/15) now passes.
+
 ## [1.0.1] - 2026-08-02
 
 Patch release correcting the optional `margin_tol` refinement, the target-gate
@@ -56,7 +195,8 @@ robustness-margin values and the figures are unchanged.
   (`1 - eps_0` is a fidelity) rather than clamping impossible inputs, and both
   engines regression-test the closed form together with the collinear
   single-qubit rotation that saturates it. The Kosut layer is supplementary and
-  experimental, outside `make check-margins`, and no paper claim depends on it.
+  experimental, outside `make reproduce-QRM-margins`, and no paper claim
+  depends on it.
 - `kosut.margin` (both engines): the positive root of `a m^2 + b m = y^2` is
   now evaluated in the rationalised form `2 y^2 / (b + sqrt(b^2 + 4 a y^2))`,
   which avoids catastrophic cancellation when `a y^2 << b^2` (structures nearly
@@ -167,7 +307,7 @@ exact and `uncertainty_rates` accepts `n_quad` without using it.
   drivers, `scripts/compare_time_bandwidth_bound.py` and the
   `time-bandwidth-bound*` make targets.
 - It is experimental and sits outside the reproduction gate
-  `make check-margins`; no claim in the paper depends on it. Agreement between
+  `make reproduce-QRM-margins`; no claim in the paper depends on it. Agreement between
   the three engines is a consistency check rather than an accuracy check.
   `docs/time-bandwidth-bound.md` documents the specialisation, the caveats and
   the numerical accuracy.

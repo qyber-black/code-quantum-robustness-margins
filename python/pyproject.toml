@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qrobustness"
-version = "1.0.1"
+version = "1.0.2"
 description = "Fidelity-based robustness margins for finite-time quantum control"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -33,7 +33,8 @@ Mirror = "https://github.com/qyber-black/code-quantum-robustness-margins"
 
 [project.optional-dependencies]
 plot = ["matplotlib>=3.7"]
-dev = ["pytest>=7.0", "matplotlib>=3.7"]
+open = ["cvxpy>=1.4"]
+dev = ["pytest>=7.0", "matplotlib>=3.7", "cvxpy>=1.4", "ruff>=0.6"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -41,3 +42,6 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+# Ensemble-wide accuracy checks are minutes, not seconds: deselect with
+# `-m "not slow"` for a fast run; `make test-python` runs them.
+markers = ["slow: full-ensemble checks (61 controllers x 3 structures)"]

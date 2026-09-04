@@ -20,6 +20,11 @@ function results = run_all_tests()
         @test_dU_dmu_exact
         @test_error_control
         @test_kosut_bound
+        @test_traceless_and_status
+        @test_lengthspace
+        @test_lindblad
+        @test_multiparam
+        @test_timevarying
     };
 
     n = numel(tests);

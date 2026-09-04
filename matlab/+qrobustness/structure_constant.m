@@ -4,8 +4,15 @@ function C = structure_constant(kind, Hhat, dt, tau, controls)
 %   Hhat     : structure matrix
 %   dt, tau  : pulse length and number of intervals
 %   controls : row/column vector f_m^{(k)} (required for 'control')
+%
+%   The structure is centred to its traceless part first: the trace part of a
+%   perturbation structure contributes only a global phase to the propagator,
+%   which the trace-amplitude fidelity ignores, so removing it leaves the
+%   certified margin valid while shrinking ||Hhat||_F (paper, Sec. IV).  For
+%   traceless structures -- including the case-study H0, H1, H2 -- nothing
+%   changes.
 
-    nf = norm(Hhat, 'fro');
+    nf = norm(qrobustness.traceless(Hhat), 'fro');
     switch lower(kind)
         case 'drift'
             % C = t_f * ||H0||_F = tau*dt * ||H0||_F

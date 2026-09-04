@@ -23,7 +23,7 @@ function fig = plot_margins_vs_sensitivity(abs_z0, abs_z1, abs_z2, M0, M1, M2, v
     grid(ax1, 'on');
     xlabel(ax1, '|\zeta|');
     ylabel(ax1, 'Robustness margin');
-    legend(ax1, 'Location', 'southeast');
+    legend(ax1, 'Location', 'northwest');
     qrobustness.log10_axis(ax1, 'x', [min(z0)*0.8, max(z0)*1.2]);
     set(ax1, 'YScale', 'linear', 'FontName', 'Helvetica', 'FontSize', 12);
 
@@ -37,7 +37,7 @@ function fig = plot_margins_vs_sensitivity(abs_z0, abs_z1, abs_z2, M0, M1, M2, v
     grid(ax2, 'on');
     xlabel(ax2, '|\zeta|');
     ylabel(ax2, 'Robustness margin');
-    legend(ax2, 'Location', 'southeast');
+    legend(ax2, 'Location', 'northwest');
     z12 = [z1; z2];
     qrobustness.log10_axis(ax2, 'x', [min(z12)*0.8, max(z12)*1.2]);
     set(ax2, 'YScale', 'linear', 'FontName', 'Helvetica', 'FontSize', 12);

@@ -17,7 +17,7 @@ this package, so that the finite perturbation margin it implies can be placed
 alongside the certified Lipschitz margin of Algorithm 1.
 
 This layer is supplementary. It is experimental, it sits outside the
-reproduction gate `make check-margins`, and no claim in the accompanying paper
+reproduction gate `make reproduce-QRM-margins`, and no claim in the accompanying paper
 depends on its values. For the accuracy of the package as a whole see
 [theory.md](theory.md).
 
@@ -72,37 +72,45 @@ same `F_mu`, measured in the same units of multiplicative perturbation of
 
 ## Caveats
 
-1. Theorem 1 of the reference assumes `F_nom = 1` exactly, and it bounds the
-   fidelity to the *achieved* nominal gate, not to the target. The controllers
-   used here have `eps_0 <= 1e-4`, which is 10% of the `1 - F_T = 1e-3` budget,
-   so the deficit cannot be ignored. Because `arccos` of the gate fidelity is
-   the angle between the corresponding Choi states, it obeys the triangle
-   inequality and the *angles* add, not the fidelity deficits. The sufficient
-   condition on the achieved-gate fidelity is therefore
+1. Theorem 1 of the reference assumes `F_nom = 1` exactly and bounds the
+   fidelity to the achieved nominal gate `U_S(T)`, not the target. The
+   controllers used here have `eps_0 <= 1e-4`, which is 10% of the
+   `1 - F_T = 1e-3` budget. The drivers absorb `eps_0` into the threshold via
+   the angular relation
 
-   ```
-   F_eff = cos( arccos(F_T) - arccos(1 - eps_0) )
-   ```
+       F_eff = cos( arccos(F_T) - arccos(1 - eps_0) ),
 
-   (`effective_threshold`, `absorption='angular'`, the default since 1.0.1).
-   The additive form `F_T + eps_0` used before 1.0.1 is *smaller* than `F_eff`
-   whenever `eps_0 > 0` and so was **not** conservative; it remains available
-   as `absorption='additive'` / `--absorption additive` to reproduce the older
-   numbers. When `arccos(1 - eps_0) >= arccos(F_T)` the budget is exhausted and
-   the implied margin is zero. `--literal-theorem` (Python) and
+   the sufficient condition given by the triangle inequality for the
+   Fubini-Study angle `arccos(F)` on Choi states (`effective_threshold`,
+   `absorption='angular'`). The additive absorption `F_T + eps_0` used in
+   earlier releases is strictly weaker than required and hence NOT
+   conservative; it is retained (`absorption='additive'`) only to reproduce
+   previously published numbers. At the largest `eps_0 = 9.9e-5` in the set
+   the angular achieved-gate threshold is 0.999530 against 0.999099 additive,
+   and the median `M^K` is about 10% smaller. `--literal-theorem` (Python) and
    `'literal_theorem', true` (MATLAB) evaluate the bound as stated
    (`eps_0 = 0`) instead.
-2. `M^K` is the **constant structured-parameter** specialisation. `w_avg` and
-   `w_dev` are computed for the fixed structure `delta * Hhat`, so the implied
-   margin certifies constant perturbations `abs(delta) <= M^K`. It is *not* a
-   supremum-norm time-varying margin: a sign-modulated trajectory `delta(t)`
-   within the same budget can defeat the coherent averaging that makes `w_avg`
-   small.
-3. The bound covers strictly more uncertainty. It is worst-case over all
+2. The bound covers strictly more uncertainty. It is worst-case over all
    uncertainty consistent with the norm bounds, including bath coupling and
    unmodelled couplings, whereas Algorithm 1 exploits the known structure
    `Hhat` and the specific controller. A larger margin here quantifies the
    value of structural knowledge; it is not evidence against the bound.
+3. The margin depends on the uncertainty class. The default
+   (`uncertainty='constant'`) scales the measures with a constant `delta` and
+   certifies constant perturbations only. It is NOT a supremum-norm
+   time-varying margin: a sign-modulated trajectory `delta(t)` can defeat the
+   coherent averaging behind the small `Omega_avg`, and an adversarial
+   trajectory below `M^K` that violates the threshold exists on the paper
+   controller set (controller 16, structure `H1`; the trajectory's own
+   `Omega_avg` exceeds `M^K * w_avg` by 2.6x while the reference bound
+   evaluated with the trajectory's own measures still holds). For a margin
+   valid for every measurable `|delta(t)| <= M^K_tv`, use
+   `uncertainty='trajectory'`, which substitutes the certified worst-case
+   measures `w_avg_traj = mean_k ||Hhat^(k)||` (exact by isospectrality) and
+   `w_dev_traj = w_unc + w_avg_traj`; the resulting `M^K_tv` is roughly
+   `2.2x` smaller on the paper controller set (medians 1.24e-3 / 1.36e-3 /
+   1.38e-3 for `H0` / `H1` / `H2`). See `run_kosut_validity.py` and
+   `validity_0.999*.csv` for the adversarial evidence.
 4. `F_lb` is non-trivial only for `T*Omega_bnd <= 2*sqrt(log(1+sqrt(2)))
    = 1.8776` rad (Eq. 32 of the reference); beyond that the bound is vacuous.
    `t_omega_max` / `T_OMEGA_MAX` expose this value.
@@ -153,9 +161,8 @@ an accuracy check, since all three implement the same algorithm.
 
 ## Result for the paper controller set
 
-61 controllers, `F_T = 0.999`, `eps_0` absorbed through the angular relation of
-caveat 1. `M` is the Algorithm 1 margin and `M^K` the margin implied by
-Theorem 1 of the reference:
+61 controllers, `F_T = 0.999`, `eps_0` absorbed angularly. `M` is the
+Algorithm 1 margin and `M^K` the margin implied by Theorem 1 of the reference:
 
 | Structure | median `M` | median `M^K` | ratio `M/M^K` (range) | Pearson |
 |-----------|------------|--------------|-----------------------|---------|
@@ -211,6 +218,12 @@ See [api.md](api.md) for the full signatures.
 | `uncertainty_rates(H_list, dH_list, dt, ...)` | Eq. 28 measures per unit `delta` |
 | `time_bandwidth(rates, delta)` | `T*Omega_bnd` (Eq. 29) |
 | `fidelity_bound(T_omega_bnd)` / `fidelity_bound_at(rates, delta)` | `F_lb` (Eq. 30) |
-| `threshold_time_bandwidth(FT, nominal_error=0)` | Closed-form inverse of `F_lb` |
-| `margin(rates, FT, nominal_error=0)` | Implied margin `M^K` (Python re-export: `kosut_margin`) |
+| `effective_threshold(FT, nominal_error=0, absorption='angular')` | Achieved-gate threshold `F_eff` (angular absorption of `eps_0`) |
+| `threshold_time_bandwidth(FT, nominal_error=0, absorption='angular')` | Closed-form inverse of `F_lb` |
+| `margin(rates, FT, nominal_error=0, absorption='angular', uncertainty='constant')` | Implied margin: `M^K` (constant class) or `M^K_tv` (`uncertainty='trajectory'`); Python re-export: `kosut_margin` |
 | `t_omega_max()` / `T_OMEGA_MAX` | `2*sqrt(log(1+sqrt(2))) = 1.8776`; bound vacuous beyond this |
+
+The MATLAB/Octave peer currently implements the additive absorption only;
+the angular option and regenerated golden fixtures are queued, and the
+cross-language comparison (`scripts/compare_time_bandwidth_bound.py`)
+therefore runs on the additive CSVs.

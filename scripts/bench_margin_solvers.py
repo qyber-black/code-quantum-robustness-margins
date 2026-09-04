@@ -20,15 +20,14 @@ from qrobustness import (
     differential_sensitivity,
     iterative_margin,
     lipschitz_constant,
-    load_controllers,
-    load_problem,
     make_fidelity_fn,
     perturbed_hamiltonians,
     structure_constant,
 )
 
+from _drivers import load_ensemble
+
 ROOT = Path(__file__).resolve().parents[1]
-CTRL = ROOT / "data/controllers/problem9_tf15_K32_quasi-newton"
 OUT = ROOT / "results/bench-margin-solvers"
 
 METHODS = (
@@ -97,18 +96,22 @@ def synthetic_cases():
     rows = []
     for method in METHODS:
         rows.append(_run_one("synthetic_mono", mono, L, FT, eta, method, zeta_mono))
-        rows.append(_run_one("synthetic_nonmono", nonmono, L, FT, eta, method, zeta_nonmono))
+        rows.append(
+            _run_one("synthetic_nonmono", nonmono, L, FT, eta, method, zeta_nonmono)
+        )
     # Large-L overshoot stress on monotone landscape.
     for method in METHODS:
-        rows.append(_run_one("synthetic_mono_L10", mono, 10.0, FT, 1e-6, method, zeta_mono))
+        rows.append(
+            _run_one("synthetic_mono_L10", mono, 10.0, FT, 1e-6, method, zeta_mono)
+        )
     return rows
 
 
 def case_study_rows(n_controllers: int = 3):
     FT = 0.999
     eta = 1e-6
-    problem = load_problem(CTRL / "problem9.mat")
-    controllers = load_controllers(CTRL / "controllers.csv", 1e-4)[:n_controllers]
+    problem, controllers = load_ensemble()
+    controllers = controllers[:n_controllers]
     rows = []
     for ci, c in enumerate(controllers):
         dt = c["tf"] / c["tau"]
@@ -149,7 +152,9 @@ def case_study_rows(n_controllers: int = 3):
                     c["u2"],
                     structure,
                 )
-                return differential_sensitivity(H_list, dH, dt, problem["Uf"], n_quad=16)
+                return differential_sensitivity(
+                    H_list, dH, dt, problem["Uf"], n_quad=16
+                )
 
             name = f"ctrl{ci}_{structure}"
             for method in METHODS:
@@ -211,7 +216,8 @@ def main():
 
     print(f"Wrote {csv_path}")
     print(
-        f"{'case':<22} {'method':<20} {'n_evals':>8} {'eval_ratio':>10} " f"{'dM':>12} {'cert':>5}"
+        f"{'case':<22} {'method':<20} {'n_evals':>8} {'eval_ratio':>10} "
+        f"{'dM':>12} {'cert':>5}"
     )
     for r in rows:
         er = r["eval_ratio"]
