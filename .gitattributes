@@ -1,3 +1,22 @@
-*.fig filter=lfs diff=lfs merge=lfs -text
-*.mat filter=lfs diff=lfs merge=lfs -text
-*.png filter=lfs diff=lfs merge=lfs -text
+# Binary artefacts live in LFS. The list is deliberately wider than what the
+# repository currently holds: a type that is not listed enters as a plain
+# blob and is only noticed once it is already in the history.
+*.bz2  filter=lfs diff=lfs merge=lfs -text
+*.eps  filter=lfs diff=lfs merge=lfs -text
+*.fig  filter=lfs diff=lfs merge=lfs -text
+*.gif  filter=lfs diff=lfs merge=lfs -text
+*.gz   filter=lfs diff=lfs merge=lfs -text
+*.h5   filter=lfs diff=lfs merge=lfs -text
+*.hdf5 filter=lfs diff=lfs merge=lfs -text
+*.jpeg filter=lfs diff=lfs merge=lfs -text
+*.jpg  filter=lfs diff=lfs merge=lfs -text
+*.mat  filter=lfs diff=lfs merge=lfs -text
+*.npy  filter=lfs diff=lfs merge=lfs -text
+*.npz  filter=lfs diff=lfs merge=lfs -text
+*.pdf  filter=lfs diff=lfs merge=lfs -text
+*.pkl  filter=lfs diff=lfs merge=lfs -text
+*.png  filter=lfs diff=lfs merge=lfs -text
+*.tif  filter=lfs diff=lfs merge=lfs -text
+*.tiff filter=lfs diff=lfs merge=lfs -text
+*.xz   filter=lfs diff=lfs merge=lfs -text
+*.zip  filter=lfs diff=lfs merge=lfs -text

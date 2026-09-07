@@ -5,7 +5,7 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Fidelity-maximising controller synthesis (GRAPE + quasi-Newton)."""
+"""Fidelity-maximising controller synthesis (GRAPE plus quasi-Newton)."""
 
 from __future__ import annotations
 
@@ -18,11 +18,11 @@ from scipy.optimize import minimize
 
 from .core import (
     DU_METHODS,
-    _dU_dmu_exact,
-    _dU_dmu_integral,
-    _gauss_legendre_01,
-    _segment_eig,
-    _segment_propagator,
+    dU_dmu_exact,
+    dU_dmu_integral,
+    gauss_legendre_01,
+    segment_eig,
+    segment_propagator,
     gate_fidelity,
     propagator,
 )
@@ -31,7 +31,7 @@ Array = np.ndarray
 
 
 def pack_controls(u1: Array, u2: Array) -> Array:
-    """Interleave (u1_k, u2_k) to match CSV / load_controllers Fortran reshape."""
+    """Interleave (u1_k, u2_k) so as to match CSV / load_controllers Fortran reshape."""
     u1 = np.asarray(u1, dtype=float).ravel()
     u2 = np.asarray(u2, dtype=float).ravel()
     if u1.size != u2.size:
@@ -40,6 +40,11 @@ def pack_controls(u1: Array, u2: Array) -> Array:
 
 
 def unpack_controls(x: Array, tau: int) -> Tuple[Array, Array]:
+    """Split a packed control vector back into the two amplitude arrays.
+
+    Column-major, matching the MATLAB peer's ``reshape(x, 2, tau)``, so both
+    engines read the same controller files.
+    """
     u = np.asarray(x, dtype=float).ravel().reshape((2, tau), order="F")
     return u[0].copy(), u[1].copy()
 
@@ -56,11 +61,11 @@ def fidelity_and_gradient(
     *,
     method: str = "exact",
 ) -> Tuple[float, Array, Array]:
-    r"""Gate fidelity and GRAPE gradients \partial F/\partial u_1, \partial F/\partial u_2.
+    r"""Gate fidelity and the GRAPE gradients \partial F/\partial u_1, \partial F/\partial u_2.
 
     method='exact' (default) uses one eigendecomposition per interval for the
     propagator and both control derivatives; 'quadrature' uses Gauss-Legendre
-    with n_quad nodes.  n_quad is inert under 'exact'.
+    with n_quad nodes.  n_quad is unused under 'exact'.
     """
     if method not in DU_METHODS:
         raise ValueError(f"Unknown method={method!r}; expected one of {DU_METHODS}")
@@ -73,8 +78,8 @@ def fidelity_and_gradient(
 
     H_list = [H0 + u1[k] * H1 + u2[k] * H2 for k in range(tau)]
     if use_exact:
-        eigs = [_segment_eig(H) for H in H_list]
-        Useg = [_segment_propagator(lam, V, dt) for lam, V in eigs]
+        eigs = [segment_eig(H) for H in H_list]
+        Useg = [segment_propagator(lam, V, dt) for lam, V in eigs]
     else:
         eigs = []
         Useg = [expm(-1j * dt * H) for H in H_list]
@@ -96,18 +101,18 @@ def fidelity_and_gradient(
         Suff[k] = Suff[k + 1] @ Useg[k]
 
     if not use_exact:
-        nodes, weights = _gauss_legendre_01(n_quad)
+        nodes, weights = gauss_legendre_01(n_quad)
 
     g1 = np.zeros(tau, dtype=float)
     g2 = np.zeros(tau, dtype=float)
     for k in range(tau):
         if use_exact:
             lam, V = eigs[k]
-            dUk1 = _dU_dmu_exact(lam, V, H1, dt)
-            dUk2 = _dU_dmu_exact(lam, V, H2, dt)
+            dUk1 = dU_dmu_exact(lam, V, H1, dt)
+            dUk2 = dU_dmu_exact(lam, V, H2, dt)
         else:
-            dUk1 = _dU_dmu_integral(H_list[k], H1, dt, nodes, weights)
-            dUk2 = _dU_dmu_integral(H_list[k], H2, dt, nodes, weights)
+            dUk1 = dU_dmu_integral(H_list[k], H1, dt, nodes, weights)
+            dUk2 = dU_dmu_integral(H_list[k], H2, dt, nodes, weights)
         D1 = Suff[k + 1] @ dUk1 @ Pref[k]
         D2 = Suff[k + 1] @ dUk2 @ Pref[k]
         g1[k] = float(np.real(np.trace(Uf.conj().T @ D1 * e_minus_i_phi))) / N
@@ -117,6 +122,13 @@ def fidelity_and_gradient(
 
 @dataclass
 class OptimizeResult:
+    """One synthesis run: the controls found and how the optimiser ended.
+
+    ``fid_init`` is the fidelity at the random start, kept so a run can be
+    distinguished from a lucky initialisation, and ``success``/``message`` are the
+    optimiser's own verdict rather than an inference from the fidelity.
+    """
+
     u1: Array
     u2: Array
     fid: float
@@ -143,7 +155,7 @@ def optimize_controller(
     maxiter: int = 500,
     ftol: float = 1e-12,
 ) -> OptimizeResult:
-    """Maximize gate fidelity via L-BFGS-B with analytic GRAPE gradient."""
+    """Maximise gate fidelity via L-BFGS-B with analytic GRAPE gradient."""
     dt = tf / tau
     rng = np.random.default_rng(seed)
     if u1_init is None:
@@ -176,7 +188,7 @@ def optimize_controller(
         options={"maxiter": maxiter, "ftol": ftol},
     )
     u1, u2 = unpack_controls(res.x, tau)
-    # Clamp: roundoff can push F slightly above 1 (negative error).
+    # Clamp: roundoff can drive F slightly above 1 (negative error).
     fid = float(min(1.0, max(0.0, 1.0 - float(res.fun))))
     return OptimizeResult(
         u1=u1,

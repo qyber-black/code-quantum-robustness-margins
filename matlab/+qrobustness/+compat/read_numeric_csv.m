@@ -1,5 +1,5 @@
 function data = read_numeric_csv(csv_path)
-%READ_NUMERIC_CSV Load an all-numeric CSV (no header) as a double matrix.
+%READ_NUMERIC_CSV Load a headerless all-numeric CSV as a double matrix.
     if ~exist(csv_path, 'file')
         error('qrobustness:compat:MissingFile', 'CSV not found: %s', csv_path);
     end

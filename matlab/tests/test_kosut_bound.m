@@ -1,5 +1,5 @@
 function test_kosut_bound()
-%TEST_KOSUT_BOUND Unit tests for +qrobustness/+kosut (peer of test_kosut.py).
+%TEST_KOSUT_BOUND Unit tests for +qrobustness/+kosut (counterpart of test_kosut.py).
 
     this_dir = fileparts(mfilename('fullpath'));
     root = fileparts(fileparts(this_dir));
@@ -32,7 +32,7 @@ function test_kosut_bound()
     assert(qrobustness.kosut.threshold_time_bandwidth(0.999, 2e-3) == 0, ...
            'no headroom -> nothing certifiable');
 
-    % --- nominal-error absorption: angular is the sufficient one -------------
+    % --- absorption of the nominal error: angular is the sufficient form -------------
     for FT = [0.9 0.99 0.999]
         for eps0 = [0 1e-6 1e-4 1e-3]
             F_eff = qrobustness.kosut.effective_threshold(FT, eps0);
@@ -43,7 +43,7 @@ function test_kosut_bound()
     end
     assert(abs(qrobustness.kosut.effective_threshold(0.999, 0) - 0.999) < tol, ...
         'eps0 = 0 leaves the threshold unchanged');
-    % Angular is tighter than additive whenever eps0 > 0, hence conservative.
+    % Angular is tighter than additive whenever eps0 > 0, and is therefore conservative.
     assert(qrobustness.kosut.effective_threshold(0.999, 1e-4) > ...
            qrobustness.kosut.effective_threshold(0.999, 1e-4, 'additive'), ...
            'angular threshold must dominate the additive one');
@@ -59,8 +59,8 @@ function test_kosut_bound()
                 'effective_threshold closed form at FT=%g eps0=%g', FT, eps0);
         end
     end
-    % Equality case: for collinear single-qubit Z rotations the angles add
-    % exactly, so an achieved-gate fidelity of F_eff lands the TARGET
+    % Equality case: for collinear single-qubit Z rotations the angles add exactly, so an achieved-gate fidelity of F_eff places the
+    % TARGET
     % fidelity exactly on FT.
     Uf = eye(2);
     for FT = [0.9 0.99 0.999]
@@ -80,13 +80,15 @@ function test_kosut_bound()
     end
     % 1 - eps_0 is a fidelity: eps_0 outside [0, 1] is rejected.
     assert_error(@() qrobustness.kosut.effective_threshold(0.999, -1e-12), ...
+        'qrobustness:kosut:BadEps', ...
         'negative nominal_error');
     assert_error(@() qrobustness.kosut.effective_threshold(0.999, 1 + 1e-9), ...
+        'qrobustness:kosut:BadEps', ...
         'nominal_error above 1');
     assert(qrobustness.kosut.effective_threshold(0.999, 1) == 1, ...
         'eps0 = 1 is admissible and vacuous');
 
-    % --- rates scale correctly; margin inverts the bound ---------------------
+    % --- the rates scale correctly; the margin inverts the bound --------------
     [H_list, dt] = deterministic_pwc(0, 5, 0.3, SX, SY, SZ);
     dH_list = repmat({0.3 * SX}, 1, numel(H_list));
     rates = qrobustness.kosut.uncertainty_rates(H_list, dH_list, dt);
@@ -108,7 +110,7 @@ function test_kosut_bound()
     assert(qrobustness.kosut.fidelity_bound_at(rates, 1.01 * M) < FT, ...
         'beyond margin the bound drops below FT');
 
-    % --- rates match a brute-force interaction-picture sample ----------------
+    % --- the rates match a brute-force interaction-picture sample -------------
     [H_list, dt] = deterministic_pwc(3, 4, 0.3, SX, SY, SZ);
     dH_list = repmat({0.5 * SY}, 1, numel(H_list));
     rates = qrobustness.kosut.uncertainty_rates(H_list, dH_list, dt, 40, 201);
@@ -118,7 +120,7 @@ function test_kosut_bound()
     samples = cell(1, numel(H_list) * nsamp);
     idx = 0;
     ss = linspace(0, dt, nsamp + 1);
-    ss = ss(1:end-1);
+    ss = ss(1:end - 1);
     for k = 1:numel(H_list)
         for j = 1:nsamp
             US = expm(-1i * H_list{k} * ss(j)) * P;
@@ -139,7 +141,7 @@ function test_kosut_bound()
     end
     assert(abs(dev - rates.w_dev) <= 1e-2 * rates.w_dev, 'w_dev brute force');
 
-    % --- the bound must actually lower-bound the true perturbed fidelity -----
+    % --- the bound must in fact lower-bound the true perturbed fidelity ------
     [H_list, dt] = deterministic_pwc(7, 6, 0.3, SX, SY, SZ);
     Hhat = SZ;
     dH_list = repmat({Hhat}, 1, numel(H_list));
@@ -155,7 +157,7 @@ function test_kosut_bound()
             'bound violated at delta=%g', delta);
     end
 
-    % --- the implied margin is conservative vs the true crossing -------------
+    % --- the implied margin is conservative against the true crossing ---------
     [H_list, dt] = deterministic_pwc(11, 6, 0.3, SX, SY, SZ);
     dH_list = repmat({SZ}, 1, numel(H_list));
     rates = qrobustness.kosut.uncertainty_rates(H_list, dH_list, dt);
@@ -175,34 +177,28 @@ function test_kosut_bound()
     assert(rates0.w_unc == 0, 'zero structure -> zero w_unc');
     assert(isinf(qrobustness.kosut.margin(rates0, 0.999)), 'zero structure -> Inf margin');
 
-    assert_error(@() qrobustness.kosut.uncertainty_rates({}, {}, dt), 'empty H_list');
-    assert_error(@() qrobustness.kosut.uncertainty_rates(H_list, {SX}, dt), 'length mismatch');
-    assert_error(@() qrobustness.kosut.uncertainty_rates(H_list, zero_list, 0), 'dt <= 0');
-    assert_error(@() qrobustness.kosut.threshold_time_bandwidth(1.0), 'FT out of range');
-    assert_error(@() qrobustness.kosut.fidelity_bound(-0.1), 'negative T*Omega_bnd');
+    assert_error(@() qrobustness.kosut.uncertainty_rates({}, {}, dt), ...
+        'qrobustness:kosut:EmptyH', 'empty H_list');
+    assert_error(@() qrobustness.kosut.uncertainty_rates(H_list, {SX}, dt), ...
+        'qrobustness:kosut:LenMismatch', 'length mismatch');
+    assert_error(@() qrobustness.kosut.uncertainty_rates(H_list, zero_list, 0), ...
+        'qrobustness:kosut:BadDt', 'dt <= 0');
+    assert_error(@() qrobustness.kosut.threshold_time_bandwidth(1.0), ...
+        'qrobustness:kosut:BadFT', 'FT out of range');
+    assert_error(@() qrobustness.kosut.fidelity_bound(-0.1), ...
+        'qrobustness:kosut:NegTOb', 'negative T*Omega_bnd');
 
 end
 
 function [H_list, dt] = deterministic_pwc(seed, tau, dt, SX, SY, SZ)
-%DETERMINISTIC_PWC PWC single-qubit Hamiltonians from a fixed closed form.
-%   RNG-free so that MATLAB and Octave agree exactly; the Python peer tests use
-%   their own draws, since only the golden fixtures are cross-language.
+%DETERMINISTIC_PWC PWC single-qubit Hamiltonians from a fixed closed form. Free of RNG so that MATLAB and Octave agree exactly; the
+% Python peer tests use their own draws, since only the committed tables are cross-language.
     H_list = cell(1, tau);
     for k = 1:tau
         f1 = sin(1.7 * (k + seed));
         f2 = cos(2.3 * (k + seed) + 0.5);
         H_list{k} = 0.5 * SZ + f1 * SX + f2 * SY;
     end
-end
-
-function assert_error(fh, what)
-    ok = false;
-    try
-        fh();
-    catch
-        ok = true;
-    end
-    assert(ok, 'expected an error: %s', what);
 end
 
 % SPDX-FileCopyrightText: (C) 2026 F. C. Langbein <frank@langbein.org>

@@ -1,5 +1,5 @@
 # Python CI for qrobustness: metadata lint + pytest + sdist/wheel build.
-# MATLAB / full reproduction gate remain local (`make test`, `make check-margins`).
+# MATLAB / full reproduction gate remain local (`make test`, `make reproduce`).
 
 default:
   image: python:3.11
@@ -29,6 +29,23 @@ metadata:
     - reuse lint
     - cffconvert --validate
     - python -c "import json; json.load(open('.zenodo.json'))"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
+# ruff is declared in python/[dev] and configured by ruff.toml at the repo
+# root, which covers scripts/ as well as python/. It was never gated, so 65
+# findings accumulated unnoticed; gating keeps that from recurring.
+ruff:
+  <<: *python_setup
+  stage: lint
+  script:
+    - ruff check python/ scripts/
+    - ruff format --check python/ scripts/
+    # The peers: miss_hit is pure Python, so it gates here without MATLAB.
+    - mh_lint matlab/
+    - mh_metric matlab/
+    - mh_style matlab/
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH

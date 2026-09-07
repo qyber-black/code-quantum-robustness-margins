@@ -1,15 +1,14 @@
 function test_dU_dmu_exact()
-% Exact closed-form segment derivative vs finite differences and quadrature.
+% Exact closed-form segment derivative against finite differences and quadrature.
 %
-% For piecewise-constant controls dU/dmu is exact in the eigenbasis of the
-% interval Hamiltonian, so the Gauss-Legendre path only approximates what
-% qrobustness.dU_dmu_exact computes in closed form.  Pin the closed form down
-% directly, then assert the two paths agree on the real case-study data.
+% For piecewise-constant controls dU/dmu is exact in the eigenbasis of the interval Hamiltonian, so the Gauss-Legendre path only
+% approximates what qrobustness.dU_dmu_exact computes in closed form. We pin the closed form down directly, then assert that the two
+% paths agree on the real case-study data.
 
     dt = 0.4688;
     rng(20260730);
 
-    % Cases: generic, exactly degenerate spectrum, zero, and scalar.
+    % Cases: generic, a spectrum that is exactly degenerate, zero, and scalar.
     [Q, ~] = qr(randn(4) + 1i * randn(4));
     Hdeg = Q * diag([1 1 1 2]) * Q';
     cases = struct( ...
@@ -31,14 +30,14 @@ function test_dU_dmu_exact()
         assert(norm(qrobustness.segment_propagator(V, lam, dt) - expm(-1i * dt * H)) < 1e-12, ...
             '%s: eig-based propagator disagrees with expm', names{i});
 
-        % Central difference in mu, at the roundoff floor of eps = 1e-6.
+        % Central difference taken in mu, at the roundoff floor of eps = 1e-6.
         ep = 1e-6;
         fd = (expm(-1i * dt * (H + ep * dH)) - expm(-1i * dt * (H - ep * dH))) / (2 * ep);
         rel = norm(dU - fd, 'fro') / norm(dU, 'fro');
         assert(rel < 1e-8, '%s: dU vs central difference rel err %g', names{i}, rel);
     end
 
-    % dH = H commutes, so dU/dmu = -1i*dt*H*expm(-1i*dt*H) analytically.
+    % dH = H commutes, so dU/dmu = -1i*dt*H*expm(-1i*dt*H) in closed form.
     H = rand_herm(6);
     [V, lam] = qrobustness.segment_eig(H);
     dU = qrobustness.dU_dmu_exact(V, lam, H, dt);
@@ -47,13 +46,8 @@ function test_dU_dmu_exact()
     assert(rel < 1e-13, 'Commuting case rel err %g', rel);
 
     % Unknown method is rejected.
-    ok = false;
-    try
-        qrobustness.parse_dU_options('method', 'simpson');
-    catch
-        ok = true;
-    end
-    assert(ok, 'Expected parse_dU_options to reject an unknown method');
+    assert_error(@() qrobustness.parse_dU_options('method', 'simpson'), ...
+                 'qrobustness:dU:Method', 'an unknown derivative method');
 
     % Exact vs quadrature on the real case-study data.
     root = fileparts(fileparts(fileparts(mfilename('fullpath'))));
@@ -82,7 +76,7 @@ function test_dU_dmu_exact()
         end
     end
 
-    % Gradients agree, and F matches the quadrature path to roundoff.
+    % The gradients agree, and F matches the quadrature path to roundoff.
     c = controllers{1};
     dtc = c.tf / c.tau;
     [Fe, g1e, g2e] = qrobustness.fidelity_and_gradient(problem.H0, problem.H1, problem.H2, ...
@@ -109,6 +103,7 @@ function test_dU_dmu_exact()
 end
 
 function H = rand_herm(n)
+    % A random Hermitian matrix of size n.
     A = randn(n) + 1i * randn(n);
     H = (A + A') / 2;
 end

@@ -1,6 +1,6 @@
 function run_smoke_case_study()
-%RUN_SMOKE_CASE_STUDY Fast paper-driver smoke (2 controllers, no heavy sweeps).
-%   Writes under build/smoke/ so it does not clobber paper artefacts.
+%RUN_SMOKE_CASE_STUDY Quick paper-driver smoke (2 controllers, no heavy sweeps). Writes under build/smoke/ so it does not clobber
+% paper artefacts.
     this_dir = fileparts(mfilename('fullpath'));
     root = fileparts(fileparts(this_dir));
     smoke = fullfile(root, 'build', 'smoke');

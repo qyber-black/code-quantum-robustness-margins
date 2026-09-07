@@ -1,21 +1,20 @@
 function F_eff = effective_threshold(FT, nominal_error, absorption)
-%EFFECTIVE_THRESHOLD Achieved-gate fidelity threshold implied by FT on the target.
-%   Theorem 1 of the reference bounds the fidelity to the ACHIEVED nominal
-%   gate, |Tr(U_S' * U)|/N, whereas the certificate is stated against the
-%   TARGET.  Since arccos of the gate fidelity is the angle between the
-%   corresponding Choi states, it satisfies the triangle inequality, and the
-%   sufficient condition on the achieved-gate fidelity is
+%EFFECTIVE_THRESHOLD Achieved-gate fidelity threshold that FT on the target implies. Theorem 1 of the reference bounds the fidelity
+% to the ACHIEVED nominal gate, |Tr(U_S' * U)|/N, whereas the certificate is stated against the TARGET. Since arccos of the gate
+% fidelity is the angle between the corresponding Choi states, it satisfies the triangle inequality, and the sufficient condition on
+% the achieved-gate fidelity is
 %
 %     F_achieved >= cos( arccos(FT) - arccos(1 - nominal_error) )
 %
-%   (absorption = 'angular', the default).  When the nominal angle exhausts
-%   the budget, arccos(1-eps0) >= arccos(FT), no perturbation is certifiable
+% (absorption = 'angular', the default). If the nominal angle exhausts the budget, arccos(1-eps0) >= arccos(FT), no perturbation is
+% certifiable
 %   and 1 is returned so the margin is zero.
 %
-%   absorption = 'additive' returns FT + nominal_error.  It is NOT sufficient
-%   for the target-gate threshold (it is looser than the angular value
-%   whenever nominal_error > 0) and is retained only to reproduce previously
+% absorption = 'additive' returns FT + nominal_error. It is NOT sufficient for the target-gate threshold (looser than the angular
+% value whenever nominal_error > 0) and is kept only to reproduce previously
 %   published numbers.
+%
+%   Peer of python/src/qrobustness/kosut.py.
 
     if nargin < 2 || isempty(nominal_error); nominal_error = 0; end
     if nargin < 3 || isempty(absorption); absorption = 'angular'; end

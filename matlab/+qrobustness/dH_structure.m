@@ -1,8 +1,10 @@
 function dH_list = dH_structure(H0, H1, H2, u1, u2, structure)
-%DH_STRUCTURE Partial H^{(k)} / partial mu for multiplicative structures.
+%DH_STRUCTURE Partial derivative H^{(k)} / partial mu for multiplicative structures.
 %   For H0: dH/dmu = H0
 %   For H1: dH/dmu = u1(k) * H1
 %   For H2: dH/dmu = u2(k) * H2
+%
+%   Peer of python/src/qrobustness/core.py.
 
     tau = numel(u1);
     dH_list = cell(1, tau);

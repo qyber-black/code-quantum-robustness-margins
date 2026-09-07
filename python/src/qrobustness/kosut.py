@@ -13,8 +13,14 @@ closed-system, purely coherent, scalar structured perturbation model of this
 package, so that the perturbation margin it implies can be compared with the
 Lipschitz margin of :func:`qrobustness.core.iterative_margin`.
 
-Supplementary and experimental: outside the reproduction gate
-``make check-margins``, and no claim in the accompanying paper depends on it.
+Supplementary to the first paper and load-bearing for the second.
+``run_time_bandwidth_bound_comparison`` is in both reproduction sets, and
+the xQRM manuscript compares its margins with the certificates of this
+package throughout: the M^K and M^K_tv columns of the time-variation table,
+the per-controller and ratio figures, eight generated macros, and the
+abstract's statement that nominal error must be absorbed angularly and that
+a constant-scaling measure ball is not a sup-norm trajectory ball. Changing
+what this module computes changes those numbers.
 ``docs/time-bandwidth-bound.md`` gives the specialisation, the caveats, the
 numerical accuracy and the results.
 
@@ -43,18 +49,19 @@ the fidelity to the ACHIEVED nominal gate ``U_S(t_f)``, not the target.
 Theorem 1 further assumes exact nominal fidelity ``F_nom = 1``.  Pass
 ``nominal_error=eps_0`` to :func:`margin` or
 :func:`threshold_time_bandwidth` to absorb the nominal deficit into the
-threshold via the angular relation of :func:`effective_threshold` (the
-sufficient correction; the previously used additive form ``FT + eps_0`` is
-selectable as ``absorption='additive'`` but is NOT conservative), or leave
-it at 0 to evaluate the bound as stated.
+threshold via the angular relation of :func:`effective_threshold`, the
+sufficient correction. The additive form ``FT + eps_0`` is selectable as
+``absorption='additive'`` and is NOT conservative. Leave ``nominal_error``
+at 0 to evaluate the bound as stated.
 
-Scope: the margin returned here is the *constant structured-parameter*
-specialisation.  The measures ``w_avg`` and ``w_dev`` are computed for the
-fixed structure ``delta * Hhat``, so ``margin`` certifies constant
+Scope: by default the margin returned here is the *constant
+structured-parameter* specialisation.  ``w_avg`` and ``w_dev`` are computed
+for the fixed structure ``delta * Hhat``, so ``margin`` certifies constant
 perturbations ``|delta| <= M^K``.  It is NOT a supremum-norm time-varying
 margin: a sign-modulated trajectory ``delta(t)`` with ``|delta(t)| <= M^K``
 can defeat the coherent averaging that makes ``w_avg`` small, and
-adversarial counterexamples exist.
+adversarial counterexamples exist.  Pass ``uncertainty='trajectory'`` for
+the variant that certifies every measurable ``|delta(t)| <= M^K_tv``.
 """
 
 from __future__ import annotations
@@ -88,6 +95,16 @@ class UncertaintyRates:
     w_avg: float
     w_dev: float
     T: float
+    #: Certified upper bounds on the measures of an arbitrary *trajectory*
+    #: ``delta(t) Hhat(t)`` with ``|delta(t)| <= 1``.  ``w_avg`` and ``w_dev``
+    #: above scale only *constant* ``delta``: a sign-modulated trajectory can
+    #: defeat the coherent averaging, so ``||<delta Htil>|| <= w_avg_traj``
+    #: with ``w_avg_traj = (1/T) int ||Htil(t)|| dt = mean_k ||Hhat^(k)||``
+    #: (exact by isospectrality of unitary conjugation), and
+    #: ``w_dev_traj = w_unc + w_avg_traj``.  Used by the
+    #: ``uncertainty='trajectory'`` variants below.
+    w_avg_traj: float = float("nan")
+    w_dev_traj: float = float("nan")
     # --- error control -------------------------------------------------
     # w_unc and w_avg are exact to roundoff (see uncertainty_rates).  w_dev
     # is a supremum recovered from samples, so it carries an uncertainty.
@@ -123,7 +140,7 @@ def _time_average_htil(lam: Array, V: Array, dH: Array, dt: float) -> Array:
     ``H`` is constant on the interval, so in its eigenbasis the integral is a
     divided difference: the ``(m, n)`` entry picks up
     ``int_0^dt exp(i s (lam_m - lam_n)) ds = dt * exp(i Y) * sin(Y)/Y`` with
-    ``Y = dt (lam_m - lam_n)/2``.  As with ``core._dU_dmu_exact`` the exponent
+    ``Y = dt (lam_m - lam_n)/2``.  As with ``core.dU_dmu_exact`` the exponent
     is purely imaginary, so this form has no cancellation and needs no
     magnitude threshold -- only the literal ``Y == 0`` entries are masked.
     """
@@ -268,11 +285,15 @@ def uncertainty_rates(
     # would under-resolve without indication.
     cycles = [float(np.ptp(lam)) * dt / (2.0 * np.pi) for lam, _ in eigs]
     n_seed = [
-        min(max(int(n_dev), 3, int(np.ceil(dev_samples_per_cycle * ck)) + 1), int(n_dev_max))
+        min(
+            max(int(n_dev), 3, int(np.ceil(dev_samples_per_cycle * ck)) + 1),
+            int(n_dev_max),
+        )
         for ck in cycles
     ]
     achieved = [
-        (n - 1) / ck if ck > 0 else float("inf") for n, ck in zip(n_seed, cycles)
+        (n - 1) / ck if ck > 0 else float("inf")
+        for n, ck in zip(n_seed, cycles, strict=True)
     ]
     min_samples_per_cycle = float(min(achieved)) if achieved else float("inf")
     dev_resolved = bool(min_samples_per_cycle >= dev_samples_per_cycle)
@@ -303,7 +324,9 @@ def uncertainty_rates(
                 # gives a value accurate to ~eps rather than to the grid
                 # spacing: near a maximum f(s*+d) = f(s*) - O(d^2).
                 for i, v in enumerate(vals):
-                    interior = 0 < i < n_grid - 1 and v >= vals[i - 1] and v >= vals[i + 1]
+                    interior = (
+                        0 < i < n_grid - 1 and v >= vals[i - 1] and v >= vals[i + 1]
+                    )
                     if not (interior or v >= local_best):
                         continue
                     a = grid[max(i - 1, 0)]
@@ -311,7 +334,9 @@ def uncertainty_rates(
                     if b <= a:
                         continue
                     res = minimize_scalar(
-                        lambda s: -f(k, s), bounds=(a, b), method="bounded",
+                        lambda s, k=k: -f(k, s),
+                        bounds=(a, b),
+                        method="bounded",
                         options={"xatol": 1e-15},
                     )
                     best_k = max(best_k, float(-res.fun))
@@ -348,11 +373,18 @@ def uncertainty_rates(
     bracket_lo = max(0.0, max(n - w_avg for n in norms_dH))
     bracket_hi = w_unc + w_avg
 
+    # Trajectory-worst-case measures: for |delta(t)| <= 1,
+    # ||<delta Htil>|| <= (1/T) int ||Htil|| dt = mean_k ||Hhat^(k)|| (exact
+    # by isospectrality) and the deviation is bounded by w_unc + that mean.
+    w_avg_traj = float(np.mean(norms_dH))
+
     return UncertaintyRates(
         w_unc=float(w_unc),
         w_avg=float(w_avg),
         w_dev=float(w_dev),
         T=float(T),
+        w_avg_traj=w_avg_traj,
+        w_dev_traj=float(w_unc) + w_avg_traj,
         w_dev_certified=float(w_dev_sampled + lipschitz_gap),
         w_dev_refinement=float(refinement),
         w_dev_bracket_lo=float(bracket_lo),
@@ -365,16 +397,45 @@ def uncertainty_rates(
     )
 
 
-def time_bandwidth(rates: UncertaintyRates, delta: float) -> float:
+UNCERTAINTIES = ("constant", "trajectory")
+
+
+def _select_rates(rates: UncertaintyRates, uncertainty: str) -> tuple[float, float]:
+    """``(w_avg, w_dev)`` for the requested uncertainty class.
+
+    ``'constant'`` scales the measures of the structure ``delta * Hhat`` with
+    a fixed ``delta`` -- valid for constant (fixed-direction) perturbations
+    only.  ``'trajectory'`` substitutes the certified worst-case bounds over
+    all measurable trajectories ``|delta(t)| <= |delta|``
+    (``w_avg_traj = mean_k ||Hhat^(k)||``, ``w_dev_traj = w_unc +
+    w_avg_traj``): a sign-modulated trajectory can defeat the coherent
+    averaging behind the small ``w_avg``, so the constant-``delta`` margin is
+    NOT a supremum-norm time-varying margin (adversarial counterexamples
+    exist), whereas the trajectory variant is.
+    """
+    if uncertainty not in UNCERTAINTIES:
+        raise ValueError(f"uncertainty must be one of {UNCERTAINTIES}")
+    if uncertainty == "constant":
+        return rates.w_avg, rates.w_dev
+    if not (np.isfinite(rates.w_avg_traj) and np.isfinite(rates.w_dev_traj)):
+        raise ValueError("trajectory rates unavailable; recompute uncertainty_rates()")
+    return rates.w_avg_traj, rates.w_dev_traj
+
+
+def time_bandwidth(
+    rates: UncertaintyRates, delta: float, uncertainty: str = "constant"
+) -> float:
     """``T*Omega_bnd`` of their Eq. 29 at perturbation ``delta``.
 
     Uses the linearity of their Eq. 28 in ``delta``:
     ``T*Omega_bnd(delta) = sqrt(a delta^2 + b |delta|)`` with
-    ``a = T^2 w_unc w_dev`` and ``b = 4 T w_avg``.
+    ``a = T^2 w_unc w_dev`` and ``b = 4 T w_avg``; see
+    :func:`_select_rates` for the ``uncertainty`` classes.
     """
+    w_avg, w_dev = _select_rates(rates, uncertainty)
     d = abs(float(delta))
-    a = rates.T**2 * rates.w_unc * rates.w_dev
-    b = 4.0 * rates.T * rates.w_avg
+    a = rates.T**2 * rates.w_unc * w_dev
+    b = 4.0 * rates.T * w_avg
     return float(np.sqrt(a * d * d + b * d))
 
 
@@ -388,16 +449,19 @@ def fidelity_bound(T_omega_bnd: float) -> float:
     return float(max(1.0 - 0.5 * (np.exp((y / 2.0) ** 2) - 1.0) ** 2, 0.0))
 
 
-def fidelity_bound_at(rates: UncertaintyRates, delta: float) -> float:
+def fidelity_bound_at(
+    rates: UncertaintyRates, delta: float, uncertainty: str = "constant"
+) -> float:
     """``F_lb`` of their Eq. 30 at perturbation ``delta``."""
-    return fidelity_bound(time_bandwidth(rates, delta))
+    return fidelity_bound(time_bandwidth(rates, delta, uncertainty))
 
 
 ABSORPTIONS = ("angular", "additive")
 
 
-def effective_threshold(FT: float, nominal_error: float = 0.0,
-                        absorption: str = "angular") -> float:
+def effective_threshold(
+    FT: float, nominal_error: float = 0.0, absorption: str = "angular"
+) -> float:
     """Threshold on the achieved-gate fidelity implied by ``FT`` on the target.
 
     Theorem 1 of the reference bounds the fidelity to the ACHIEVED nominal
@@ -436,8 +500,9 @@ def effective_threshold(FT: float, nominal_error: float = 0.0,
     return float(np.cos(theta_T - theta_nom))
 
 
-def threshold_time_bandwidth(FT: float, nominal_error: float = 0.0,
-                             absorption: str = "angular") -> float:
+def threshold_time_bandwidth(
+    FT: float, nominal_error: float = 0.0, absorption: str = "angular"
+) -> float:
     """``T*Omega_bnd`` at which their ``F_lb`` equals the threshold.
 
     Inverts their Eq. 30 in closed form: ``F_lb = F_eff`` gives
@@ -455,30 +520,39 @@ def threshold_time_bandwidth(FT: float, nominal_error: float = 0.0,
     return float(2.0 * np.sqrt(np.log(1.0 + np.sqrt(2.0 * eps))))
 
 
-def margin(rates: UncertaintyRates, FT: float, nominal_error: float = 0.0,
-           absorption: str = "angular") -> float:
+def margin(
+    rates: UncertaintyRates,
+    FT: float,
+    nominal_error: float = 0.0,
+    absorption: str = "angular",
+    uncertainty: str = "constant",
+) -> float:
     """Perturbation margin implied by their Theorem 1.
 
     The largest ``|delta|`` for which their ``F_lb`` meets the effective
-    threshold of :func:`effective_threshold` (angular by default; the
-    previously used additive absorption is selectable but not
-    conservative).  Since ``T*Omega_bnd`` is monotone in ``|delta|``, this
+    threshold of :func:`effective_threshold`: angular by default, with the
+    additive absorption selectable but not conservative. Since
+    ``T*Omega_bnd`` is monotone in ``|delta|``, this
     inverts ``a delta^2 + b delta = y*^2`` in closed form with
     ``y* = threshold_time_bandwidth(FT, nominal_error, absorption)``.
 
-    Certifies *constant* perturbations ``|delta| <= M`` only; see the
-    module docstring for why this is not a supremum-norm trajectory margin.
+    ``uncertainty='constant'`` (default) certifies constant perturbations
+    ``|delta| <= M^K`` only; it is NOT a supremum-norm time-varying margin
+    (see :func:`_select_rates`; sign-modulated trajectories violate it).
+    ``uncertainty='trajectory'`` uses the certified worst-case trajectory
+    measures and certifies every measurable ``|delta(t)| <= M^K_tv``.
 
     Returns ``0.0`` if no positive perturbation is certifiable, and ``inf`` if
     the perturbation does not enter the bound at all (``w_unc*w_dev = 0`` and
     ``w_avg = 0``, e.g. a structure that is annihilated in the interaction
     picture).
     """
+    w_avg, w_dev = _select_rates(rates, uncertainty)
     y = threshold_time_bandwidth(FT, nominal_error, absorption)
     if y <= 0.0:
         return 0.0
-    a = rates.T**2 * rates.w_unc * rates.w_dev
-    b = 4.0 * rates.T * rates.w_avg
+    a = rates.T**2 * rates.w_unc * w_dev
+    b = 4.0 * rates.T * w_avg
     y2 = y * y
     if a <= 0.0 and b <= 0.0:
         return float("inf")

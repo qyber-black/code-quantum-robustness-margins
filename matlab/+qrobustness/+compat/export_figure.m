@@ -1,5 +1,5 @@
 function export_figure(fig, path, dpi)
-%EXPORT_FIGURE Write a figure to PNG at the given resolution.
+%EXPORT_FIGURE Write a figure to PNG at the stated resolution.
     if nargin < 3 || isempty(dpi)
         dpi = 300;
     end

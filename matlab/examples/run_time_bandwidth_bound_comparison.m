@@ -1,14 +1,12 @@
 function run_time_bandwidth_bound_comparison(varargin)
-%RUN_TIME_BANDWIDTH_BOUND_COMPARISON Compare the Lipschitz margin with the Kosut et al. bound.
+%RUN_TIME_BANDWIDTH_BOUND_COMPARISON Compare the Lipschitz margin against the Kosut et al. bound.
 %
-%   Supplementary analysis (not part of the paper's main results): for every
-%   controller and perturbation structure, computes the certified margin M of
-%   Algorithm 1 alongside the margin implied by Theorem 1 of arXiv:2507.01215,
-%   specialised to this closed-system coherent perturbation model.  See
-%   +qrobustness/+kosut/Contents.m and docs/time-bandwidth-bound.md.
+% Supplementary analysis (not part of the paper's main results): for every controller and perturbation structure, we compute the
+% certified margin M of Algorithm 1 alongside the margin implied by Theorem 1 of arXiv:2507.01215, specialised to this closed-system
+% coherent perturbation model. See +qrobustness/+kosut/Contents.m and docs/time-bandwidth-bound.md.
 %
-%   Peer of scripts/run_time_bandwidth_bound_comparison.py; both write the same CSV columns
-%   (qrobustness.compat.kosut_csv_headers) so scripts/compare_time_bandwidth_bound.py can
+% Counterpart of scripts/run_time_bandwidth_bound_comparison.py; both write the same CSV columns
+% (qrobustness.compat.kosut_csv_headers) so scripts/compare_time_bandwidth_bound.py can
 %   cross-check them.
 %
 %   Name-value options:
@@ -16,17 +14,17 @@ function run_time_bandwidth_bound_comparison(varargin)
 %     'FT'               0.999
 %     'max_error'        1e-4
 %     'eta'              1e-6
-%     'literal_theorem'  false; true evaluates their Theorem 1 literally
+% 'literal_theorem' false; true evaluates their Theorem 1 in literal form
 %                        (F_nom = 1) instead of absorbing eps_0
-%     'absorption'       'angular' (default, the sufficient triangle-
+% 'absorption' 'angular' (default; the sufficient triangle-
 %                        inequality condition) or 'additive' (FT + eps_0;
 %                        not conservative, reproduces pre-1.0.1 numbers)
 %     'do_plot'          true
 %     'root'             auto-detect repo root
-%     'controller_dir'   '' -> data/controllers/problem9_tf15_K32_quasi-newton
-%     'publish_dir'      '' -> results/time-bandwidth-bound-matlab/
+% 'controller_dir' '' maps to data/controllers/problem9_tf15_K32_quasi-newton 'publish_dir' '' maps to
+% results/time-bandwidth-bound-matlab/
 
-    % Choose the graphics toolkit before any figure exists.
+    % Select the graphics toolkit before any figure exists.
     qrobustness.compat.setup_graphics();
 
     p = inputParser;
@@ -36,6 +34,7 @@ function run_time_bandwidth_bound_comparison(varargin)
     addParameter(p, 'eta', 1e-6);
     addParameter(p, 'literal_theorem', false);
     addParameter(p, 'absorption', 'angular');
+    addParameter(p, 'uncertainty', 'constant');
     addParameter(p, 'do_plot', true);
     addParameter(p, 'root', '');
     addParameter(p, 'controller_dir', '');
@@ -68,6 +67,9 @@ function run_time_bandwidth_bound_comparison(varargin)
         n = min(n, opt.max_controllers);
     end
 
+    % Bracket refinement for the certified margin, named to match the Python reference's MARGIN_TOL rather than remaining a literal
+    % at the call site.
+    margin_tol = 1e-8;
     tags = {'H0', 'H1', 'H2'};
     headers = qrobustness.compat.kosut_csv_headers();
     Tbl = struct();
@@ -100,7 +102,11 @@ function run_time_bandwidth_bound_comparison(varargin)
             L = qrobustness.lipschitz_constant(opt.FT, problem.dim, C);
             fid_fn = qrobustness.make_fidelity_fn( ...
                 problem.H0, problem.H1, problem.H2, c.u1, c.u2, problem.Uf, dt, tag);
-            mres = qrobustness.iterative_margin(fid_fn, L, opt.FT, 'mu0', 0, 'eta', opt.eta);
+            % margin_tol is aligned with the Python reference: without it the continuation returns its last safe step, a valid but
+            % looser certified lower bound, and the engines would disagree by
+            % ~5e-4 rather than to parity tolerance.
+            mres = qrobustness.iterative_margin(fid_fn, L, opt.FT, ...
+                'mu0', 0, 'eta', opt.eta, 'margin_tol', margin_tol);
             M = mres.M;
 
             H_list = qrobustness.perturbed_hamiltonians( ...
@@ -108,7 +114,8 @@ function run_time_bandwidth_bound_comparison(varargin)
             dH = qrobustness.dH_structure( ...
                 problem.H0, problem.H1, problem.H2, c.u1, c.u2, tag);
             rates = qrobustness.kosut.uncertainty_rates(H_list, dH, dt);
-            KM = qrobustness.kosut.margin(rates, opt.FT, eps0, opt.absorption);
+            KM = qrobustness.kosut.margin(rates, opt.FT, eps0, ...
+                opt.absorption, opt.uncertainty);
 
             Tbl.(sprintf('M_%s', tag))(i) = M;
             Tbl.(sprintf('KM_%s', tag))(i) = KM;
@@ -117,9 +124,11 @@ function run_time_bandwidth_bound_comparison(varargin)
             else
                 Tbl.(sprintf('ratio_%s', tag))(i) = Inf;
             end
-            % The reference bound evaluated at the certified Lipschitz margin.
-            Tbl.(sprintf('KTOb_%s', tag))(i) = qrobustness.kosut.time_bandwidth(rates, M);
-            Tbl.(sprintf('Kflb_%s', tag))(i) = qrobustness.kosut.fidelity_bound_at(rates, M);
+            % The reference bound, evaluated at the certified Lipschitz margin.
+            Tbl.(sprintf('KTOb_%s', tag))(i) = ...
+                qrobustness.kosut.time_bandwidth(rates, M, opt.uncertainty);
+            Tbl.(sprintf('Kflb_%s', tag))(i) = ...
+                qrobustness.kosut.fidelity_bound_at(rates, M, opt.uncertainty);
             % Per-unit-delta uncertainty measures (their Eq. 28).
             Tbl.(sprintf('wunc_%s', tag))(i) = rates.w_unc;
             Tbl.(sprintf('wavg_%s', tag))(i) = rates.w_avg;
@@ -127,7 +136,20 @@ function run_time_bandwidth_bound_comparison(varargin)
         end
     end
 
-    csv_path = fullfile(out_dir, sprintf('kosut_comparison_%g.csv', opt.FT));
+    % Follow the Python reference's naming: the angular CSV carries an _angular suffix so both absorptions can coexist in one tree.
+    % Without this the peer wrote its angular default under the plain name, which is additive in the reference, and test-parity
+    % compared the two conventions
+    % against each other.
+    if strcmp(opt.absorption, 'angular')
+        suffix = '_angular';
+    else
+        suffix = '';
+    end
+    if strcmp(opt.uncertainty, 'trajectory')
+        suffix = [suffix '_tv'];
+    end
+    csv_path = fullfile(out_dir, ...
+        sprintf('kosut_comparison_%g%s.csv', opt.FT, suffix));
     qrobustness.compat.write_kosut_csv(csv_path, Tbl);
     fprintf('Wrote %s\n', csv_path);
 
@@ -152,12 +174,13 @@ function run_time_bandwidth_bound_comparison(varargin)
 
     if opt.do_plot
         plot_kosut_scatter(Tbl, tags, opt.FT, ...
-            fullfile(out_dir, sprintf('kosut_vs_lipschitz_%g.png', opt.FT)));
+            fullfile(out_dir, ...
+                sprintf('kosut_vs_lipschitz_%g%s.png', opt.FT, suffix)));
     end
 end
 
 function plot_kosut_scatter(Tbl, tags, FT, out_path)
-%PLOT_KOSUT_SCATTER Log-log scatter of the implied margin against ours.
+%PLOT_KOSUT_SCATTER Log-log scatter of the implied margin against our margin.
     colors = [0 0 1; 0 1 0; 1 0 0];
     fig = figure('Visible', 'off');
     hold on;

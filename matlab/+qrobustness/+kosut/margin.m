@@ -1,40 +1,42 @@
-function M = margin(rates, FT, nominal_error, absorption)
-%MARGIN Perturbation margin implied by their Theorem 1.
-%   M = MARGIN(rates, FT) is the largest |delta| for which their F_lb >= FT,
-%   i.e. the analogue of qrobustness.iterative_margin(...).M obtained from
-%   their bound.  M = MARGIN(rates, FT, nominal_error) instead certifies the
-%   effective threshold of qrobustness.kosut.effective_threshold, which
-%   absorbs the nominal fidelity deficit through the angular relation by
-%   default (their Theorem 1 assumes F_nom = 1); pass absorption =
-%   'additive' for the previously published, non-conservative form.
+function M = margin(rates, FT, nominal_error, absorption, uncertainty)
+%MARGIN Margin of perturbation implied by their Theorem 1. M = MARGIN(rates, FT) is the largest |delta| such that their F_lb >= FT,
+% i.e. the analogue of qrobustness.iterative_margin(...).M obtained from their bound. M = MARGIN(rates, FT, nominal_error) instead
+% certifies the effective threshold of qrobustness.kosut.effective_threshold, which absorbs the nominal fidelity deficit by the
+% angular relation by default (their Theorem 1 assumes F_nom = 1); pass absorption = 'additive' for the previously published,
+% non-conservative form. uncertainty : 'constant' (default) or 'trajectory'; the latter returns M^K_tv, certified against all
+% sup-norm-bounded trajectories. See
+%   QROBUSTNESS.KOSUT.SELECT_RATES.
 %
-%   Since T*Omega_bnd is monotone in |delta|, this inverts
+% Because T*Omega_bnd is monotone in |delta|, this inverts
 %   a*delta^2 + b*delta = y^2 in closed form, with
-%   y = qrobustness.kosut.threshold_time_bandwidth(FT, nominal_error, absorption).
+% the inverted value y = qrobustness.kosut.threshold_time_bandwidth(FT, nominal_error, absorption).
 %
-%   Certifies CONSTANT perturbations |delta| <= M only; it is not a
-%   supremum-norm time-varying margin (see qrobustness/kosut.py).
+% Certifies CONSTANT perturbations |delta| <= M only; this is not a supremum-norm time-varying margin (see qrobustness/kosut.py).
 %
-%   Returns 0 if no positive perturbation is certifiable, and Inf if the
-%   perturbation does not enter the bound at all (w_unc*w_dev = 0, w_avg = 0).
+% Returns 0 when no positive perturbation is certifiable, and Inf when the perturbation does not enter the bound at all (w_unc*w_dev
+% = 0, w_avg = 0).
+%
+% Counterpart of python/src/qrobustness/kosut.py (margin; berberich.py also defines one).
 
     if nargin < 3 || isempty(nominal_error); nominal_error = 0; end
     if nargin < 4 || isempty(absorption); absorption = 'angular'; end
+    if nargin < 5 || isempty(uncertainty); uncertainty = 'constant'; end
     y = qrobustness.kosut.threshold_time_bandwidth(FT, nominal_error, absorption);
     if y <= 0
         M = 0;
-        return;
+        return
     end
-    a = rates.T^2 * rates.w_unc * rates.w_dev;
-    b = 4 * rates.T * rates.w_avg;
+    [w_avg, w_dev] = qrobustness.kosut.select_rates(rates, uncertainty);
+    a = rates.T^2 * rates.w_unc * w_dev;
+    b = 4 * rates.T * w_avg;
     y2 = y * y;
     if a <= 0 && b <= 0
         M = Inf;
     else
-        % Stable positive root of a*m^2 + b*m = y2: the textbook form
+        % Stable positive root of a*m^2 + b*m = y2: the standard textbook form
         % (-b + sqrt(b^2 + 4*a*y2))/(2*a) cancels catastrophically for
         % a*y2 << b^2 (e.g. structures commuting with the nominal
-        % evolution, where w_dev ~ 0); the rationalised form is exact in
+        % evolution, where w_dev ~ 0); the rationalised form remains exact in
         % both limits and needs no a <= 0 special case.
         M = 2 * y2 / (b + sqrt(b * b + 4 * a * y2));
     end

@@ -1,7 +1,7 @@
 function run_synthesize_controllers(varargin)
-%RUN_SYNTHESIZE_CONTROLLERS Ensemble fidelity maximisation -> results/synth-matlab/.
+%RUN_SYNTHESIZE_CONTROLLERS Ensemble fidelity maximisation written to results/synth-matlab/.
 %
-%   Does not modify data/controllers/problem9_tf15_K32_quasi-newton/.
+% Leaves data/controllers/problem9_tf15_K32_quasi-newton/ unmodified.
 %
 %   Name-value:
 %     'n_opt'   100
@@ -13,6 +13,8 @@ function run_synthesize_controllers(varargin)
 %     'ftol'    1e-12
 %     'out'     results/synth-matlab
 %     'root'    auto
+%
+%   Peer of scripts/run_synthesize_controllers.py.
 
     p = inputParser;
     addParameter(p, 'n_opt', 100);
@@ -92,6 +94,7 @@ function run_synthesize_controllers(varargin)
 end
 
 function write_controllers_csv(path, rows, tf, tau)
+    % Write the ensemble in the flat format that load_controllers reads.
     fid = fopen(path, 'w');
     if fid < 0
         error('Cannot write %s', path);
@@ -110,6 +113,8 @@ function write_controllers_csv(path, rows, tf, tau)
 end
 
 function write_meta_json(path, meta)
+    % Write the run provenance beside the ensemble, in the same schema
+    % as the Python peer's meta.json.
     fid = fopen(path, 'w');
     fprintf(fid, '{\n');
     fprintf(fid, '  "method": "%s",\n', meta.method);
@@ -132,6 +137,7 @@ function write_meta_json(path, meta)
 end
 
 function s = escape_json(s)
+    % Escape a string for JSON; core Octave has no JSON encoder.
     s = strrep(s, '\', '\\');
     s = strrep(s, '"', '\"');
 end

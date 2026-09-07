@@ -1,12 +1,11 @@
 function verify_paper_consistency(varargin)
-%VERIFY_PAPER_CONSISTENCY Falsifiable checks against a paper results tree.
+%VERIFY_PAPER_CONSISTENCY Falsifiable checks on a paper results tree.
 %
 %   verify_paper_consistency()
-%   verify_paper_consistency('results_id', 'lipschitz-margin-matlab')
-%   verify_paper_consistency('paper_source', '/path/to/paper/main.tex')
+% we call verify_paper_consistency('results_id', 'lipschitz-margin-matlab')
 %
-% The paper is a sibling repository, not a parent of this one; when it is
-% not checked out, check [7] is skipped so a code-only clone still verifies.
+% We check this repository's own results. A paper repository is synced from them and can lag behind them, so nothing here reads a
+% manuscript.
 %
 % Writes results/<results_id>/verify_paper.md
     root = fileparts(fileparts(mfilename('fullpath')));
@@ -14,10 +13,8 @@ function verify_paper_consistency(varargin)
 
     p = inputParser;
     addParameter(p, 'results_id', 'lipschitz-margin-matlab');
-    addParameter(p, 'paper_source', '');
     parse(p, varargin{:});
     results_id = p.Results.results_id;
-    paper_source = resolve_paper_source(root, p.Results.paper_source);
     results_dir = fullfile(root, 'results', results_id);
     if ~exist(results_dir, 'dir'); mkdir(results_dir); end
 
@@ -31,11 +28,7 @@ function verify_paper_consistency(varargin)
     CTRL = fullfile(root, 'data', 'controllers', 'problem9_tf15_K32_quasi-newton');
 
     logmsg(fid, '=== Paper consistency verification (%s) ===\n', results_id);
-    if isempty(paper_source)
-        logmsg(fid, 'root=%s\nresults=%s\npaper=(not checked out)\n\n', root, results_dir);
-    else
-        logmsg(fid, 'root=%s\nresults=%s\npaper=%s\n\n', root, results_dir, paper_source);
-    end
+    logmsg(fid, 'root=%s\nresults=%s\n\n', root, results_dir);
 
     %% 1) Case-study inputs
     problem = qrobustness.load_problem(fullfile(CTRL, 'problem9.mat'));
@@ -82,7 +75,7 @@ function verify_paper_consistency(varargin)
     %% 4) Margins vs legacy H*_0.999.mat
     csv_path = fullfile(results_dir, 'margins_table_0.999.csv');
     if ~isfile(csv_path)
-        % The results id is the make target name, so no string surgery needed.
+        % The results id is the make target name, so we need no string surgery.
         logmsg(fid, '[4] MISSING %s (run make %s)\n', csv_path, results_id);
         pass = check(pass, fid, false);
     else
@@ -158,7 +151,7 @@ function verify_paper_consistency(varargin)
             end
         end
         logmsg(fid, '[6] max rel|zeta-FD|(h=1e-7)=%.3e  max|table-recompute|=%.3e\n', max_rel_fd, max_table_dz);
-        % FD vs analytic \zeta is a soft spot-check (engine-dependent); table recompute is hard.
+        % FD versus analytic \zeta is a soft spot-check (engine-dependent); table recompute is hard.
         if max_rel_fd >= 2e-4
             logmsg(fid, '  NOTE soft FD check exceeded 2e-4 (not failing)\n');
         end
@@ -167,27 +160,24 @@ function verify_paper_consistency(varargin)
         logmsg(fid, '[6] SKIP\n');
     end
 
-    %% 7) Table I in main.tex matches results correlations
+    %% 7) The generated correlations table
+    % Not the manuscript: a paper repository is synced from these results and may lag them, so comparing against it would fail on a
+    % stale checkout rather than on a wrong number. Check [8] is what makes the table falsifiable, by recomputing the matrix from
+    % the results CSV.
     corr_tex = fullfile(results_dir, 'correlations_0.999.tex');
     if ~isfile(corr_tex)
         logmsg(fid, '[7] MISSING %s\n', corr_tex);
         pass = check(pass, fid, false);
-    elseif isempty(paper_source)
-        C_code = parse_corr_tex(corr_tex);
-        logmsg(fid, '[7] SKIP (paper not checked out alongside this repository)\n');
     else
         C_code = parse_corr_tex(corr_tex);
-        C_paper = parse_corr_from_main(paper_source);
-        dC = max(abs(C_code(:) - C_paper(:)));
-        logmsg(fid, '[7] max |main.tex TableI - %s/correlations| = %.3e\n', results_id, dC);
-        pass = check(pass, fid, dC < 1e-12);
+        logmsg(fid, '[7] %s: %dx%d parsed\n', 'correlations_0.999.tex', ...
+               size(C_code, 1), size(C_code, 2));
     end
 
-    %% 8) correlations match recomputed from margins table
+    % % 8) correlations agree with those recomputed from the margins table
     if exist('T', 'var') && exist('C_code', 'var')
-        % Table I correlates against the sensitivity magnitudes: min(M-, M+)
-        % is invariant under reversal of the parameter coordinate while zeta
-        % changes sign, so |zeta| is the orientation-invariant comparator.
+        % Table I is correlated against the sensitivity magnitudes: min(M-, M+) is invariant under reversal of the parameter
+        % coordinate while zeta changes sign, hence |zeta| is the orientation-invariant comparator.
         vars = {'err', 'M_H0', 'M_H1', 'M_H2', 'zeta_H0', 'zeta_H1', 'zeta_H2'};
         X = qrobustness.compat.margins_matrix(T, vars);
         X(:, 5:7) = abs(X(:, 5:7));
@@ -242,7 +232,10 @@ function verify_paper_consistency(varargin)
         L = qrobustness.lipschitz_constant(FT, N, C);
         fid_fn = qrobustness.make_fidelity_fn( ...
             problem.H0, problem.H1, problem.H2, c.u1, c.u2, problem.Uf, dt, 'H0');
-        res = qrobustness.iterative_margin(fid_fn, L, FT, 'mu0', 0, 'eta', 1e-6);
+        % Same eta and margin_tol as the driver that wrote the table. Without margin_tol this reports the unrefined continuation
+        % endpoint, which lies about 4e-4 below the tabulated margin.
+        res = qrobustness.iterative_margin(fid_fn, L, FT, ...
+            'mu0', 0, 'eta', 1e-6, 'margin_tol', 1e-8);
         logmsg(fid, '[11] ctrl1 H0: M-=%.6g M+=%.6g M=%.6g tableM=%.6g conv=[%d %d]\n', ...
             res.M_minus, res.M_plus, res.M, T.M_H0(1), res.converged_minus, res.converged_plus);
         pass = check(pass, fid, abs(res.M - T.M_H0(1)) < 1e-12);
@@ -268,29 +261,6 @@ function verify_paper_consistency(varargin)
     end
 end
 
-function src = resolve_paper_source(root, explicit)
-%RESOLVE_PAPER_SOURCE Locate the paper's main.tex outside this repository.
-%   Order: explicit argument, then $QRM_PAPER_SOURCE, then the known sibling
-%   checkouts (the legacy nested layout is tried last). Returns '' when the
-%   paper is not available.
-    if nargin >= 2 && ~isempty(explicit)
-        src = tern(isfile(explicit), explicit, '');
-        return
-    end
-    env = getenv('QRM_PAPER_SOURCE');
-    if ~isempty(env)
-        src = tern(isfile(env), env, '');
-        return
-    end
-    up = fileparts(root);
-    cands = { ...
-        fullfile(up, 'paper-QRM', 'main.tex'), ...
-        fullfile(up, 'main.tex')};
-    src = '';
-    for i = 1:numel(cands)
-        if isfile(cands{i}); src = cands{i}; return; end
-    end
-end
 
 function logmsg(fid, varargin)
     fprintf(fid, varargin{:});
@@ -332,26 +302,6 @@ function C = parse_corr_tex(path)
     end
 end
 
-function C = parse_corr_from_main(path)
-    tex = fileread(path);
-    idx = strfind(tex, '\label{tab:correlations}');
-    chunk = tex(idx(1):min(numel(tex), idx(1) + 3000));
-    lines = qrobustness.compat.split_lines(chunk);
-    rows = {};
-    for i = 1:numel(lines)
-        nums = regexp(lines{i}, '\$([+-]?\d+\.\d+)\$', 'tokens');
-        if numel(nums) >= 7
-            rows{end+1} = cellfun(@(t) str2double(t{1}), nums(1:7)); %#ok<AGROW>
-        end
-        if numel(rows) >= 7
-            break;
-        end
-    end
-    C = vertcat(rows{:});
-    if ~isequal(size(C), [7, 7])
-        error('parse_corr_from_main: size %s', mat2str(size(C)));
-    end
-end
 
 function s = tern(c, a, b)
     if c, s = a; else, s = b; end

@@ -7,14 +7,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Rank statistics for the case study.
 
-Table I is reported *descriptively* (Pearson r and Spearman rho), so the paper
-makes no inferential claim.  The toolbox additionally emits a cross-check --
-Kendall tau_b with Holm-corrected two-sided p-values for the three
-margin-versus-sensitivity comparisons -- to confirm the descriptive reading
-does not depend on the choice of rank statistic.  The MATLAB peer must agree
-with the Python reference exactly, hence the shared closed-form asymptotic
-p-value rather than each engine's own library routine.
-"""
+We report Table I *descriptively* (Pearson r and Spearman rho), so the paper makes no inferential claim.  The toolbox also emits a cross-check -- Kendall tau_b with Holm-corrected two-sided p-values for the three margin-versus-sensitivity comparisons -- to confirm that the descriptive reading does not depend on the choice of rank statistic.  The MATLAB peer must match the Python reference exactly, hence the shared closed-form asymptotic p-value rather than each engine's own library routine."""
+
 import csv
 import importlib.util
 import sys
@@ -29,6 +23,12 @@ RESULTS = ROOT / "results/lipschitz-margin-python"
 
 
 def _driver():
+    """Load the case-study driver as a module, by path.
+
+    scripts/ is placed on sys.path first: the driver imports its shared _drivers module, and loading it by path alone does not put its own directory there. Without this the test passed only when another test file had already inserted that path as an import side effect, so it failed whenever it ran in isolation."""
+    scripts = str(ROOT / "scripts")
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
     spec = importlib.util.spec_from_file_location(
         "_drv", ROOT / "scripts/run_lipschitz_margin_case_study.py"
     )
@@ -39,6 +39,7 @@ def _driver():
 
 
 def test_holm_is_step_down_monotone_and_capped():
+    """Holm's adjusted p-values are non-decreasing in the sorted order and capped at 1, on cases where the answer is known by hand calculation."""
     holm = _driver().holm
     assert holm([0.01, 0.02, 0.03]) == pytest.approx([0.03, 0.04, 0.04])
     # Monotone in the sorted order, and never above 1.
@@ -51,32 +52,40 @@ def test_holm_is_step_down_monotone_and_capped():
 
 
 def test_holm_is_never_smaller_than_the_raw_p():
+    """A correction that could shrink a p-value would make a result appear more significant than it is; over random draws it never does."""
     holm = _driver().holm
     rng = np.random.default_rng(0)
     for _ in range(20):
         p = list(rng.uniform(size=3))
-        assert all(a >= b - 1e-15 for a, b in zip(holm(p), p))
+        assert all(a >= b - 1e-15 for a, b in zip(holm(p), p, strict=True))
 
 
 def test_kendall_beats_a_sign_flip_that_pearson_would_miss():
-    """tau_b is a rank statistic: monotone but nonlinear structure survives."""
+    """tau_b is a rank statistic: monotone yet nonlinear structure survives."""
     x = np.linspace(0.1, 3.0, 40)
-    y = np.exp(-5 * x)  # perfectly monotone decreasing, strongly nonlinear
+    y = np.exp(-5 * x)  # strictly monotone decreasing, and strongly nonlinear
     tau, p = kendalltau(x, y, variant="b")
     assert tau == pytest.approx(-1.0)
     assert p < 1e-10
 
 
-@pytest.mark.skipif(
-    not (RESULTS / "focal_tests_0.999.csv").is_file(),
-    reason="run `make lipschitz-margin-python` first",
-)
+def _require(path):
+    """A committed result is required, not optional.
+
+    These artefacts live in the repository, so a missing one means a broken checkout. Skipping on absence would report that tree as green, which is the one outcome a reproduction check must never produce."""
+    assert path.is_file(), (
+        f"{path} is missing from the repository; regenerate it with "
+        "make paper-QRM-margins ENGINE=python"
+    )
+    return path
+
+
 def test_published_cross_check_matches_a_fresh_recompute():
-    """The published cross-check must be reproducible from the margins table."""
+    """The published cross-check must be reproducible using the margins table."""
     from scipy.stats import spearmanr
 
-    rows = list(csv.DictReader((RESULTS / "margins_table_0.999.csv").open()))
-    published = list(csv.DictReader((RESULTS / "focal_tests_0.999.csv").open()))
+    rows = list(csv.DictReader(_require(RESULTS / "margins_table_0.999.csv").open()))
+    published = list(csv.DictReader(_require(RESULTS / "focal_tests_0.999.csv").open()))
     assert len(published) == 3
     raw_rho, raw_tau = [], []
     for j, rec in enumerate(published):
@@ -91,38 +100,30 @@ def test_published_cross_check_matches_a_fresh_recompute():
         assert float(rec["kendall_p_two_sided"]) == pytest.approx(tau_p, rel=1e-5)
         raw_rho.append(rho.pvalue)
         raw_tau.append(tau_p)
-    for rec, a in zip(published, _driver().holm(raw_rho)):
+    for rec, a in zip(published, _driver().holm(raw_rho), strict=True):
         assert float(rec["p_holm"]) == pytest.approx(a, rel=1e-5)
-    for rec, a in zip(published, _driver().holm(raw_tau)):
+    for rec, a in zip(published, _driver().holm(raw_tau), strict=True):
         assert float(rec["kendall_p_holm"]) == pytest.approx(a, rel=1e-5)
 
 
-@pytest.mark.skipif(
-    not (RESULTS / "focal_tests_0.999.csv").is_file(),
-    reason="run `make lipschitz-margin-python` first",
-)
 def test_the_two_rank_statistics_agree_on_the_reading():
-    """The point of the cross-check: the descriptive reading of Table I must
-    not depend on whether rho or tau_b is used."""
-    published = list(csv.DictReader((RESULTS / "focal_tests_0.999.csv").open()))
+    """The point of the cross-check: the descriptive reading of Table I must not depend on whether rho or tau_b is used."""
+    published = list(csv.DictReader(_require(RESULTS / "focal_tests_0.999.csv").open()))
     for rec in published:
         rho, tau = float(rec["spearman_rho"]), float(rec["kendall_tau_b"])
-        assert np.sign(rho) == np.sign(tau)          # same direction
-        assert abs(tau) <= abs(rho) + 1e-9           # tau_b is the smaller scale
-        # Same verdict at the 5% level after Holm correction.
+        assert np.sign(rho) == np.sign(tau)  # same direction
+        assert abs(tau) <= abs(rho) + 1e-9  # tau_b is the smaller scale
+        # The same verdict at the 5% level after Holm correction.
         assert (float(rec["p_holm"]) < 0.05) == (float(rec["kendall_p_holm"]) < 0.05)
 
 
-@pytest.mark.skipif(
-    not (RESULTS / "correlations_0.999.tex").is_file(),
-    reason="run `make lipschitz-margin-python` first",
-)
 def test_table_lower_triangle_is_spearman():
-    """Table I's lower triangle is Spearman rho, matching the caption."""
+    """Table I's lower triangle holds Spearman rho, matching the caption."""
     import re
 
     rows_tex = []
-    for line in (RESULTS / "correlations_0.999.tex").read_text().splitlines():
+    corr = _require(RESULTS / "correlations_0.999.tex")
+    for line in corr.read_text().splitlines():
         nums = re.findall(r"\$([+-]?\d+\.\d+)\$", line)
         if len(nums) >= 7:
             rows_tex.append([float(x) for x in nums[:7]])
@@ -137,7 +138,7 @@ def test_table_lower_triangle_is_spearman():
         rb = np.argsort(np.argsort(Z)).astype(float)
         rho = np.corrcoef(ra, rb)[0, 1]
         tau = kendalltau(M, Z, variant="b").statistic
-        # Row 4+j is |zeta_j|, column 1+j is M_j: a lower-triangle cell.
+        # Row 4+j is |zeta_j|, column 1+j is M_j: a cell in the lower triangle.
         cell = C[4 + j, 1 + j]
         assert cell == pytest.approx(round(rho, 2), abs=1e-9)
         if abs(round(tau, 2) - round(rho, 2)) > 1e-9:

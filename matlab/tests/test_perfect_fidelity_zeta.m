@@ -1,5 +1,5 @@
 function test_perfect_fidelity_zeta()
-    % When U = Uf, fidelity is 1 and zeta must vanish (Corollary).
+    % When U = Uf, the fidelity is 1 and zeta must vanish (Corollary).
     N = 2;
     H = [0 1; 1 0];
     dt = 0.2;

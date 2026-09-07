@@ -8,7 +8,7 @@
 >
 > SPDX-License-Identifier: AGPL-3.0-or-later
 
-Python package mirroring the MATLAB `+qrobustness` toolbox.
+Python package that mirrors the MATLAB `+qrobustness` toolbox.
 
 Install:
 
@@ -17,6 +17,6 @@ pip install -e ".[dev]"
 pytest
 ```
 
-See [`../docs/api.md`](../docs/api.md) for the shared API contract and
-[`../docs/margin-solvers-notes.md`](../docs/margin-solvers-notes.md) for
-selectable margin solvers (default remains Algorithm 1).
+The shared API contract is in [`../docs/api.md`](../docs/api.md). Selectable
+margin solvers, with Algorithm 1 remaining the default, are described in
+[`../docs/margin-solvers-notes.md`](../docs/margin-solvers-notes.md).

@@ -1,8 +1,8 @@
 # Margin solvers
 
 Selectable one-dimensional margin methods on `iterative_margin` (Python and MATLAB).
-Default is paper **Algorithm 1** (`method="algorithm1"`): Lipschitz steps of size
-\((F-F_T)/L\) with in-place bisection on overshoot. Paper drivers and goldens omit
+The default is paper **Algorithm 1** (`method="algorithm1"`): Lipschitz steps of size
+\((F-F_T)/L\) with in-place bisection on overshoot. Paper drivers and the consistency tests omit
 `method` and stay on Algorithm 1. These variants do not affect Algorithm 1 as stated in the manuscript.
 
 ## Lipschitz constraint
@@ -23,7 +23,7 @@ are **not** certificate-preserving unless every intermediate point is known safe
 | `doubling` | Weaker (endpoint) | Geometric probes when \(L\) is conservative |
 | `newton_probe` | Weaker when probing | Uses \(\zeta(\mu)\) for step size; needs `zeta_fn` |
 
-Recommendation: Lipschitz + bisection is the best fully certified option for the
+We recommend Lipschitz + bisection as the fully certified option for the
 paper path. Brent/TOMS748 do not appreciably reduce fidelity evaluations when
 Lipschitz steps rarely overshoot; they are selectable polish rather than the default.
 `doubling` / `newton_probe` can reduce evaluations substantially under conservative \(L\), but only with
@@ -44,7 +44,6 @@ python scripts/bench_margin_solvers.py
 ```
 
 Writes gitignored `results/bench-margin-solvers/bench_margin_solvers.csv`.
-
 Illustrative snapshot (`--controllers 2`): with conservative \(L\), Algorithm 1 /
 Lipschitz+Brent|TOMS748 used ~3679 evals while `doubling` / `newton_probe` used tens
 or fewer; on case-study samples the aggressive methods were typically 0.3-0.7x Algorithm 1

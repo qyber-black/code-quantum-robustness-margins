@@ -56,6 +56,8 @@
 %     fidelity_bound          - F_lb from T*Omega_bnd (their Eq. 30)
 %     fidelity_bound_at       - F_lb at a given delta
 %     effective_threshold     - achieved-gate threshold implied by F_T
-%     threshold_time_bandwidth- closed-form inverse of F_lb
+%     threshold_time_bandwidth - closed-form inverse of F_lb
+%     select_rates            - the (w_avg, w_dev) pair for an uncertainty
+%                               class: constant, or trajectory for M^K_tv
 %     margin                  - implied perturbation margin
 %     t_omega_max             - 2*sqrt(log(1+sqrt(2))), vacuity threshold

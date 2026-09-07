@@ -1,0 +1,59 @@
+# SPDX-FileCopyrightText: (C) 2026 F. C. Langbein <frank@langbein.org>
+# SPDX-FileCopyrightText: (C) 2026 S. P. O'Neil <sean.oneil@westpoint.edu>
+# SPDX-FileCopyrightText: (C) 2026 S. Schirmer <s.m.shermer@gmail.com>
+# SPDX-FileCopyrightText: (C) 2026 C. A. Weidner <c.weidner@bristol.ac.uk>
+# SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# The environment the published results were computed in.
+#
+# pyproject.toml keeps floors so the library installs anywhere; this file
+# pins what the numbers in results/ and in the papers were produced with,
+# and `make venv` installs from it. Regenerate with
+#   .venv/bin/python -m pip freeze > requirements-repro.txt
+# after deliberately moving the environment, and expect the open-system
+# results to move with it.
+#
+# Pinning versions is necessary and was not sufficient: the same versions
+# produced open-system numbers differing by 4e-5 relative, because the SDP
+# solver was left to cvxpy to choose. That is fixed separately, by naming
+# the solver in lindblad.DEFAULT_SDP_SOLVER. Both are needed.
+#
+# The solver stack -- cvxpy, clarabel, scs, osqp, qdldl, highspy -- is the
+# part that moves certified diamond norms. numpy and scipy move results in
+# their last bits. The tooling pins (ruff, miss_hit, pytest) only keep the
+# checks from changing under the code.
+cffi==2.1.1
+clarabel==0.11.1
+cloudpickle==3.1.2
+contourpy==1.3.3
+cvxpy==1.9.2
+cycler==0.12.1
+fonttools==4.64.0
+highspy==1.15.1
+iniconfig==2.3.0
+Jinja2==3.1.6
+joblib==1.6.0
+kiwisolver==1.5.1
+MarkupSafe==3.0.3
+matplotlib==3.11.1
+miss-hit==0.9.44
+miss-hit-core==0.9.44
+numpy==2.5.2
+osqp==1.1.3
+packaging==26.3
+pillow==12.3.0
+pluggy==1.6.0
+pycparser==3.0
+Pygments==2.21.0
+pyparsing==3.3.2
+pytest==9.1.1
+python-dateutil==2.9.0.post0
+qdldl==0.1.9.post1
+ruff==0.16.6
+scipy==1.18.1
+scs==3.3.1
+setuptools==84.0.0
+six==1.17.0
+sparsediffpy==0.3.0

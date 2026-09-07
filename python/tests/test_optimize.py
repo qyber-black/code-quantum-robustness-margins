@@ -5,7 +5,7 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Tests for GRAPE fidelity gradient and controller synthesis."""
+"""Tests of the GRAPE fidelity gradient and of controller synthesis."""
 
 from __future__ import annotations
 
@@ -30,6 +30,7 @@ CTRL = ROOT / "data/controllers/problem9_tf15_K32_quasi-newton"
 
 
 def test_pack_unpack_roundtrip():
+    """Packing and unpacking controls round-trip, in the Fortran interleave used by the MATLAB peer's controller files."""
     tau = 5
     u1 = np.linspace(-1, 1, tau)
     u2 = np.linspace(2, -2, tau)
@@ -44,6 +45,7 @@ def test_pack_unpack_roundtrip():
 
 
 def test_fidelity_matches_propagator():
+    """The optimiser's fidelity is the same quantity the propagator path computes, so the objective and the certificates coincide."""
     problem = load_problem(CTRL / "problem9.mat")
     ctrls = load_controllers(CTRL / "controllers.csv", 1e-4)
     c = ctrls[0]
@@ -68,6 +70,7 @@ def test_fidelity_matches_propagator():
 
 @pytest.mark.parametrize("method", ["exact", "quadrature"])
 def test_gradient_finite_difference(method):
+    """The analytic control gradient matches central differences, under both derivative methods."""
     problem = load_problem(CTRL / "problem9.mat")
     rng = np.random.default_rng(0)
     tau = 4
@@ -113,6 +116,7 @@ def test_gradient_finite_difference(method):
 
 
 def test_optimize_improves_fidelity():
+    """Synthesis raises the fidelity from its random start and reports a consistent final value."""
     problem = load_problem(CTRL / "problem9.mat")
     rng = np.random.default_rng(42)
     tau = 32
@@ -135,7 +139,7 @@ def test_optimize_improves_fidelity():
 
 
 def test_csv_roundtrip_synth_smoke(tmp_path):
-    """Write one optimised controller and reload via load_controllers."""
+    """Write a single optimised controller and reload via load_controllers."""
 
     problem = load_problem(CTRL / "problem9.mat")
     res = optimize_controller(
@@ -148,12 +152,14 @@ def test_csv_roundtrip_synth_smoke(tmp_path):
         seed=7,
         maxiter=40,
     )
-    # Bypass filter by writing a tiny error if needed for roundtrip of pulses
+    # Bypass filter by writing a tiny error if needed for pulse roundtrip
     x = pack_controls(res.u1, res.u2)
     row = [9, 1, 15, 32, res.error] + list(x)
     csv_path = tmp_path / "controllers.csv"
     with csv_path.open("w") as f:
-        f.write(",".join(repr(float(v)) if i >= 4 else str(v) for i, v in enumerate(row)))
+        f.write(
+            ",".join(repr(float(v)) if i >= 4 else str(v) for i, v in enumerate(row))
+        )
         f.write("\n")
     # load with loose filter
     loaded = load_controllers(csv_path, max_error=1.0)

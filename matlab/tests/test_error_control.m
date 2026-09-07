@@ -1,11 +1,9 @@
 function test_error_control()
-% Error control: every approximated quantity must carry a usable certificate.
+% Error control: each approximated quantity must carry a usable certificate.
 %
-% Two quantities in the package are not exact to roundoff:
-%   kosut.uncertainty_rates -> w_dev, a supremum recovered from samples
-%   iterative_margin        -> M, terminated on a FIDELITY band eta
-% Both must be conservative in a stated direction and reach a requested
-% precision when asked.  Mirrors python/tests/test_error_control.py.
+% Two quantities in the package fail to be exact to roundoff: kosut.uncertainty_rates -> w_dev, a supremum recovered from samples
+% iterative_margin -> M, terminated on a FIDELITY band eta Both must be conservative in a stated direction and reach a requested
+% precision when asked. Mirrors python/tests/test_error_control.py.
 
     this_dir = fileparts(mfilename('fullpath'));
     root = fileparts(fileparts(this_dir));
@@ -48,7 +46,7 @@ function test_error_control()
                 r512 = qrobustness.kosut.uncertainty_rates(H_list, dH, dt, 512);
                 assert(r4.w_avg == r512.w_avg, 'n_quad changed w_avg');
                 assert(r.dev_converged, '%s: w_dev refinement did not converge', tag);
-                % The seed grid must follow the Bohr bandwidth, not a constant.
+                % The seed grid must track the Bohr bandwidth, not a constant.
                 assert(r.dev_resolved, '%s: bandwidth not resolved', tag);
                 assert(r.dev_cycles_max > 0, '%s: bad bandwidth', tag);
                 assert(r.dev_samples_per_cycle >= 16, ...
@@ -57,7 +55,7 @@ function test_error_control()
         end
     end
 
-    % Under-estimating w_dev biases the comparison in favour of the bound: pin the direction.
+    % Under-estimating w_dev biases the comparison toward the bound: pin the direction.
     c = controllers{1};
     dt = c.tf / c.tau;
     H_list = cell(1, c.tau);
@@ -72,7 +70,7 @@ function test_error_control()
     m_pol = qrobustness.kosut.margin(r_pol, FT, c.error);
     assert(m_smp > m_pol, 'under-estimated w_dev should inflate the margin');
 
-    % A longer interval means more Bohr cycles, so the grid must grow with it.
+    % A longer interval contains more Bohr cycles, so the grid must grow with it.
     % This is the case a fixed grid gets wrong.
     dt_long = 20 * c.tf / c.tau;
     derived = qrobustness.kosut.uncertainty_rates(H_list, dH, dt_long);
@@ -128,7 +126,7 @@ function test_error_control()
         end
     end
 
-    % The default eta=1e-6 leaves a material relative error in M.
+    % The default eta=1e-6 leaves a material relative error inside M.
     c = controllers{1};
     dt = c.tf / c.tau;
     C = qrobustness.structure_constant('control', problem.H1, dt, c.tau, c.u1);
@@ -143,7 +141,7 @@ function test_error_control()
     assert(rel > 1e-5 && rel < 1e-2, ...
         'expected ~5e-4 relative eta-induced error in M, got %g', rel);
 
-    % Certificate class must be reported, not inferred from the method string.
+    % The certificate class must be reported; it is not inferred from the method string.
     meths = {'algorithm1', 'lipschitz_brent', 'lipschitz_toms748', 'doubling'};
     expect = {'segment', 'segment', 'segment', 'endpoint'};
     C = qrobustness.structure_constant('drift', problem.H0, dt, c.tau);
@@ -157,13 +155,8 @@ function test_error_control()
     end
 
     % margin_tol must be positive.
-    ok = false;
-    try
-        qrobustness.iterative_margin(fn, L, FT, 'margin_tol', 0);
-    catch
-        ok = true;
-    end
-    assert(ok, 'expected margin_tol=0 to be rejected');
+    assert_error(@() qrobustness.iterative_margin(fn, L, FT, 'margin_tol', 0), ...
+                 'qrobustness:margin:margin_tol', 'margin_tol = 0');
 end
 
 % SPDX-FileCopyrightText: (C) 2026 F. C. Langbein <frank@langbein.org>

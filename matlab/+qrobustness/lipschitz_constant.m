@@ -1,5 +1,7 @@
 function L = lipschitz_constant(FT, N, C_H)
 %LIPSCHITZ_CONSTANT L = B_T * C_H with B_T = sqrt((1-FT^2)/N).
+%
+%   Peer of python/src/qrobustness/core.py.
     if ~(FT > 0 && FT < 1)
         error('qrobustness:lipschitz:FT', 'FT must satisfy 0 < FT < 1.');
     end

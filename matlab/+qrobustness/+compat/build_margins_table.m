@@ -1,5 +1,5 @@
 function T = build_margins_table(R, nC)
-%BUILD_MARGINS_TABLE Assemble margins struct columns from case-study results R.
+%BUILD_MARGINS_TABLE Assemble margins structure columns from case-study results R.
     T = struct();
     T.controller = (1:nC)';
     T.fid = R.H0.fid;

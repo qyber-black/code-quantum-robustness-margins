@@ -1,5 +1,5 @@
 function X = margins_matrix(T, vars)
-%MARGINS_MATRIX Stack named columns from a margins struct/table into a matrix.
+%MARGINS_MATRIX Stack named columns from a margins structure or table into a matrix.
     n = numel(T.(vars{1}));
     X = zeros(n, numel(vars));
     for j = 1:numel(vars)

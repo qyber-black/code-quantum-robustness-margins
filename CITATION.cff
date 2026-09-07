@@ -46,7 +46,7 @@ keywords:
   - Octave
   - Python
 license: AGPL-3.0-or-later
-version: 1.0.2
+version: 1.1.0
 date-released: "2026-08-03"
 repository-code: "https://qyber.black/spinnet/code-quantum-robustness-margins"
 repository: "https://github.com/qyber-black/code-quantum-robustness-margins"
@@ -71,4 +71,9 @@ preferred-citation:
       given-names: S.
       affiliation: "Faculty of Science & Engineering, Physics, Swansea University, UK"
   year: 2026
-  notes: Preprint
+  url: "https://arxiv.org/abs/2608.03698"
+  identifiers:
+    - type: other
+      value: "arXiv:2608.03698"
+      description: arXiv preprint identifier
+  notes: "Preprint, arXiv:2608.03698"

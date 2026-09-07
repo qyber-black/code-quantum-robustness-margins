@@ -1,5 +1,5 @@
 function test_optimize_controller()
-%TEST_OPTIMIZE_CONTROLLER GRAPE gradient FD check + one optimisation improves F.
+%TEST_OPTIMIZE_CONTROLLER GRAPE gradient FD check + one optimisation raises F.
 
     this_dir = fileparts(mfilename('fullpath'));
     root = fileparts(fileparts(this_dir));

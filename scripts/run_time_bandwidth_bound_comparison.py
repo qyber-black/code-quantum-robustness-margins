@@ -6,11 +6,11 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Compare the Lipschitz margin with the Kosut-Lidar-Rabitz bound.
+"""We compare the Lipschitz margin with the Kosut-Lidar-Rabitz bound.
 
 Supplementary analysis (not part of the paper's main results): for every
-controller and perturbation structure, computes the certified margin M of
-Algorithm 1 alongside the margin implied by Theorem 1 of arXiv:2507.01215,
+controller and perturbation structure, we compute the certified margin M of
+Algorithm 1 together with the margin implied by Theorem 1 of arXiv:2507.01215,
 specialised to this closed-system coherent perturbation model
 (see qrobustness/kosut.py and README.md).
 
@@ -19,12 +19,10 @@ columns (CSV_HEADERS below == qrobustness.compat.kosut_csv_headers) so
 scripts/compare_time_bandwidth_bound.py can cross-check them.
 
 Writes results/time-bandwidth-bound-python/kosut_comparison_<FT>.csv and, unless
---no-plots, a scatter of both margins per structure.
-"""
+--no-plots, a scatter of both margins per structure."""
 
 from __future__ import annotations
 
-import argparse
 import csv
 from pathlib import Path
 
@@ -43,30 +41,55 @@ from qrobustness import (
 )
 from qrobustness.kosut import T_OMEGA_MAX, fidelity_bound_at, time_bandwidth
 
+from _drivers import DEFAULT_ETA, DEFAULT_MAX_ERROR, base_parser
+
 ROOT = Path(__file__).resolve().parents[1]
 CTRL = ROOT / "data/controllers/problem9_tf15_K32_quasi-newton"
 OUT_DIR = ROOT / "results/time-bandwidth-bound-python"
 
-FT = 0.999
-ETA = 1e-6
+ETA = DEFAULT_ETA
+#: Bracket refinement of the certified margin, aligned with the other
+#: drivers. Absent that setting iterative_margin returns its last safe continuation
+#: step: still a valid certified lower bound, yet on this ensemble up to
+#: 5.4e-4 relative below the refined value. That discrepancy was enough to disagree in
+#: the second decimal of M/M^K, which the paper reports both as a table
+#: column (taken from the refined multiparameter margin) and as a prose range
+#: (from this driver) -- 3.04 against 3.03 for H2.
+MARGIN_TOL = 1e-8
 STRUCTURES = ("H0", "H1", "H2")
+
+#: Scatter figure: we use the same 96 dpi the library's figures use, so the
+#: comparison plot does not become the one PNG in the tree at a different density.
+FIG_SIZE = (5.2, 4.0)
+FIG_DPI = 96
+
 PER_STRUCTURE = ("M", "KM", "ratio", "KTOb", "Kflb", "wunc", "wavg", "wdev")
-#: Must match qrobustness.compat.kosut_csv_headers (MATLAB peer).
+#: We require a match to qrobustness.compat.kosut_csv_headers (MATLAB peer).
 CSV_HEADERS = ["controller", "fid", "err"] + [
     f"{f}_{tag}" for tag in STRUCTURES for f in PER_STRUCTURE
 ]
 
 
 def plot_comparison(rows: list[dict], ft: float, out_path: Path) -> None:
+    """We scatter the two margins per structure against the equality line."""
+    # Imported in this function, not at module scope: the backend must be selected
+    # before the first import of pyplot, and a --no-plots run ought not to need
+    # matplotlib at all.
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    from qrobustness.plotting import COLOR_H0, COLOR_H1, COLOR_H2, apply_plot_style
+    from qrobustness.plotting import (
+        COLOR_H0,
+        COLOR_H1,
+        COLOR_H2,
+        PNG_METADATA,
+        apply_plot_style,
+    )
 
     colors = {"H0": COLOR_H0, "H1": COLOR_H1, "H2": COLOR_H2}
-    fig, ax = plt.subplots(figsize=(5.2, 4.0))
+    fig, ax = plt.subplots(figsize=FIG_SIZE, dpi=FIG_DPI)
     for tag in STRUCTURES:
         ours = np.array([r[f"M_{tag}"] for r in rows], dtype=float)
         theirs = np.array([r[f"KM_{tag}"] for r in rows], dtype=float)
@@ -89,43 +112,55 @@ def plot_comparison(rows: list[dict], ft: float, out_path: Path) -> None:
     apply_plot_style(fig)
     fig.tight_layout()
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_path, dpi=200)
+    # metadata: matplotlib would otherwise stamp its own version into the PNG,
+    # so the same figure regenerates with different bytes.
+    fig.savefig(out_path, dpi=FIG_DPI, metadata=PNG_METADATA)
     plt.close(fig)
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--out", type=Path, default=OUT_DIR, help="Output directory")
+    """We tabulate both margins for every controller and structure."""
+    ap = base_parser(OUT_DIR, description=__doc__)
     ap.add_argument("--controller-dir", type=Path, default=CTRL)
-    ap.add_argument("--max-error", type=float, default=1e-4)
-    ap.add_argument("--FT", type=float, default=FT, help="Fidelity threshold (default 0.999)")
+    ap.add_argument("--max-error", type=float, default=DEFAULT_MAX_ERROR)
+    ap.add_argument(
+        "--absorption",
+        choices=("angular", "additive"),
+        default="angular",
+        help="How the nominal error eps_0 is absorbed into the threshold "
+        "(angular is the sufficient correction; additive reproduces "
+        "previously published numbers and is not conservative). The "
+        "angular CSV carries an _angular suffix so both can coexist.",
+    )
+    ap.add_argument(
+        "--uncertainty",
+        choices=("constant", "trajectory"),
+        default="constant",
+        help="Uncertainty class for M^K: constant delta (as published) or "
+        "the certified worst-case over sup-norm-bounded trajectories "
+        "(adds a _tv suffix to the CSV; the KM columns then hold M^K_tv).",
+    )
     ap.add_argument(
         "--literal-theorem",
         action="store_true",
         help="Evaluate their Theorem 1 literally (F_nom = 1) instead of "
         "absorbing the nominal error eps_0 into the threshold",
     )
-    ap.add_argument(
-        "--absorption",
-        choices=("angular", "additive"),
-        default="angular",
-        help="How eps_0 is absorbed into the threshold: 'angular' (default, "
-        "the sufficient triangle-inequality condition) or 'additive' "
-        "(FT + eps_0; not conservative, reproduces pre-1.0.1 numbers)",
-    )
     ap.add_argument("--no-plots", action="store_true")
     args = ap.parse_args()
     ft = args.FT
 
     problem = load_problem(args.controller_dir / "problem9.mat")
-    controllers = load_controllers(args.controller_dir / "controllers.csv", args.max_error)
+    controllers = load_controllers(
+        args.controller_dir / "controllers.csv", args.max_error
+    )
 
     rows: list[dict] = []
     for i, c in enumerate(controllers):
         dt = c["tf"] / c["tau"]
         eps0 = 0.0 if args.literal_theorem else c["error"]
         row = {"controller": i + 1, "fid": c["fid"], "err": c["error"]}
-        print(f"Controller {i+1}/{len(controllers)} fid={c['fid']:.6g}", flush=True)
+        print(f"Controller {i + 1}/{len(controllers)} fid={c['fid']:.6g}", flush=True)
         for tag in STRUCTURES:
             if tag == "H0":
                 C = structure_constant("drift", problem["H0"], dt, c["tau"])
@@ -144,22 +179,33 @@ def main() -> None:
                 dt,
                 tag,
             )
-            M = float(iterative_margin(fid_fn, L, ft, mu0=0.0, eta=ETA).M)
+            M = float(
+                iterative_margin(
+                    fid_fn, L, ft, mu0=0.0, eta=ETA, margin_tol=MARGIN_TOL
+                ).M
+            )
 
             H_list = perturbed_hamiltonians(
                 problem["H0"], problem["H1"], problem["H2"], c["u1"], c["u2"], tag, 0.0
             )
-            dH = dH_structure(problem["H0"], problem["H1"], problem["H2"], c["u1"], c["u2"], tag)
+            dH = dH_structure(
+                problem["H0"], problem["H1"], problem["H2"], c["u1"], c["u2"], tag
+            )
             rates = uncertainty_rates(H_list, dH, dt)
-            KM = kosut_margin(rates, ft, nominal_error=eps0,
-                              absorption=args.absorption)
+            KM = kosut_margin(
+                rates,
+                ft,
+                nominal_error=eps0,
+                absorption=args.absorption,
+                uncertainty=args.uncertainty,
+            )
 
             row[f"M_{tag}"] = M
             row[f"KM_{tag}"] = KM
             row[f"ratio_{tag}"] = M / KM if KM > 0 else float("inf")
-            # The reference bound evaluated at the certified Lipschitz margin.
-            row[f"KTOb_{tag}"] = time_bandwidth(rates, M)
-            row[f"Kflb_{tag}"] = fidelity_bound_at(rates, M)
+            # We evaluate the reference bound at the certified Lipschitz margin.
+            row[f"KTOb_{tag}"] = time_bandwidth(rates, M, args.uncertainty)
+            row[f"Kflb_{tag}"] = fidelity_bound_at(rates, M, args.uncertainty)
             # Per-unit-delta uncertainty measures (their Eq. 28).
             row[f"wunc_{tag}"] = rates.w_unc
             row[f"wavg_{tag}"] = rates.w_avg
@@ -168,31 +214,44 @@ def main() -> None:
 
     out = args.out
     out.mkdir(parents=True, exist_ok=True)
-    csv_path = out / f"kosut_comparison_{ft:g}.csv"
-    assert list(rows[0].keys()) == CSV_HEADERS, "column order must match the MATLAB peer"
+    suffix = "_angular" if args.absorption == "angular" else ""
+    if args.uncertainty == "trajectory":
+        suffix += "_tv"
+    csv_path = out / f"kosut_comparison_{ft:g}{suffix}.csv"
+    if list(rows[0].keys()) != CSV_HEADERS:
+        raise SystemExit(
+            "ERROR: column order must match the MATLAB peer; got "
+            f"{list(rows[0].keys())!r}"
+        )
     with csv_path.open("w", newline="") as f:
-        # lineterminator: match the MATLAB peer, which writes LF.
+        # lineterminator: we match the MATLAB peer, which writes LF.
         w = csv.DictWriter(f, fieldnames=CSV_HEADERS, lineterminator="\n")
         w.writeheader()
         w.writerows(rows)
     print(f"Wrote {csv_path}")
 
-    print(f"\nSummary (FT={ft:g}, "
-          f"{'literal F_nom=1' if args.literal_theorem else args.absorption + ' eps_0 absorption'}, "
-          f"{len(rows)} controllers)")
-    print(f"{'struct':>6} {'median M':>12} {'median M^K':>12} {'median M/M^K':>14} "
-          f"{'max T*Omega_bnd@M':>18}")
+    print(
+        f"\nSummary (FT={ft:g}, "
+        f"{'literal F_nom=1' if args.literal_theorem else f'eps_0 absorbed ({args.absorption})'}, "
+        f"{len(rows)} controllers)"
+    )
+    print(
+        f"{'struct':>6} {'median M':>12} {'median M^K':>12} {'median M/M^K':>14} "
+        f"{'max T*Omega_bnd@M':>18}"
+    )
     for tag in STRUCTURES:
         M = np.array([r[f"M_{tag}"] for r in rows])
         KM = np.array([r[f"KM_{tag}"] for r in rows])
         ratio = np.array([r[f"ratio_{tag}"] for r in rows])
         tob = np.array([r[f"KTOb_{tag}"] for r in rows])
-        print(f"{tag:>6} {np.median(M):12.4e} {np.median(KM):12.4e} "
-              f"{np.median(ratio):14.2f} {tob.max():18.4e}")
+        print(
+            f"{tag:>6} {np.median(M):12.4e} {np.median(KM):12.4e} "
+            f"{np.median(ratio):14.2f} {tob.max():18.4e}"
+        )
     print(f"(their bound is vacuous for T*Omega_bnd >= {T_OMEGA_MAX:.4f} rad)")
 
     if not args.no_plots:
-        png = out / f"kosut_vs_lipschitz_{ft:g}.png"
+        png = out / f"kosut_vs_lipschitz_{ft:g}{suffix}.png"
         plot_comparison(rows, ft, png)
         print(f"Wrote {png}")
 

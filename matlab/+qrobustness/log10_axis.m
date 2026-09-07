@@ -1,11 +1,11 @@
 function log10_axis(ax, which, raw_lim, varargin)
-%LOG10_AXIS Configure a linear axis whose data are already log10-transformed.
+%LOG10_AXIS Set up a linear axis whose data are already log10-transformed.
 %
 %   Plot log10(values) on a linear axis, then call:
 %     qrobustness.log10_axis(gca, 'y', [1e-7, 1e-3])
 %
 %   which: 'x' or 'y'
-%   raw_lim: [raw_min, raw_max] in original (pre-log) units; used for ticks.
+% raw_lim: [raw_min, raw_max] in the original (pre-log) units; we use this range for ticks.
 %
 %   Name-value:
 %     'minor'  true (default) -- draw decade minor ticks 2..9
@@ -18,6 +18,13 @@ function log10_axis(ax, which, raw_lim, varargin)
         ax = gca;
     end
     which = lower(which);
+    % We reject the argument rather than applying a default: the else branch below formats the x axis, so log10_axis(ax, 'z', ...)
+    % silently formatted the wrong axis.
+    % The Python peer raises here.
+    if ~any(strcmp(which, {'x', 'y'}))
+        error('qrobustness:plot:Axis', ...
+              'which must be ''x'' or ''y'', got ''%s''', which);
+    end
     lo = floor(log10(raw_lim(1)));
     hi = ceil(log10(raw_lim(2)));
     majors = lo:hi;

@@ -1,6 +1,6 @@
 function test_iterative_margin_synthetic()
-    % Synthetic landscape F(mu) = 1 - a*(mu-mu_star)^2 near peak, clipped.
-    % Use a monotone-decreasing-from-nominal model for Algorithm 1.
+    % Synthetic landscape F(mu) = 1 - a*(mu-mu_star)^2 near the peak, then clipped. Use a monotone-decreasing-from-nominal model for
+    % Algorithm 1.
     FT = 0.99;
     mu0 = 0;
     % F(mu) = 1 - 0.05*|mu|  => crosses FT=0.99 at |mu|=0.2
@@ -18,13 +18,13 @@ function test_iterative_margin_synthetic()
     assert(abs(res.M - 0.2) < 1e-5);
     assert(res.converged_minus && res.converged_plus);
 
-    % Domain boundary: omega = [-0.05, Inf] should stop at boundary on minus side
+    % Domain boundary: omega = [-0.05, Inf] should stop at the boundary on the minus side
     res_b = qrobustness.iterative_margin(fidelity_fn, L, FT, ...
         'mu0', mu0, 'eta', 1e-8, 'omega', [-0.05, Inf], 'k_max', 1000);
     assert(abs(res_b.M_minus - 0.05) < 1e-8);
     assert(abs(res_b.mu_minus + 0.05) < 1e-8);
 
-    % Overshoot / bisection: large L still finds the threshold neighborhood
+    % Overshoot / bisection: a large L still finds the threshold neighborhood
     res_big = qrobustness.iterative_margin(fidelity_fn, 10, FT, ...
         'mu0', mu0, 'eta', 1e-6, 'k_max', 5000);
     assert(abs(res_big.M - 0.2) < 5e-4, 'M=%g with large L', res_big.M);

@@ -1,21 +1,22 @@
 function run_lipschitz_margin_case_study(varargin)
-%RUN_LIPSCHITZ_MARGIN_CASE_STUDY Reproduce the three-qubit robustness-margin case study.
+%RUN_LIPSCHITZ_MARGIN_CASE_STUDY Reproduce the robustness-margin case study on three qubits.
 %
 %   Name-value options:
-%     'max_controllers'  [] = all accepted (61); set small for smoke runs
+% 'max_controllers' [] = every accepted controller (61); set small for smoke runs
 %     'FT'               0.999
 %     'max_error'        1e-4
 %     'eta'              1e-6
 %     'do_sweep'         true  (fidelity-vs-delta overlays)
 %     'root'             auto-detect repo root
-%     'controller_set'   'problem9_tf15_K32_quasi-newton' (under data/controllers/)
-%     'controller_dir'   '' -> data/controllers/<controller_set>; or absolute path
-%                        (e.g. results/synth-matlab) with problem9.mat + controllers.csv
+% 'controller_set' 'problem9_tf15_K32_quasi-newton' (beneath data/controllers/) 'controller_dir' '' ->
+% data/controllers/<controller_set>; or an absolute path (e.g. results/synth-matlab) holding problem9.mat + controllers.csv
 %     'results_id'       'lipschitz-margin-matlab'  -> results/<id>/
 %     'build_dir'        build/ (regenerable intermediates)
-%     'publish_dir'      results/<results_id>/ (paper deliverables)
+% 'publish_dir' results/<results_id>/ (manuscript deliverables)
+%
+% Counterpart of scripts/run_lipschitz_margin_case_study.py.
 
-    % Choose the graphics toolkit before any figure exists.
+    % Select the graphics toolkit before any figure exists.
     qrobustness.compat.setup_graphics();
 
     p = inputParser;
@@ -45,6 +46,10 @@ function run_lipschitz_margin_case_study(varargin)
         ctrl_dir = opt.controller_dir;
     end
     mat_path = fullfile(ctrl_dir, 'problem9.mat');
+    % Bracket refinement for the certified margin, named to match the Python reference MARGIN_TOL rather than sitting as a literal
+    % at
+    % the call site; the value is the reference's.
+    margin_tol = 1e-8;
     csv_path = fullfile(ctrl_dir, 'controllers.csv');
 
     if isempty(opt.build_dir)
@@ -104,8 +109,10 @@ function run_lipschitz_margin_case_study(varargin)
             fid_fn = qrobustness.make_fidelity_fn( ...
                 problem.H0, problem.H1, problem.H2, c.u1, c.u2, problem.Uf, dt, tag);
 
+            % margin_tol is aligned with the Python reference; see the note in
+            % run_time_bandwidth_bound_comparison.m.
             margin = qrobustness.iterative_margin(fid_fn, L, FT, ...
-                'mu0', 0, 'eta', opt.eta);
+                'mu0', 0, 'eta', opt.eta, 'margin_tol', margin_tol);
 
             H_list = qrobustness.perturbed_hamiltonians( ...
                 problem.H0, problem.H1, problem.H2, c.u1, c.u2, tag, 0);
@@ -194,9 +201,8 @@ function run_lipschitz_margin_case_study(varargin)
 end
 
 function write_focal_tests(T, path)
-    % Cross-check, not a paper claim: Table I is reported descriptively.
-    % Kendall's tau_b confirms the reading does not depend on the choice of
-    % rank statistic, with a Holm correction across the family of three so
+    % Cross-check, not a paper claim: Table I is given descriptively. Kendall's tau_b confirms the reading does not depend on which
+    % rank statistic is chosen, with a Holm correction across the family of three so
     % the multiplicity is fixed in advance.
     n = numel(T.M_H0);
     taus = zeros(1, 3);
@@ -204,20 +210,20 @@ function write_focal_tests(T, path)
     for j = 0:2
         M = T.(sprintf('M_H%d', j));
         Z = abs(T.(sprintf('zeta_H%d', j)));
-        [taus(j+1), pvals(j+1)] = qrobustness.compat.kendall_tau_b(M, Z);
+        [taus(j + 1), pvals(j + 1)] = qrobustness.compat.kendall_tau_b(M, Z);
     end
     padj = holm(pvals);
     fid = fopen(path, 'w');
     fprintf(fid, 'comparison,n,kendall_tau_b,kendall_p_two_sided,kendall_p_holm\n');
     for j = 0:2
         fprintf(fid, 'M_H%d_vs_abs_zeta_H%d,%d,%.6f,%.6e,%.6e\n', ...
-            j, j, n, taus(j+1), pvals(j+1), padj(j+1));
+            j, j, n, taus(j + 1), pvals(j + 1), padj(j + 1));
     end
     fclose(fid);
 end
 
 function adj = holm(pvals)
-    % Holm-Bonferroni step-down adjusted p-values (monotone, capped at 1).
+    % Holm-Bonferroni step-down p-values after adjustment (monotone, capped at 1).
     m = numel(pvals);
     [~, order] = sort(pvals);
     adj = zeros(1, m);
@@ -230,8 +236,8 @@ function adj = holm(pvals)
 end
 
 function write_correlations(T, path)
-    % Sensitivities enter as |zeta|: min(M-, M+) is invariant under reversal
-    % of the parameter coordinate while zeta changes sign (see
+    % Sensitivities enter as |zeta|: min(M-, M+) remains invariant under reversal of the parameter coordinate while zeta changes
+    % sign (see
     % write_correlation_tex).
     vars = {'err', 'M_H0', 'M_H1', 'M_H2', 'zeta_H0', 'zeta_H1', 'zeta_H2'};
     names = {'err', 'M_H0', 'M_H1', 'M_H2', 'abs_zeta_H0', 'abs_zeta_H1', 'abs_zeta_H2'};
@@ -258,10 +264,9 @@ function write_correlations(T, path)
 end
 
 function write_correlation_tex(T, path)
-    % M_j = min(M_j-, M_j+) is invariant under reversal of the parameter
-    % coordinate while zeta_j changes sign, so |zeta_j| is the
-    % orientation-invariant local comparator; correlating against signed zeta
-    % can hide a relationship by mixing the two signs.  Matches Fig. 3.
+    % M_j = min(M_j-, M_j+) remains invariant under reversal of the parameter coordinate while zeta_j changes sign, so |zeta_j| is
+    % the orientation-invariant local comparator; correlating against signed zeta can hide a relationship by mixing the two signs.
+    % Matches Fig. 3.
     vars = {'err', 'M_H0', 'M_H1', 'M_H2', 'zeta_H0', 'zeta_H1', 'zeta_H2'};
     labels = {'$\varepsilon_0$', '$M_0$', '$M_1$', '$M_2$', '$|\zeta_0|$', '$|\zeta_1|$', '$|\zeta_2|$'};
     X = qrobustness.compat.margins_matrix(T, vars);

@@ -1,5 +1,5 @@
 function test_margin_solvers_selectable()
-%TEST_MARGIN_SOLVERS_SELECTABLE Selectable methods vs Algorithm 1 on synthetic F.
+%TEST_MARGIN_SOLVERS_SELECTABLE Selectable methods against Algorithm 1 on synthetic F.
 
     FT = 0.99;
     mu0 = 0;
@@ -33,6 +33,7 @@ function test_margin_solvers_selectable()
 end
 
 function z = local_zeta(mu)
+    % Exact slope of the synthetic tent landscape, used for the Newton probe.
     if mu > 0
         z = -0.05;
     elseif mu < 0

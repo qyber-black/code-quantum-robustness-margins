@@ -1,14 +1,16 @@
 function res = optimize_controller(H0, H1, H2, Uf, tf, tau, varargin)
-%OPTIMIZE_CONTROLLER Maximize gate fidelity via fminunc (quasi-Newton) + GRAPE.
+%OPTIMIZE_CONTROLLER Maximize gate fidelity through fminunc (quasi-Newton) + GRAPE.
 %
 %   Name-value:
 %     'u1_init','u2_init'  initial pulses (default: N(0,sigma^2))
 %     'sigma'              init std (default 1)
 %     'seed'               RNG seed for init (default [])
-%     'method'             'exact' (default) or 'quadrature' segment derivative
-%     'n_quad'             quadrature nodes, used only by 'quadrature' (default 32)
+% 'method' 'exact' (default) or 'quadrature' for the segment derivative 'n_quad' quadrature nodes, applied only under 'quadrature'
+% (default 32)
 %     'maxiter'            fminunc MaxIterations (default 500)
-%     'ftol'               StepTolerance / OptimalityTolerance scale (default 1e-12)
+% 'ftol' scale on StepTolerance / OptimalityTolerance (default 1e-12)
+%
+%   Peer of python/src/qrobustness/optimize.py.
 
     p = inputParser;
     addParameter(p, 'u1_init', []);
@@ -48,9 +50,8 @@ function res = optimize_controller(H0, H1, H2, Uf, tf, tau, varargin)
 
     obj = @(x) error_and_grad(x, H0, H1, H2, Uf, dt, tau, dU_opts);
 
-    % Octave ships fminunc in core but not optimoptions, so build the option
-    % struct with optimset there.  Same quasi-Newton objective+gradient path;
-    % only the option spelling differs, so no toolbox or package is required.
+    % Octave includes fminunc in core but omits optimoptions, so we build the option struct with optimset there. The same
+    % quasi-Newton objective+gradient path is used; only the option spelling differs, so no toolbox or package is required.
     if qrobustness.compat.is_octave()
         opts = optimset( ...
             'GradObj', 'on', ...
@@ -70,7 +71,7 @@ function res = optimize_controller(H0, H1, H2, Uf, tf, tau, varargin)
 
     [x, fval, exitflag, output] = fminunc(obj, x0, opts);
     [u1, u2] = unpack_controls(x, tau);
-    % Clamp: roundoff can push F slightly above 1 (negative error).
+    % Clamp: roundoff can drive F slightly above 1 (negative error).
     fid = min(1, max(0, 1 - fval));
 
     res = struct();
@@ -79,7 +80,7 @@ function res = optimize_controller(H0, H1, H2, Uf, tf, tau, varargin)
     res.fid = fid;
     res.error = max(0, 1 - fid);
     res.fid_init = fid_init;
-    % Octave's output struct carries iterations but no message field.
+    % Octave's output struct includes iterations but lacks a message field.
     if isfield(output, 'iterations')
         res.n_iter = output.iterations;
     else
@@ -94,6 +95,8 @@ function res = optimize_controller(H0, H1, H2, Uf, tf, tau, varargin)
 end
 
 function [f, g] = error_and_grad(x, H0, H1, H2, Uf, dt, tau, dU_opts)
+% Objective and gradient supplied to fminunc: gate error and its derivative
+%   with respect to the packed control vector.
     [u1, u2] = unpack_controls(x, tau);
     [F, g1, g2] = qrobustness.fidelity_and_gradient(H0, H1, H2, u1, u2, Uf, dt, ...
         'method', dU_opts.method, 'n_quad', dU_opts.n_quad);
@@ -102,11 +105,14 @@ function [f, g] = error_and_grad(x, H0, H1, H2, Uf, dt, tau, dU_opts)
 end
 
 function x = pack_controls(u1, u2)
+% Pack the two control rows into one column, column-major, the
+%   layout the controller CSV files use.
     u = [u1(:).'; u2(:).'];  % 2 x tau; u(:) is column-major interleave
     x = u(:);
 end
 
 function [u1, u2] = unpack_controls(x, tau)
+%   Inverse of PACK_CONTROLS.
     u = reshape(x, 2, tau);
     u1 = u(1, :);
     u2 = u(2, :);

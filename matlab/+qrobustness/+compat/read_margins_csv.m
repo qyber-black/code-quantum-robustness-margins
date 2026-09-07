@@ -1,5 +1,5 @@
 function T = read_margins_csv(csv_path)
-%READ_MARGINS_CSV Load margins_table CSV into a struct of column vectors.
+%READ_MARGINS_CSV Load a margins_table CSV into a structure of column vectors.
     if ~exist(csv_path, 'file')
         error('qrobustness:compat:MissingFile', 'CSV not found: %s', csv_path);
     end

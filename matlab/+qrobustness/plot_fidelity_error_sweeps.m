@@ -1,7 +1,7 @@
 function fig = plot_fidelity_error_sweeps(X_cell, Y_cell, FT, varargin)
-%PLOT_FIDELITY_ERROR_SWEEPS Spaghetti plot of fidelity error vs delta.
+%PLOT_FIDELITY_ERROR_SWEEPS Spaghetti plot of fidelity error against delta.
 %
-%   Y values are plotted as log10(error) on a linear axis (not YScale=log).
+% Y values are drawn as log10(error) on a linear axis (not YScale=log).
 
     p = inputParser;
     addParameter(p, 'Visible', 'off');

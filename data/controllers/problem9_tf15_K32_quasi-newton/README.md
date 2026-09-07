@@ -1,6 +1,8 @@
 # Controller set: problem9_tf15_K32_quasi-newton
 
-Non-reproducible inputs for the three-qubit Heisenberg gate-control case study in the paper *Fidelity-Based Robustness Margins for Finite-Time Quantum Control*.
+These files are non-reproducible inputs for the three-qubit Heisenberg
+gate-control case study in *Fidelity-Based Robustness Margins for Finite-Time
+Quantum Control*.
 
 | File | Role |
 |------|------|

@@ -1,8 +1,7 @@
 function convert_log_axis_to_log10_data(fig, which)
-%CONVERT_LOG_AXIS_TO_LOG10_DATA Rewrite log-scale axes as log10 data + linear.
+%CONVERT_LOG_AXIS_TO_LOG10_DATA Recast log-scale axes as log10 data + linear.
 %
-%   For each axes with WhichScale='log', replace child YData/XData by
-%   log10(data) and configure decade tick labels on a linear axis.
+% For each axes with WhichScale='log', replace child YData/XData by log10(data) and set decade tick labels on a linear axis.
 
     if nargin < 2
         which = 'y';
@@ -12,10 +11,10 @@ function convert_log_axis_to_log10_data(fig, which)
     for a = 1:numel(ax_list)
         ax = ax_list(a);
         if strcmp(which, 'y') && ~strcmp(get(ax, 'YScale'), 'log')
-            continue;
+            continue
         end
         if strcmp(which, 'x') && ~strcmp(get(ax, 'XScale'), 'log')
-            continue;
+            continue
         end
 
         raw_lim = get(ax, 'YLim');
@@ -26,7 +25,7 @@ function convert_log_axis_to_log10_data(fig, which)
         ch = get(ax, 'Children');
         for c = 1:numel(ch)
             if ~isprop(ch(c), 'YData')
-                continue;
+                continue
             end
             if strcmp(which, 'y')
                 yd = get(ch(c), 'YData');
@@ -39,7 +38,7 @@ function convert_log_axis_to_log10_data(fig, which)
             end
         end
 
-        % Constant lines / yline objects may appear as lines with constant y
+        % Constant lines / yline objects can appear as lines with constant y
         qrobustness.log10_axis(ax, which, raw_lim);
     end
 end
