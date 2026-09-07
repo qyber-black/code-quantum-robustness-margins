@@ -2,6 +2,8 @@ function H_list = perturbed_hamiltonians(H0, H1, H2, u1, u2, structure, delta)
 %PERTURBED_HAMILTONIANS Build H{k} for multiplicative structure perturbation.
 %   structure : 'H0', 'H1', or 'H2'
 %   delta     : mu - mu0 (multiplicative factor on the named Hamiltonian)
+%
+%   Peer of python/src/qrobustness/core.py.
 
     tau = numel(u1);
     if numel(u2) ~= tau

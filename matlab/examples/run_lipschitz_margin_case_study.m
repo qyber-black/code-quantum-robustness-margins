@@ -14,6 +14,8 @@ function run_lipschitz_margin_case_study(varargin)
 %     'results_id'       'lipschitz-margin-matlab'  -> results/<id>/
 %     'build_dir'        build/ (regenerable intermediates)
 %     'publish_dir'      results/<results_id>/ (paper deliverables)
+%
+%   Peer of scripts/run_lipschitz_margin_case_study.py.
 
     % Choose the graphics toolkit before any figure exists.
     qrobustness.compat.setup_graphics();
@@ -45,6 +47,10 @@ function run_lipschitz_margin_case_study(varargin)
         ctrl_dir = opt.controller_dir;
     end
     mat_path = fullfile(ctrl_dir, 'problem9.mat');
+    % Bracket refinement for the certified margin, named to match the
+    % Python reference's MARGIN_TOL rather than sitting as a literal at
+    % the call site; the value is the reference's.
+    margin_tol = 1e-8;
     csv_path = fullfile(ctrl_dir, 'controllers.csv');
 
     if isempty(opt.build_dir)
@@ -104,8 +110,10 @@ function run_lipschitz_margin_case_study(varargin)
             fid_fn = qrobustness.make_fidelity_fn( ...
                 problem.H0, problem.H1, problem.H2, c.u1, c.u2, problem.Uf, dt, tag);
 
+            % margin_tol matches the Python reference; see the note in
+            % run_time_bandwidth_bound_comparison.m.
             margin = qrobustness.iterative_margin(fid_fn, L, FT, ...
-                'mu0', 0, 'eta', opt.eta);
+                'mu0', 0, 'eta', opt.eta, 'margin_tol', margin_tol);
 
             H_list = qrobustness.perturbed_hamiltonians( ...
                 problem.H0, problem.H1, problem.H2, c.u1, c.u2, tag, 0);
@@ -204,14 +212,14 @@ function write_focal_tests(T, path)
     for j = 0:2
         M = T.(sprintf('M_H%d', j));
         Z = abs(T.(sprintf('zeta_H%d', j)));
-        [taus(j+1), pvals(j+1)] = qrobustness.compat.kendall_tau_b(M, Z);
+        [taus(j + 1), pvals(j + 1)] = qrobustness.compat.kendall_tau_b(M, Z);
     end
     padj = holm(pvals);
     fid = fopen(path, 'w');
     fprintf(fid, 'comparison,n,kendall_tau_b,kendall_p_two_sided,kendall_p_holm\n');
     for j = 0:2
         fprintf(fid, 'M_H%d_vs_abs_zeta_H%d,%d,%.6f,%.6e,%.6e\n', ...
-            j, j, n, taus(j+1), pvals(j+1), padj(j+1));
+            j, j, n, taus(j + 1), pvals(j + 1), padj(j + 1));
     end
     fclose(fid);
 end

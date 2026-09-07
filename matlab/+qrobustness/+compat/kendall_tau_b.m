@@ -14,8 +14,8 @@ function [tau, pval] = kendall_tau_b(x, y)
 
     % Concordant minus discordant pairs.
     S = 0;
-    for i = 1:n-1
-        s = sign(x(i) - x(i+1:n)) .* sign(y(i) - y(i+1:n));
+    for i = 1:n - 1
+        s = sign(x(i) - x(i + 1:n)) .* sign(y(i) - y(i + 1:n));
         S = S + sum(s);
     end
 
@@ -27,21 +27,28 @@ function [tau, pval] = kendall_tau_b(x, y)
     if denom <= 0
         tau = NaN;
         pval = NaN;
-        return;
+        return
     end
     tau = S / denom;
 
     % Asymptotic variance of S with tie corrections.
     v0 = n * (n - 1) * (2 * n + 5);
+    % Tie cross-term: SciPy uses 2*xtie*ytie/(n*(n-1)). This read
+    % xtie*ytie/(2*n*(n-1)), a quarter of it, so any tie in either input
+    % made v too small, |z| too large and the p-value too small -- against
+    % a docstring promising agreement with scipy.stats.kendalltau. Checked
+    % on tied data: 6.05340e-4 before, 6.13591e-4 now, SciPy 6.13591e-4.
     v = (v0 - t1c - t2c) / 18 ...
         + t1b * t2b / (9 * n * (n - 1) * (n - 2)) ...
-        + t1 * t2 / (2 * n * (n - 1));
+        + 2 * t1 * t2 / (n * (n - 1));
     z = S / sqrt(v);
     % Two-sided: 2*(1 - Phi(|z|)) = erfc(|z|/sqrt(2)).
     pval = erfc(abs(z) / sqrt(2));
 end
 
 function [t, tb, tc] = tie_terms(v)
+%   Tie corrections for one ranking: the counts Kendall's tau_b and
+%   tau_c subtract for groups of equal values.
     u = unique(v);
     t = 0; tb = 0; tc = 0;
     for i = 1:numel(u)

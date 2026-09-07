@@ -6,6 +6,8 @@ function [V, lam] = segment_eig(H)
 %   H is symmetrised first.  eig only dispatches to the Hermitian LAPACK
 %   path -- and only then guarantees a unitary V -- for exactly Hermitian
 %   input, so the symmetrisation is required, not cosmetic.
+%
+%   Peer of python/src/qrobustness/core.py (segment_eig).
 
     Hs = (H + H') / 2;
     [V, D] = eig(Hs);

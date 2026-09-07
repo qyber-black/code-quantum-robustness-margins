@@ -25,6 +25,8 @@ from qrobustness.plotting import (  # noqa: E402
 
 
 def test_summary_plots_write(tmp_path: Path):
+    """The two summary figures write a non-empty file and keep linear axes:
+    the data is already log10-transformed, so a log scale would square it."""
     rng = np.random.default_rng(0)
     n = 12
     err = np.logspace(-7, -4, n)
@@ -47,7 +49,27 @@ def test_summary_plots_write(tmp_path: Path):
     assert fig2.axes[1].get_xscale() == "linear"
 
 
+def test_log10_axis_rejects_an_unknown_axis():
+    """An axis name that is neither x nor y is an error in both engines.
+
+    Both engines raise: treating an unrecognised name as one of the two
+    would format the wrong axis and say nothing.
+    """
+    import matplotlib.pyplot as plt
+
+    from qrobustness.plotting import log10_axis
+
+    fig, ax = plt.subplots()
+    try:
+        with pytest.raises(ValueError, match="must be"):
+            log10_axis(ax, "z", (1e-3, 1.0))
+    finally:
+        plt.close(fig)
+
+
 def test_sweep_plot_write(tmp_path: Path):
+    """The sweep figure writes, keeps a linear y axis, and holds the label
+    sizes and tick count the manuscript layout depends on."""
     xs = [np.linspace(-0.01, 0.01, 50) for _ in range(3)]
     ys = [1e-6 + 0.05 * x**2 for x in xs]
     out = tmp_path / "H0_all.png"

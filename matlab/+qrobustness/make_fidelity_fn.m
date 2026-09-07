@@ -1,10 +1,13 @@
 function fn = make_fidelity_fn(H0, H1, H2, u1, u2, Uf, dt, structure)
 %MAKE_FIDELITY_FN Function handle F = fn(delta) for a structure.
+%
+%   Peer of python/src/qrobustness/core.py.
 
     fn = @(delta) local_fid(delta, H0, H1, H2, u1, u2, Uf, dt, structure);
 end
 
 function F = local_fid(delta, H0, H1, H2, u1, u2, Uf, dt, structure)
+%   Fidelity at one perturbation size; the closure's body.
     H_list = qrobustness.perturbed_hamiltonians(H0, H1, H2, u1, u2, structure, delta);
     U = qrobustness.propagator(H_list, dt);
     F = qrobustness.gate_fidelity(U, Uf);

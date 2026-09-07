@@ -16,13 +16,13 @@ function toolkit = setup_graphics()
     persistent chosen
     if ~isempty(chosen)
         toolkit = chosen;
-        return;
+        return
     end
 
     if ~qrobustness.compat.is_octave()
         chosen = '';
         toolkit = chosen;
-        return;
+        return
     end
 
     available = available_graphics_toolkits();
@@ -31,7 +31,7 @@ function toolkit = setup_graphics()
             graphics_toolkit('qt');
             chosen = 'qt';
             toolkit = chosen;
-            return;
+            return
         catch
             % qt is listed but unusable, which is the headless case.
         end

@@ -9,6 +9,8 @@ function res = optimize_controller(H0, H1, H2, Uf, tf, tau, varargin)
 %     'n_quad'             quadrature nodes, used only by 'quadrature' (default 32)
 %     'maxiter'            fminunc MaxIterations (default 500)
 %     'ftol'               StepTolerance / OptimalityTolerance scale (default 1e-12)
+%
+%   Peer of python/src/qrobustness/optimize.py.
 
     p = inputParser;
     addParameter(p, 'u1_init', []);
@@ -94,6 +96,8 @@ function res = optimize_controller(H0, H1, H2, Uf, tf, tau, varargin)
 end
 
 function [f, g] = error_and_grad(x, H0, H1, H2, Uf, dt, tau, dU_opts)
+%   Objective and gradient for fminunc: gate error and its derivative
+%   with respect to the packed control vector.
     [u1, u2] = unpack_controls(x, tau);
     [F, g1, g2] = qrobustness.fidelity_and_gradient(H0, H1, H2, u1, u2, Uf, dt, ...
         'method', dU_opts.method, 'n_quad', dU_opts.n_quad);
@@ -102,11 +106,14 @@ function [f, g] = error_and_grad(x, H0, H1, H2, Uf, dt, tau, dU_opts)
 end
 
 function x = pack_controls(u1, u2)
+%   Interleave the two control rows into one column, column-major, the
+%   layout the controller CSV files use.
     u = [u1(:).'; u2(:).'];  % 2 x tau; u(:) is column-major interleave
     x = u(:);
 end
 
 function [u1, u2] = unpack_controls(x, tau)
+%   Inverse of PACK_CONTROLS.
     u = reshape(x, 2, tau);
     u1 = u(1, :);
     u2 = u(2, :);

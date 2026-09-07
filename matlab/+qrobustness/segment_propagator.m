@@ -1,6 +1,8 @@
 function U = segment_propagator(V, lam, dt)
 %SEGMENT_PROPAGATOR expm(-1i*dt*H) from the eigendecomposition of H.
 %   U = SEGMENT_PROPAGATOR(V, lam, dt) with [V, lam] = qrobustness.segment_eig(H).
+%
+%   Peer of python/src/qrobustness/core.py (segment_propagator).
 
     U = V * diag(exp(-1i * dt * lam)) * V';
 end

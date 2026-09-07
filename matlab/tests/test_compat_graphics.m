@@ -47,6 +47,14 @@ function test_compat_graphics()
         'legend location was substituted: %s', msg);
     assert(exist(tmp, 'file') == 2, 'export_figure wrote no file');
     delete(tmp);
+
+    % An axis name that is neither x nor y is an error, not a silent
+    % fallback to x. Peer of the Python
+    % test_log10_axis_rejects_an_unknown_axis.
+    f2 = figure('Visible', 'off');
+    c = onCleanup(@() close(f2));
+    assert_error(@() qrobustness.log10_axis(gca, 'z', [1e-3, 1]), ...
+                 'qrobustness:plot:Axis', 'an unknown axis name');
 end
 
 % SPDX-FileCopyrightText: (C) 2026 F. C. Langbein <frank@langbein.org>

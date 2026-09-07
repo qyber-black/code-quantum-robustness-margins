@@ -80,8 +80,10 @@ function test_kosut_bound()
     end
     % 1 - eps_0 is a fidelity: eps_0 outside [0, 1] is rejected.
     assert_error(@() qrobustness.kosut.effective_threshold(0.999, -1e-12), ...
+        'qrobustness:kosut:BadEps', ...
         'negative nominal_error');
     assert_error(@() qrobustness.kosut.effective_threshold(0.999, 1 + 1e-9), ...
+        'qrobustness:kosut:BadEps', ...
         'nominal_error above 1');
     assert(qrobustness.kosut.effective_threshold(0.999, 1) == 1, ...
         'eps0 = 1 is admissible and vacuous');
@@ -118,7 +120,7 @@ function test_kosut_bound()
     samples = cell(1, numel(H_list) * nsamp);
     idx = 0;
     ss = linspace(0, dt, nsamp + 1);
-    ss = ss(1:end-1);
+    ss = ss(1:end - 1);
     for k = 1:numel(H_list)
         for j = 1:nsamp
             US = expm(-1i * H_list{k} * ss(j)) * P;
@@ -175,34 +177,29 @@ function test_kosut_bound()
     assert(rates0.w_unc == 0, 'zero structure -> zero w_unc');
     assert(isinf(qrobustness.kosut.margin(rates0, 0.999)), 'zero structure -> Inf margin');
 
-    assert_error(@() qrobustness.kosut.uncertainty_rates({}, {}, dt), 'empty H_list');
-    assert_error(@() qrobustness.kosut.uncertainty_rates(H_list, {SX}, dt), 'length mismatch');
-    assert_error(@() qrobustness.kosut.uncertainty_rates(H_list, zero_list, 0), 'dt <= 0');
-    assert_error(@() qrobustness.kosut.threshold_time_bandwidth(1.0), 'FT out of range');
-    assert_error(@() qrobustness.kosut.fidelity_bound(-0.1), 'negative T*Omega_bnd');
+    assert_error(@() qrobustness.kosut.uncertainty_rates({}, {}, dt), ...
+        'qrobustness:kosut:EmptyH', 'empty H_list');
+    assert_error(@() qrobustness.kosut.uncertainty_rates(H_list, {SX}, dt), ...
+        'qrobustness:kosut:LenMismatch', 'length mismatch');
+    assert_error(@() qrobustness.kosut.uncertainty_rates(H_list, zero_list, 0), ...
+        'qrobustness:kosut:BadDt', 'dt <= 0');
+    assert_error(@() qrobustness.kosut.threshold_time_bandwidth(1.0), ...
+        'qrobustness:kosut:BadFT', 'FT out of range');
+    assert_error(@() qrobustness.kosut.fidelity_bound(-0.1), ...
+        'qrobustness:kosut:NegTOb', 'negative T*Omega_bnd');
 
 end
 
 function [H_list, dt] = deterministic_pwc(seed, tau, dt, SX, SY, SZ)
 %DETERMINISTIC_PWC PWC single-qubit Hamiltonians from a fixed closed form.
 %   RNG-free so that MATLAB and Octave agree exactly; the Python peer tests use
-%   their own draws, since only the golden fixtures are cross-language.
+%   their own draws, since only the committed tables are cross-language.
     H_list = cell(1, tau);
     for k = 1:tau
         f1 = sin(1.7 * (k + seed));
         f2 = cos(2.3 * (k + seed) + 0.5);
         H_list{k} = 0.5 * SZ + f1 * SX + f2 * SY;
     end
-end
-
-function assert_error(fh, what)
-    ok = false;
-    try
-        fh();
-    catch
-        ok = true;
-    end
-    assert(ok, 'expected an error: %s', what);
 end
 
 % SPDX-FileCopyrightText: (C) 2026 F. C. Langbein <frank@langbein.org>

@@ -157,13 +157,8 @@ function test_error_control()
     end
 
     % margin_tol must be positive.
-    ok = false;
-    try
-        qrobustness.iterative_margin(fn, L, FT, 'margin_tol', 0);
-    catch
-        ok = true;
-    end
-    assert(ok, 'expected margin_tol=0 to be rejected');
+    assert_error(@() qrobustness.iterative_margin(fn, L, FT, 'margin_tol', 0), ...
+                 'qrobustness:margin:margin_tol', 'margin_tol = 0');
 end
 
 % SPDX-FileCopyrightText: (C) 2026 F. C. Langbein <frank@langbein.org>

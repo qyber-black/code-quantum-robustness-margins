@@ -11,6 +11,8 @@ function C = structure_constant(kind, Hhat, dt, tau, controls)
 %   certified margin valid while shrinking ||Hhat||_F (paper, Sec. IV).  For
 %   traceless structures -- including the case-study H0, H1, H2 -- nothing
 %   changes.
+%
+%   Peer of python/src/qrobustness/core.py.
 
     nf = norm(qrobustness.traceless(Hhat), 'fro');
     switch lower(kind)

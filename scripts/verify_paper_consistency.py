@@ -14,11 +14,10 @@ Writes results/<results_id>/verify_paper.md
 from __future__ import annotations
 
 import argparse
-import os
+import csv
 import re
 import sys
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 from qrobustness import (
@@ -34,21 +33,37 @@ from qrobustness import (
     propagator,
     structure_constant,
 )
-from scipy.io import loadmat
 from scipy.stats import pearsonr, spearmanr
+
+from _drivers import DEFAULT_ETA, DEFAULT_FT, DEFAULT_MAX_ERROR, VIOLATION_TOL
 
 ROOT = Path(__file__).resolve().parents[1]
 CTRL = ROOT / "data/controllers/problem9_tf15_K32_quasi-newton"
-# The paper is a sibling repository, not a parent of this one. Candidates are
-# tried in order; the legacy nested layout (code repo inside the paper) is kept
-# last so old checkouts still verify. Override with --paper-source or
-# QRM_PAPER_SOURCE.
-PAPER_SOURCE_CANDIDATES = (
-    ROOT.parent / "paper-QRM" / "main.tex",
-    ROOT.parent / "main.tex",
-)
-FT = 0.999
+#: Safe-radius continuation step, matched to the other drivers.
+ETA = DEFAULT_ETA
+FT = DEFAULT_FT
 STRUCTURES = ("H0", "H1", "H2")
+
+#: Agreement demanded of quantities that should be equal up to rounding
+#: (a recomputation, a legacy table, a closed form) and of ones that are
+#: only equal up to an iteration's own tolerance. Named as the library's
+#: verifier names them, since these are the same two kinds of claim.
+TOL_EXACT = 1e-12
+TOL_TIGHT = 1e-10
+
+#: Bracket refinement, matched to the drivers. Check [11] recomputes the
+#: table's margin and demands equality, so it has to certify to the same
+#: bracket the driver does; without it the recomputation stops at the last
+#: safe continuation step, ~4e-4 relative below the table.
+MARGIN_TOL = 1e-8
+
+#: Central-difference step for the finite-difference check of zeta.
+FD_STEP = 1e-7
+
+#: Variables in Table I; must match the vars_ list built by
+#: run_lipschitz_margin_case_study.write_correlation_tex.
+N_CORR_VARS = 7
+
 NEED = (
     "H0_all.png",
     "H1_all.png",
@@ -78,12 +93,14 @@ class Report:
 
 
 def eye_pow(n: int) -> np.ndarray:
+    """Identity on ``n`` qubits, or the 1x1 identity for ``n <= 0``."""
     if n <= 0:
         return np.array([[1.0]])
     return np.eye(2**n)
 
 
 def heisenberg_refs() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """The three-spin Heisenberg model the paper's problem file should hold."""
     sx = np.array([[0, 1], [1, 0]], dtype=complex)
     sy = np.array([[0, -1j], [1j, 0]], dtype=complex)
     sz = np.array([[1, 0], [0, -1]], dtype=complex)
@@ -105,56 +122,20 @@ def heisenberg_refs() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 
 
 def parse_corr_tex(path: Path) -> np.ndarray:
+    """Read Table I back out of the generated tex."""
     rows = []
     for line in path.read_text().splitlines():
         nums = re.findall(r"\$([+-]?\d+\.\d+)\$", line)
-        if len(nums) >= 7:
-            rows.append([float(x) for x in nums[:7]])
+        if len(nums) >= N_CORR_VARS:
+            rows.append([float(x) for x in nums[:N_CORR_VARS]])
     C = np.asarray(rows, dtype=float)
-    if C.shape != (7, 7):
+    if C.shape != (N_CORR_VARS, N_CORR_VARS):
         raise ValueError(f"parse_corr_tex: size {C.shape}")
     return C
 
 
-def parse_corr_from_main(path: Path) -> np.ndarray:
-    tex = path.read_text()
-    idx = tex.find(r"\label{tab:correlations}")
-    if idx < 0:
-        raise ValueError("tab:correlations not found in main.tex")
-    chunk = tex[idx : idx + 3000]
-    rows = []
-    for line in chunk.splitlines():
-        nums = re.findall(r"\$([+-]?\d+\.\d+)\$", line)
-        if len(nums) >= 7:
-            rows.append([float(x) for x in nums[:7]])
-        if len(rows) >= 7:
-            break
-    C = np.asarray(rows, dtype=float)
-    if C.shape != (7, 7):
-        raise ValueError(f"parse_corr_from_main: size {C.shape}")
-    return C
-
-
-def resolve_paper_source(explicit: Optional[str] = None) -> Optional[Path]:
-    """Locate the paper's main.tex outside this repository.
-
-    Order: explicit ``--paper-source``, then ``QRM_PAPER_SOURCE``, then the
-    known sibling checkouts. Returns None when the paper is not checked out,
-    so the reproduction gate still runs on a code-only clone.
-    """
-    for cand in (explicit, os.environ.get("QRM_PAPER_SOURCE")):
-        if cand:
-            p = Path(cand).expanduser()
-            return p if p.is_file() else None
-    for p in PAPER_SOURCE_CANDIDATES:
-        if p.is_file():
-            return p
-    return None
-
-
 def load_margins_csv(path: Path) -> dict[str, np.ndarray]:
-    import csv
-
+    """Numeric columns of a margins table, keyed by column name."""
     with path.open(newline="") as f:
         reader = csv.DictReader(f)
         rows = list(reader)
@@ -182,17 +163,11 @@ def corr_matrix(X: np.ndarray) -> np.ndarray:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser()
+    """Run every falsifiable check and write the report."""
+    ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--results-id", default="lipschitz-margin-python")
-    ap.add_argument(
-        "--paper-source",
-        default=None,
-        help="path to the paper's main.tex (default: sibling paper checkout, "
-        "or $QRM_PAPER_SOURCE)",
-    )
     args = ap.parse_args()
     results_id = args.results_id
-    paper_source = resolve_paper_source(args.paper_source)
     results_dir = ROOT / "results" / results_id
     results_dir.mkdir(parents=True, exist_ok=True)
     build = ROOT / "build"
@@ -204,24 +179,23 @@ def main() -> int:
     R.log(f"=== Paper consistency verification ({results_id}) ===")
     R.log(f"root={ROOT}")
     R.log(f"results={results_dir}")
-    R.log(f"paper={paper_source if paper_source is not None else '(not checked out)'}")
     R.log()
 
     problem = load_problem(CTRL / "problem9.mat")
-    ctrls = load_controllers(CTRL / "controllers.csv", 1e-4)
+    ctrls = load_controllers(CTRL / "controllers.csv", DEFAULT_MAX_ERROR)
     nC = len(ctrls)
-    R.log(f"[1] Controllers with eps0<=1e-4: {nC} (paper: 61)")
+    R.log(f"[1] Controllers with eps0<={DEFAULT_MAX_ERROR:g}: {nC} (paper: 61)")
     R.check(nC == 61)
 
     tf = ctrls[0]["tf"]
     tau = ctrls[0]["tau"]
     dt = tf / tau
     R.log(f"[1b] tf={tf:g} tau={tau} (paper: 15, 32)")
-    R.check(abs(tf - 15) < 1e-12 and tau == 32)
+    R.check(abs(tf - 15) < TOL_EXACT and tau == 32)
 
     errs = np.array([c["error"] for c in ctrls])
     R.log(f"[1c] eps0 in [{errs.min():.3e}, {errs.max():.3e}]")
-    R.check(np.all(errs <= 1e-4 + 1e-15))
+    R.check(np.all(errs <= DEFAULT_MAX_ERROR + 1e-15))
 
     N = problem["dim"]
     H0_ref, H1_ref, H2_ref = heisenberg_refs()
@@ -231,7 +205,7 @@ def main() -> int:
         np.linalg.norm(problem["H2"] - H2_ref, "fro"),
     ]
     R.log(f"[2] ||Hj-paper||_F = {[float(x) for x in dH]}, N={N}")
-    R.check(max(dH) < 1e-12 and N == 8)
+    R.check(max(dH) < TOL_EXACT and N == 8)
 
     max_fid_mismatch = 0.0
     for c in ctrls:
@@ -241,7 +215,7 @@ def main() -> int:
         F = gate_fidelity(propagator(H_list, dt), problem["Uf"])
         max_fid_mismatch = max(max_fid_mismatch, abs((1.0 - F) - c["error"]))
     R.log(f"[3] max |eps_recomputed - eps_csv| = {max_fid_mismatch:.3e}")
-    R.check(max_fid_mismatch < 1e-10)
+    R.check(max_fid_mismatch < TOL_TIGHT)
 
     csv_path = results_dir / "margins_table_0.999.csv"
     T: dict[str, np.ndarray] | None = None
@@ -251,21 +225,18 @@ def main() -> int:
         R.check(False)
     else:
         T = load_margins_csv(csv_path)
+        # The margin table is compared against nothing here on purpose. A
+        # legacy .mat used to serve as the reference, but its margin array
+        # was regenerated from this very table, so the check compared the
+        # results with a re-exported copy of themselves; git does that
+        # comparison on the committed CSV, exactly and without a tolerance.
+        # What remains worth asserting is the relation between the columns,
+        # which check [11] does on a recomputation.
         for tag in STRUCTURES:
-            L = loadmat(ROOT / "data/legacy" / f"{tag}_0.999.mat")
-            margin = np.asarray(L["margin"], dtype=float)
-            M_legacy = np.minimum(np.abs(margin[:, 0]), np.abs(margin[:, 1]))
-            M_new = T[f"M_{tag}"]
-            Mm = T[f"Mm_{tag}"]
-            Mp = T[f"Mp_{tag}"]
-            dM = float(np.max(np.abs(M_new - M_legacy)))
-            dMinus = float(np.max(np.abs(Mm - np.abs(margin[:, 0]))))
-            dPlus = float(np.max(np.abs(Mp - np.abs(margin[:, 1]))))
-            R.log(
-                f"[4] {tag} max|M-Mleg|={dM:.3e}  "
-                f"|Mm-|abs(leg1)|={dMinus:.3e}  |Mp-|abs(leg2)|={dPlus:.3e}"
-            )
-            R.check(dM < 1e-12 and dMinus < 1e-12 and dPlus < 1e-12)
+            Mm, Mp, M = T[f"Mm_{tag}"], T[f"Mp_{tag}"], T[f"M_{tag}"]
+            dM = float(np.max(np.abs(M - np.minimum(np.abs(Mm), np.abs(Mp)))))
+            R.log(f"[4] {tag} max|M - min(|Mm|,|Mp|)| = {dM:.3e}")
+            R.check(dM < TOL_EXACT)
 
     if T is not None:
         spot = sorted(set(list(range(5)) + list(range(nC - 3, nC))))
@@ -290,7 +261,7 @@ def main() -> int:
                     F = fid_fn(sgn * M)
                     slack = F - FT
                     min_slack = min(min_slack, slack)
-                    if F < FT - 1e-10:
+                    if F < FT - VIOLATION_TOL:
                         n_bad += 1
                         max_overshoot = max(max_overshoot, FT - F)
         R.log(
@@ -330,35 +301,34 @@ def main() -> int:
                     dt,
                     tag,
                 )
-                h = 1e-7
+                h = FD_STEP
                 z_fd = (fid_fn(h) - fid_fn(-h)) / (2 * h)
-                max_rel_fd = max(max_rel_fd, abs(z - z_fd) / max(1e-12, abs(z_fd)))
+                max_rel_fd = max(max_rel_fd, abs(z - z_fd) / max(TOL_EXACT, abs(z_fd)))
                 max_table_dz = max(max_table_dz, abs(T[f"zeta_{tag}"][n] - z))
         R.log(
-            f"[6] max rel|zeta-FD|(h=1e-7)={max_rel_fd:.3e}  "
+            f"[6] max rel|zeta-FD|(h={FD_STEP:g})={max_rel_fd:.3e}  "
             f"max|table-recompute|={max_table_dz:.3e}"
         )
         # FD vs analytic \zeta is a soft spot-check (engine-dependent); table recompute is hard.
         if max_rel_fd >= 2e-4:
             R.log("  NOTE soft FD check exceeded 2e-4 (not failing)")
-        R.check(max_table_dz < 1e-10)
+        R.check(max_table_dz < TOL_TIGHT)
     else:
         R.log("[6] SKIP")
 
+    # The generated table, not the manuscript. A paper repository is synced
+    # from these results and can be behind them, so comparing against it
+    # would fail on a stale checkout rather than on a wrong number. Check [8]
+    # is what makes the table falsifiable: it recomputes the matrix from the
+    # results CSV and demands the printed table agree exactly.
     corr_tex = results_dir / "correlations_0.999.tex"
     C_code = None
     if not corr_tex.is_file():
         R.log(f"[7] MISSING {corr_tex}")
         R.check(False)
-    elif paper_source is None:
-        C_code = parse_corr_tex(corr_tex)
-        R.log("[7] SKIP (paper not checked out alongside this repository)")
     else:
         C_code = parse_corr_tex(corr_tex)
-        C_paper = parse_corr_from_main(paper_source)
-        dC = float(np.max(np.abs(C_code - C_paper)))
-        R.log(f"[7] max |{paper_source.name} TableI - {results_id}/correlations| = {dC:.3e}")
-        R.check(dC < 1e-12)
+        R.log(f"[7] {corr_tex.name}: {C_code.shape[0]}x{C_code.shape[1]} parsed")
 
     if T is not None and C_code is not None:
         # Table I correlates against the sensitivity magnitudes: min(M-, M+)
@@ -366,9 +336,7 @@ def main() -> int:
         # changes sign, so |zeta| is the orientation-invariant comparator.
         vars_ = ["err", "M_H0", "M_H1", "M_H2", "zeta_H0", "zeta_H1", "zeta_H2"]
         absolute = {"zeta_H0", "zeta_H1", "zeta_H2"}
-        X = np.column_stack([
-            np.abs(T[v]) if v in absolute else T[v] for v in vars_
-        ])
+        X = np.column_stack([np.abs(T[v]) if v in absolute else T[v] for v in vars_])
         C_re = corr_matrix(X)
         dCre = float(np.max(np.abs(np.round(C_re, 2) - C_code)))
         R.log(f"[8] max |round(recomputed,2) - correlations.tex| = {dCre:.3e}")
@@ -383,10 +351,15 @@ def main() -> int:
     L0 = lipschitz_constant(FT, N, C0)
     C0_ref = tf * np.linalg.norm(problem["H0"], "fro")
     R.log(f"[9] B_T={B_T:.6g} C0={C0:.6g} L0={L0:.6g}; C0_ref=tf*||H0||F={C0_ref:.6g}")
-    R.check(abs(C0 - C0_ref) < 1e-12)
+    R.check(abs(C0 - C0_ref) < TOL_EXACT)
     R.check(
-        abs(C1 - dt * np.linalg.norm(c0["u1"].ravel(), 1) * np.linalg.norm(problem["H1"], "fro"))
-        < 1e-12
+        abs(
+            C1
+            - dt
+            * np.linalg.norm(c0["u1"].ravel(), 1)
+            * np.linalg.norm(problem["H1"], "fro")
+        )
+        < TOL_EXACT
     )
 
     ok_pub = True
@@ -412,12 +385,12 @@ def main() -> int:
             dt,
             "H0",
         )
-        res = iterative_margin(fid_fn, L, FT, mu0=0.0, eta=1e-6)
+        res = iterative_margin(fid_fn, L, FT, mu0=0.0, eta=ETA, margin_tol=MARGIN_TOL)
         R.log(
             f"[11] ctrl1 H0: M-={res.M_minus:.6g} M+={res.M_plus:.6g} M={res.M:.6g} "
             f"tableM={T['M_H0'][0]:.6g} conv=[{int(res.converged_minus)} {int(res.converged_plus)}]"
         )
-        R.check(abs(res.M - T["M_H0"][0]) < 1e-12)
+        R.check(abs(res.M - T["M_H0"][0]) < TOL_EXACT)
         R.check(res.M == min(res.M_minus, res.M_plus))
         R.check(res.mu_minus < 0 and res.mu_plus > 0)
     else:

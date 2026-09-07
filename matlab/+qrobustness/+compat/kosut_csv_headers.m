@@ -6,7 +6,7 @@ function headers = kosut_csv_headers()
     per = {'M', 'KM', 'ratio', 'KTOb', 'Kflb', 'wunc', 'wavg', 'wdev'};
     for t = 1:numel(tags)
         for j = 1:numel(per)
-            headers{end+1} = sprintf('%s_%s', per{j}, tags{t}); %#ok<AGROW>
+            headers{end + 1} = sprintf('%s_%s', per{j}, tags{t}); %#ok<AGROW>
         end
     end
 end

@@ -47,13 +47,8 @@ function test_dU_dmu_exact()
     assert(rel < 1e-13, 'Commuting case rel err %g', rel);
 
     % Unknown method is rejected.
-    ok = false;
-    try
-        qrobustness.parse_dU_options('method', 'simpson');
-    catch
-        ok = true;
-    end
-    assert(ok, 'Expected parse_dU_options to reject an unknown method');
+    assert_error(@() qrobustness.parse_dU_options('method', 'simpson'), ...
+                 'qrobustness:dU:Method', 'an unknown derivative method');
 
     % Exact vs quadrature on the real case-study data.
     root = fileparts(fileparts(fileparts(mfilename('fullpath'))));
@@ -109,6 +104,7 @@ function test_dU_dmu_exact()
 end
 
 function H = rand_herm(n)
+    % A random Hermitian matrix of size n.
     A = randn(n) + 1i * randn(n);
     H = (A + A') / 2;
 end

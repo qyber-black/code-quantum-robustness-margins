@@ -16,6 +16,8 @@ function F_eff = effective_threshold(FT, nominal_error, absorption)
 %   for the target-gate threshold (it is looser than the angular value
 %   whenever nominal_error > 0) and is retained only to reproduce previously
 %   published numbers.
+%
+%   Peer of python/src/qrobustness/kosut.py.
 
     if nargin < 2 || isempty(nominal_error); nominal_error = 0; end
     if nargin < 3 || isempty(absorption); absorption = 'angular'; end

@@ -2,6 +2,8 @@ function controllers = load_controllers(csv_path, max_error)
 %LOAD_CONTROLLERS Load controller CSV and filter by nominal error.
 %   CSV columns: id, ?, tf, tau, error, then interleaved u1,u2 samples
 %   max_error default 1e-4 (paper: keep 61 of 100)
+%
+%   Peer of python/src/qrobustness/core.py.
 
     if nargin < 2 || isempty(max_error)
         max_error = 1e-4;

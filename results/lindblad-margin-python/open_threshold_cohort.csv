@@ -1,0 +1,7 @@
+channel,FT,n_eligible,n_controllers
+dephasing,0.99,10,10
+dephasing,0.999,10,10
+dephasing,0.9999,10,10
+amp_damping,0.99,10,10
+amp_damping,0.999,10,10
+amp_damping,0.9999,10,10

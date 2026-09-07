@@ -9,7 +9,9 @@ function opts = parse_dU_options(varargin)
 %   of the form f(..., 32) are accepted.  n_quad applies only to the
 %   'quadrature' method; under the default 'exact' it is unused.
 %
-%   See also QROBUSTNESS.DU_DMU_EXACT, QROBUSTNESS.DU_DMU_QUAD.
+%   See also QROBUSTNESS.DU_DMU_EXACT, QROBUSTNESS.DU_DMU_INTEGRAL.
+%
+%   Peer of python/src/qrobustness/core.py (dU_dmu option handling).
 
     args = varargin;
     n_quad_positional = [];

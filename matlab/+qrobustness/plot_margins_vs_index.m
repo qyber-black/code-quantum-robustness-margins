@@ -24,14 +24,24 @@ function fig = plot_margins_vs_index(err, M0, M1, M2, varargin)
     ax = axes('Parent', fig);
     hold(ax, 'on');
 
+    % Manuscript marker colours, named to match the Python reference's
+    % COLOR_ERR / COLOR_H0 / COLOR_H1 / COLOR_H2. They were four inline
+    % literals here while the reference named them, so a change on one side
+    % would have moved that engine's figures away from the published ones
+    % without anything saying so.
+    color_err = [0.066 0.443 0.745];
+    color_H0 = [0 0 1];
+    color_H1 = [0 1 0];
+    color_H2 = [1 0 0];
+
     % log10-transformed values on linear axes
-    plot(ax, idx, log10(err_s), '-', 'Color', [0.066 0.443 0.745], ...
+    plot(ax, idx, log10(err_s), '-', 'Color', color_err, ...
         'LineWidth', 1.2, 'DisplayName', 'nominal fidelity error');
-    plot(ax, idx, log10(M0), 's', 'Color', [0 0 1], 'MarkerFaceColor', [0 0 1], ...
+    plot(ax, idx, log10(M0), 's', 'Color', color_H0, 'MarkerFaceColor', color_H0, ...
         'MarkerSize', 6, 'LineStyle', 'none', 'DisplayName', 'H_0 robustness margins');
-    plot(ax, idx, log10(M1), '>', 'Color', [0 1 0], 'MarkerFaceColor', [0 1 0], ...
+    plot(ax, idx, log10(M1), '>', 'Color', color_H1, 'MarkerFaceColor', color_H1, ...
         'MarkerSize', 6, 'LineStyle', 'none', 'DisplayName', 'H_1 robustness margins');
-    plot(ax, idx, log10(M2), '<', 'Color', [1 0 0], 'MarkerFaceColor', [1 0 0], ...
+    plot(ax, idx, log10(M2), '<', 'Color', color_H2, 'MarkerFaceColor', color_H2, ...
         'MarkerSize', 6, 'LineStyle', 'none', 'DisplayName', 'H_2 robustness margins');
 
     qrobustness.log10_axis(ax, 'y', [1e-7, 1e-1]);

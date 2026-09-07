@@ -1,5 +1,7 @@
 function F = gate_fidelity(U, Uf)
 %GATE_FIDELITY Normalized gate fidelity F = (1/N) |Tr(Uf' U)|.
+%
+%   Peer of python/src/qrobustness/core.py.
     N = size(U, 1);
     F = (1 / N) * abs(trace(Uf' * U));
 end

@@ -1,8 +1,12 @@
-function F = fidelity_bound_at(rates, delta)
+function F = fidelity_bound_at(rates, delta, uncertainty)
 %FIDELITY_BOUND_AT F_lb of their Eq. 30 at perturbation delta.
+%   uncertainty : 'constant' (default) or 'trajectory'; see SELECT_RATES.
+%
+%   Peer of python/src/qrobustness/kosut.py.
 
+    if nargin < 3; uncertainty = 'constant'; end
     F = qrobustness.kosut.fidelity_bound( ...
-        qrobustness.kosut.time_bandwidth(rates, delta));
+        qrobustness.kosut.time_bandwidth(rates, delta, uncertainty));
 end
 
 % SPDX-FileCopyrightText: (C) 2026 F. C. Langbein <frank@langbein.org>

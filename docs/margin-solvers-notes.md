@@ -2,7 +2,7 @@
 
 Selectable one-dimensional margin methods on `iterative_margin` (Python and MATLAB).
 Default is paper **Algorithm 1** (`method="algorithm1"`): Lipschitz steps of size
-\((F-F_T)/L\) with in-place bisection on overshoot. Paper drivers and goldens omit
+\((F-F_T)/L\) with in-place bisection on overshoot. Paper drivers and the consistency tests omit
 `method` and stay on Algorithm 1. These variants do not affect Algorithm 1 as stated in the manuscript.
 
 ## Lipschitz constraint
@@ -44,7 +44,6 @@ python scripts/bench_margin_solvers.py
 ```
 
 Writes gitignored `results/bench-margin-solvers/bench_margin_solvers.csv`.
-
 Illustrative snapshot (`--controllers 2`): with conservative \(L\), Algorithm 1 /
 Lipschitz+Brent|TOMS748 used ~3679 evals while `doubling` / `newton_probe` used tens
 or fewer; on case-study samples the aggressive methods were typically 0.3-0.7x Algorithm 1

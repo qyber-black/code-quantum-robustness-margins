@@ -12,10 +12,10 @@ function convert_log_axis_to_log10_data(fig, which)
     for a = 1:numel(ax_list)
         ax = ax_list(a);
         if strcmp(which, 'y') && ~strcmp(get(ax, 'YScale'), 'log')
-            continue;
+            continue
         end
         if strcmp(which, 'x') && ~strcmp(get(ax, 'XScale'), 'log')
-            continue;
+            continue
         end
 
         raw_lim = get(ax, 'YLim');
@@ -26,7 +26,7 @@ function convert_log_axis_to_log10_data(fig, which)
         ch = get(ax, 'Children');
         for c = 1:numel(ch)
             if ~isprop(ch(c), 'YData')
-                continue;
+                continue
             end
             if strcmp(which, 'y')
                 yd = get(ch(c), 'YData');

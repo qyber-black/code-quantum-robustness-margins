@@ -30,6 +30,7 @@ SZ = np.array([[1, 0], [0, -1]], dtype=complex)
 
 
 def _random_pwc(seed=0, tau=5, dt=0.3):
+    """A reproducible piecewise-constant single-qubit control sequence."""
     rng = np.random.default_rng(seed)
     H_list = []
     for _ in range(tau):
@@ -39,6 +40,8 @@ def _random_pwc(seed=0, tau=5, dt=0.3):
 
 
 def test_fidelity_bound_monotone_and_endpoints():
+    """The bound is 1 at zero, non-increasing, and clamped to 0 past the
+    time-bandwidth product where it becomes vacuous."""
     assert fidelity_bound(0.0) == pytest.approx(1.0)
     ys = np.linspace(0.0, T_OMEGA_MAX, 50)
     F = np.array([fidelity_bound(y) for y in ys])
@@ -48,6 +51,8 @@ def test_fidelity_bound_monotone_and_endpoints():
 
 
 def test_threshold_inversion_is_exact():
+    """Inverting the bound at a threshold reproduces that threshold exactly,
+    a nominal error tightens it, and no headroom certifies nothing."""
     for FT in (0.9, 0.99, 0.999, 0.9999):
         y = threshold_time_bandwidth(FT)
         assert fidelity_bound(y) == pytest.approx(FT, abs=1e-12)
@@ -61,6 +66,9 @@ def test_threshold_inversion_is_exact():
 
 
 def test_rates_scale_and_margin_inverts_bound():
+    """The rates match their definitions on a known structure, the
+    time-bandwidth product is even and increasing in |delta|, and the margin
+    is exactly where the bound meets the threshold."""
     H_list, dt = _random_pwc()
     dH_list = [0.3 * SX for _ in H_list]
     rates = uncertainty_rates(H_list, dH_list, dt)
@@ -131,6 +139,8 @@ def test_margin_is_conservative_versus_true_threshold_crossing():
 
 
 def test_zero_perturbation_gives_infinite_margin():
+    """No uncertainty means no bound to exhaust: the margin is infinite, not
+    a large finite number."""
     H_list, dt = _random_pwc(seed=5, tau=3)
     dH_list = [np.zeros((2, 2), dtype=complex) for _ in H_list]
     rates = uncertainty_rates(H_list, dH_list, dt)
@@ -139,6 +149,8 @@ def test_zero_perturbation_gives_infinite_margin():
 
 
 def test_input_validation():
+    """Empty, mismatched or degenerate inputs raise rather than producing a
+    rate that would silently be meaningless."""
     H_list, dt = _random_pwc(tau=2)
     with pytest.raises(ValueError):
         uncertainty_rates([], [], dt)
@@ -160,7 +172,9 @@ def test_csv_headers_match_matlab_peer():
     per = re.search(r"per = \{([^}]*)\}", m).group(1)
     tags = re.findall(r"'([^']+)'", tags)
     per = re.findall(r"'([^']+)'", per)
-    matlab_headers = ["controller", "fid", "err"] + [f"{f}_{t}" for t in tags for f in per]
+    matlab_headers = ["controller", "fid", "err"] + [
+        f"{f}_{t}" for t in tags for f in per
+    ]
 
     src = (root / "scripts/run_time_bandwidth_bound_comparison.py").read_text()
     ns: dict = {}
@@ -171,3 +185,19 @@ def test_csv_headers_match_matlab_peer():
         f"{f}_{t}" for t in ns["STRUCTURES"] for f in ns["PER_STRUCTURE"]
     ]
     assert py_headers == matlab_headers
+
+
+def test_margin_stable_in_commuting_limit():
+    """w_dev ~ 0 (structure commutes with the nominal evolution) must not
+    trigger cancellation in the closed-form root: regression for the
+    single-qubit amplitude example, where the naive quadratic formula
+    returned a margin ~3x the true threshold crossing."""
+    H = 0.5 * np.pi * SX
+    r = uncertainty_rates([H] * 8, [H] * 8, 1.0 / 8)
+    assert r.w_dev < 1e-12
+    m = margin(r, 0.999)
+    y2 = threshold_time_bandwidth(0.999) ** 2
+    assert m == pytest.approx(y2 / (4.0 * r.T * r.w_avg), rel=1e-9)
+    # The margin must not exceed the analytic constant crossing
+    # delta* = (2/pi) arccos(FT) of the pi-pulse amplitude error.
+    assert m <= 2.0 / np.pi * np.arccos(0.999)

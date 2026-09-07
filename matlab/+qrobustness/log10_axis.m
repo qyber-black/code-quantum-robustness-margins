@@ -18,6 +18,13 @@ function log10_axis(ax, which, raw_lim, varargin)
         ax = gca;
     end
     which = lower(which);
+    % Rejected rather than defaulted: the else branch below formats the x
+    % axis, so log10_axis(ax, 'z', ...) silently formatted the wrong one.
+    % The Python peer raises here.
+    if ~any(strcmp(which, {'x', 'y'}))
+        error('qrobustness:plot:Axis', ...
+              'which must be ''x'' or ''y'', got ''%s''', which);
+    end
     lo = floor(log10(raw_lim(1)));
     hi = ceil(log10(raw_lim(2)));
     majors = lo:hi;

@@ -1,4 +1,4 @@
-function M = margin(rates, FT, nominal_error, absorption)
+function M = margin(rates, FT, nominal_error, absorption, uncertainty)
 %MARGIN Perturbation margin implied by their Theorem 1.
 %   M = MARGIN(rates, FT) is the largest |delta| for which their F_lb >= FT,
 %   i.e. the analogue of qrobustness.iterative_margin(...).M obtained from
@@ -7,6 +7,9 @@ function M = margin(rates, FT, nominal_error, absorption)
 %   absorbs the nominal fidelity deficit through the angular relation by
 %   default (their Theorem 1 assumes F_nom = 1); pass absorption =
 %   'additive' for the previously published, non-conservative form.
+%   uncertainty : 'constant' (default) or 'trajectory'; the latter returns
+%   M^K_tv, certified against all sup-norm-bounded trajectories.  See
+%   QROBUSTNESS.KOSUT.SELECT_RATES.
 %
 %   Since T*Omega_bnd is monotone in |delta|, this inverts
 %   a*delta^2 + b*delta = y^2 in closed form, with
@@ -17,16 +20,20 @@ function M = margin(rates, FT, nominal_error, absorption)
 %
 %   Returns 0 if no positive perturbation is certifiable, and Inf if the
 %   perturbation does not enter the bound at all (w_unc*w_dev = 0, w_avg = 0).
+%
+%   Peer of python/src/qrobustness/kosut.py (margin; berberich.py also defines one).
 
     if nargin < 3 || isempty(nominal_error); nominal_error = 0; end
     if nargin < 4 || isempty(absorption); absorption = 'angular'; end
+    if nargin < 5 || isempty(uncertainty); uncertainty = 'constant'; end
     y = qrobustness.kosut.threshold_time_bandwidth(FT, nominal_error, absorption);
     if y <= 0
         M = 0;
-        return;
+        return
     end
-    a = rates.T^2 * rates.w_unc * rates.w_dev;
-    b = 4 * rates.T * rates.w_avg;
+    [w_avg, w_dev] = qrobustness.kosut.select_rates(rates, uncertainty);
+    a = rates.T^2 * rates.w_unc * w_dev;
+    b = 4 * rates.T * w_avg;
     y2 = y * y;
     if a <= 0 && b <= 0
         M = Inf;

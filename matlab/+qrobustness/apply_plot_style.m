@@ -1,5 +1,7 @@
 function apply_plot_style(fig)
 %APPLY_PLOT_STYLE Force light theme suitable for manuscript figures.
+%
+%   Peer of python/src/qrobustness/plotting.py.
     if nargin < 1 || isempty(fig)
         fig = gcf;
     end

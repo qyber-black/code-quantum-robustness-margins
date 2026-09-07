@@ -30,6 +30,8 @@ CTRL = ROOT / "data/controllers/problem9_tf15_K32_quasi-newton"
 
 
 def test_pack_unpack_roundtrip():
+    """Packing and unpacking controls round-trips, in the Fortran interleave
+    the MATLAB peer's controller files use."""
     tau = 5
     u1 = np.linspace(-1, 1, tau)
     u2 = np.linspace(2, -2, tau)
@@ -44,6 +46,8 @@ def test_pack_unpack_roundtrip():
 
 
 def test_fidelity_matches_propagator():
+    """The optimiser's fidelity is the same quantity the propagator path
+    computes, so the objective and the certificates agree."""
     problem = load_problem(CTRL / "problem9.mat")
     ctrls = load_controllers(CTRL / "controllers.csv", 1e-4)
     c = ctrls[0]
@@ -68,6 +72,8 @@ def test_fidelity_matches_propagator():
 
 @pytest.mark.parametrize("method", ["exact", "quadrature"])
 def test_gradient_finite_difference(method):
+    """The analytic control gradient matches central differences, for both
+    derivative methods."""
     problem = load_problem(CTRL / "problem9.mat")
     rng = np.random.default_rng(0)
     tau = 4
@@ -113,6 +119,8 @@ def test_gradient_finite_difference(method):
 
 
 def test_optimize_improves_fidelity():
+    """Synthesis increases the fidelity from its random start and reports a
+    consistent final value."""
     problem = load_problem(CTRL / "problem9.mat")
     rng = np.random.default_rng(42)
     tau = 32
@@ -153,7 +161,9 @@ def test_csv_roundtrip_synth_smoke(tmp_path):
     row = [9, 1, 15, 32, res.error] + list(x)
     csv_path = tmp_path / "controllers.csv"
     with csv_path.open("w") as f:
-        f.write(",".join(repr(float(v)) if i >= 4 else str(v) for i, v in enumerate(row)))
+        f.write(
+            ",".join(repr(float(v)) if i >= 4 else str(v) for i, v in enumerate(row))
+        )
         f.write("\n")
     # load with loose filter
     loaded = load_controllers(csv_path, max_error=1.0)

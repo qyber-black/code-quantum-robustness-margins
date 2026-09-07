@@ -1,5 +1,7 @@
 function [delta_grid, F] = fidelity_vs_delta(fidelity_fn, delta_grid)
 %FIDELITY_VS_DELTA Dense sweep F(delta) for plotting (not a certificate).
+%
+%   Peer of python/src/qrobustness/core.py.
     F = zeros(size(delta_grid));
     for k = 1:numel(delta_grid)
         F(k) = fidelity_fn(delta_grid(k));

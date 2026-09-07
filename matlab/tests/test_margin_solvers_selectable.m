@@ -33,6 +33,7 @@ function test_margin_solvers_selectable()
 end
 
 function z = local_zeta(mu)
+    % Exact slope of the synthetic tent landscape, for the Newton probe.
     if mu > 0
         z = -0.05;
     elseif mu < 0

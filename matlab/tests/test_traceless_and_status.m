@@ -30,13 +30,8 @@ function test_traceless_and_status()
     assert(abs(C - 32 * 0.5 * sqrt(1 - 1 / N)) < 1e-12);
 
     % Bad structures are rejected rather than silently accepted.
-    threw = false;
-    try
-        qrobustness.structure_constant('drift', [0 1; 0 0], 0.5, 4);
-    catch
-        threw = true;
-    end
-    assert(threw);
+    assert_error(@() qrobustness.structure_constant('drift', [0 1; 0 0], 0.5, 4), ...
+                 'qrobustness:traceless:Hermitian', 'a non-Hermitian structure');
 
     %% Algorithm 1 stopping status
     FT = 0.999;

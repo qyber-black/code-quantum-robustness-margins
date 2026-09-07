@@ -1,4 +1,7 @@
 function test_load_case_study_smoke()
+%TEST_LOAD_CASE_STUDY_SMOKE The shipped ensemble loads with the dimensions
+%   and count the paper quotes, and its recorded fidelities match a fresh
+%   propagation. Peer of the Python test_load_case_study_smoke.
     this_dir = fileparts(mfilename('fullpath'));
     root_dir = fileparts(fileparts(this_dir));
     CTRL = fullfile(root_dir, 'data', 'controllers', 'problem9_tf15_K32_quasi-newton');

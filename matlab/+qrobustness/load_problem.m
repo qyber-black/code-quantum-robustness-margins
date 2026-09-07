@@ -4,6 +4,8 @@ function problem = load_problem(mat_path)
 %
 %   problem.N in the MAT file is the number of qubits; the Hilbert space
 %   dimension is 2^N.  Both are returned under unambiguous names.
+%
+%   Peer of python/src/qrobustness/core.py.
 
     if nargin < 1 || isempty(mat_path)
         error('qrobustness:load_problem:Path', 'mat_path is required.');

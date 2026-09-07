@@ -13,7 +13,9 @@ function zeta = differential_sensitivity(H_list, dH_list, dt, Uf, varargin)
 %   A positional n_quad, differential_sensitivity(..., Uf, 32), is accepted;
 %   it applies only to the 'quadrature' method.
 %
-%   See also QROBUSTNESS.DU_DMU_EXACT, QROBUSTNESS.DU_DMU_QUAD.
+%   See also QROBUSTNESS.DU_DMU_EXACT, QROBUSTNESS.DU_DMU_INTEGRAL.
+%
+%   Peer of python/src/qrobustness/core.py.
 
     opts = qrobustness.parse_dU_options(varargin{:});
     use_exact = strcmp(opts.method, 'exact');
@@ -65,7 +67,7 @@ function zeta = differential_sensitivity(H_list, dH_list, dt, Uf, varargin)
         if use_exact
             dUk = qrobustness.dU_dmu_exact(Vs{k}, lams{k}, dH_list{k}, dt);
         else
-            dUk = qrobustness.dU_dmu_quad(H_list{k}, dH_list{k}, dt, nodes, weights);
+            dUk = qrobustness.dU_dmu_integral(H_list{k}, dH_list{k}, dt, nodes, weights);
         end
         Dk = Suff{k + 1} * dUk * Pref{k};
         zeta = zeta + real(trace(Uf' * Dk * e_minus_i_phi));

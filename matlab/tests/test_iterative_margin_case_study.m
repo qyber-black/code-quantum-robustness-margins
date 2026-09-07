@@ -16,7 +16,11 @@ function test_iterative_margin_case_study()
     L = qrobustness.lipschitz_constant(FT, problem.dim, C);
     fid_fn = qrobustness.make_fidelity_fn( ...
         problem.H0, problem.H1, problem.H2, c.u1, c.u2, problem.Uf, dt, 'H0');
-    res = qrobustness.iterative_margin(fid_fn, L, FT, 'mu0', 0, 'eta', eta);
+    % margin_tol matches the production driver: the published margins table
+    % this test compares against is generated with bracket refinement, so
+    % without it the two differ by ~5e-4 and the 1e-10 assertions below fail.
+    res = qrobustness.iterative_margin(fid_fn, L, FT, ...
+        'mu0', 0, 'eta', eta, 'margin_tol', 1e-8);
 
     assert(res.M == min(res.M_minus, res.M_plus));
     assert(res.converged_minus && res.converged_plus);

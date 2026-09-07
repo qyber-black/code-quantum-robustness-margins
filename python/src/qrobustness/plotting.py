@@ -49,6 +49,13 @@ def _require_matplotlib():
     return plt, FixedLocator, FuncFormatter
 
 
+# Matplotlib writes its own version into a PNG tEXt chunk, so upgrading it
+# rewrites every figure -- identical pixels, five different bytes -- which
+# churns the repository and buries any real change. Suppressing the field
+# makes the figures reproducible across versions.
+PNG_METADATA = {"Software": None}
+
+
 def apply_plot_style(fig) -> None:
     """Force light theme suitable for manuscript figures."""
     fig.patch.set_facecolor("white")
@@ -169,13 +176,21 @@ def plot_margins_vs_index(
     ax.legend(loc="lower right")
     ax.tick_params(labelsize=14)
     for item in (
-        [ax.title, ax.xaxis.label, ax.yaxis.label] + ax.get_xticklabels() + ax.get_yticklabels()
+        [ax.title, ax.xaxis.label, ax.yaxis.label]
+        + ax.get_xticklabels()
+        + ax.get_yticklabels()
     ):
         item.set_fontsize(14)
     apply_plot_style(fig)
     fig.tight_layout()
     if out_path is not None:
-        fig.savefig(out_path, dpi=dpi, facecolor="white", bbox_inches="tight")
+        fig.savefig(
+            out_path,
+            dpi=dpi,
+            facecolor="white",
+            bbox_inches="tight",
+            metadata=PNG_METADATA,
+        )
     return fig
 
 
@@ -249,7 +264,13 @@ def plot_margins_vs_sensitivity(
     apply_plot_style(fig)
     fig.tight_layout()
     if out_path is not None:
-        fig.savefig(out_path, dpi=dpi, facecolor="white", bbox_inches="tight")
+        fig.savefig(
+            out_path,
+            dpi=dpi,
+            facecolor="white",
+            bbox_inches="tight",
+            metadata=PNG_METADATA,
+        )
     return fig
 
 
@@ -269,7 +290,9 @@ def plot_fidelity_error_sweeps(
     plt, _, _ = _require_matplotlib()
     fig, ax = plt.subplots(figsize=(6.5, 4.8), dpi=96)
     xmax = 0.0
-    for i, (x, y) in enumerate(zip(X_list, Y_list)):
+    # strict: mismatched lengths silently dropped curves from a
+    # published figure.
+    for i, (x, y) in enumerate(zip(X_list, Y_list, strict=True)):
         x = np.asarray(x, dtype=float).ravel()
         y = np.maximum(np.asarray(y, dtype=float).ravel(), np.finfo(float).tiny)
         color = MATLAB_COLOR_ORDER[i % len(MATLAB_COLOR_ORDER)]
@@ -293,11 +316,25 @@ def plot_fidelity_error_sweeps(
     apply_plot_style(fig)
     fig.tight_layout()
     if out_path is not None:
-        fig.savefig(out_path, dpi=dpi, facecolor="white", bbox_inches="tight")
+        fig.savefig(
+            out_path,
+            dpi=dpi,
+            facecolor="white",
+            bbox_inches="tight",
+            metadata=PNG_METADATA,
+        )
     return fig
 
 
 def save_fig(fig, path: PathLike, *, dpi: int = 300) -> None:
+    """Write a figure reproducibly.
+
+    ``PNG_METADATA`` suppresses the matplotlib version stamp, so the same
+    figure regenerates as the same bytes; the white face colour keeps a
+    dark-themed environment from bleeding into a manuscript figure.
+    """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(path, dpi=dpi, facecolor="white", bbox_inches="tight")
+    fig.savefig(
+        path, dpi=dpi, facecolor="white", bbox_inches="tight", metadata=PNG_METADATA
+    )

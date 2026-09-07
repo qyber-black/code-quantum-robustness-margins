@@ -7,6 +7,8 @@ function y = threshold_time_bandwidth(FT, nominal_error, absorption)
 %   assumes F_nom = 1) through the angular relation by default.
 %
 %   Returns 0 when F_eff >= 1, i.e. no perturbation is certifiable.
+%
+%   Peer of python/src/qrobustness/kosut.py.
 
     if nargin < 2 || isempty(nominal_error); nominal_error = 0; end
     if nargin < 3 || isempty(absorption); absorption = 'angular'; end
@@ -14,7 +16,7 @@ function y = threshold_time_bandwidth(FT, nominal_error, absorption)
     eps_t = 1 - F_eff;
     if eps_t <= 0
         y = 0;
-        return;
+        return
     end
     y = 2 * sqrt(log(1 + sqrt(2 * eps_t)));
 end

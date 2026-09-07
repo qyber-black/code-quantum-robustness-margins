@@ -1,8 +1,10 @@
 function [nodes, weights] = gauss_legendre_01(n)
 %GAUSS_LEGENDRE_01 Nodes and weights for integral on [0,1].
+%
+%   Peer of python/src/qrobustness/core.py (gauss_legendre_01).
 
     % Golub--Welsch on [-1,1], then affine map to [0,1]
-    beta = (1:n-1) ./ sqrt(4*(1:n-1).^2 - 1);
+    beta = (1:n - 1) ./ sqrt(4 * (1:n - 1).^2 - 1);
     T = diag(beta, 1) + diag(beta, -1);
     [V, D] = eig(T);
     x = diag(D);

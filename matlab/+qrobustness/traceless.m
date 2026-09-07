@@ -5,13 +5,25 @@ function Hc = traceless(Hhat)
 %   propagator.  Centring therefore leaves the fidelity -- and hence the margin
 %   -- unchanged while making ||Hbar||_F <= ||H||_F, so it can only tighten the
 %   Lipschitz constant (paper, Sec. IV).
+%
+%   Peer of python/src/qrobustness/core.py.  Both sides now have one
+%   definition, validating and shared; the reference briefly carried a
+%   second, unvalidated copy in lengthspace.py, which this file never did.
 
     [n, m] = size(Hhat);
     if n ~= m
         error('qrobustness:traceless:Square', ...
             'structure matrix must be square.');
     end
-    if norm(Hhat - Hhat', 'fro') > 1e-10 * max(1, norm(Hhat, 'fro'))
+    % Elementwise, matching numpy.allclose in the reference's core.traceless:
+    % |H - H'| <= atol + rtol*|H'|, with the same HERMITIAN_RTOL and
+    % HERMITIAN_ATOL. A Frobenius-norm ratio was used here before and is a
+    % different test: it accepted a large-norm matrix carrying a small
+    % absolute asymmetry that the reference rejects, so the two engines
+    % disagreed on which structures were valid.
+    hermitian_rtol = 1e-10;
+    hermitian_atol = 1e-12;
+    if any(any(abs(Hhat - Hhat') > hermitian_atol + hermitian_rtol * abs(Hhat')))
         error('qrobustness:traceless:Hermitian', ...
             'structure matrix must be Hermitian.');
     end

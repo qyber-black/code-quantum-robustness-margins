@@ -9,18 +9,25 @@
 
 For piecewise-constant controls dU/dmu is exact in the eigenbasis of the
 interval Hamiltonian, so the Gauss-Legendre path is only an approximation of
-what qrobustness.core._dU_dmu_exact computes in closed form.  These tests pin
+what qrobustness.core.dU_dmu_exact computes in closed form.  These tests pin
 the closed form down directly (finite differences, commuting case, degenerate
 spectra) and then assert that the two paths agree on the real case-study data.
 """
+
 from pathlib import Path
 
 import numpy as np
 import pytest
 from scipy.linalg import expm
 
-from qrobustness import DU_METHODS, dH_structure, differential_sensitivity, load_controllers, load_problem
-from qrobustness.core import _dU_dmu_exact, _segment_eig, _segment_propagator
+from qrobustness import (
+    DU_METHODS,
+    dH_structure,
+    differential_sensitivity,
+    load_controllers,
+    load_problem,
+)
+from qrobustness.core import dU_dmu_exact, segment_eig, segment_propagator
 from qrobustness.optimize import fidelity_and_gradient
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -30,11 +37,14 @@ DT = 0.4688
 
 
 def _herm(rng, n):
+    """A random Hermitian matrix of size ``n``."""
     A = rng.normal(size=(n, n)) + 1j * rng.normal(size=(n, n))
     return 0.5 * (A + A.conj().T)
 
 
 def _cases():
+    """The four spectra that stress the closed form: generic, degenerate
+    (where the divided difference becomes a derivative), zero, and scalar."""
     rng = np.random.default_rng(20260730)
     Q, _ = np.linalg.qr(rng.normal(size=(4, 4)) + 1j * rng.normal(size=(4, 4)))
     degenerate = Q @ np.diag([1.0, 1.0, 1.0, 2.0]).astype(complex) @ Q.conj().T
@@ -52,8 +62,8 @@ def test_exact_matches_central_difference(name):
     H = _cases()[name]
     rng = np.random.default_rng(7)
     dH = _herm(rng, H.shape[0])
-    lam, V = _segment_eig(H)
-    dU = _dU_dmu_exact(lam, V, dH, DT)
+    lam, V = segment_eig(H)
+    dU = dU_dmu_exact(lam, V, dH, DT)
 
     eps = 1e-6
     fd = (expm(-1j * DT * (H + eps * dH)) - expm(-1j * DT * (H - eps * dH))) / (2 * eps)
@@ -66,24 +76,26 @@ def test_exact_finite_and_propagator_consistent(name):
     H = _cases()[name]
     rng = np.random.default_rng(11)
     dH = _herm(rng, H.shape[0])
-    lam, V = _segment_eig(H)
+    lam, V = segment_eig(H)
 
-    assert np.all(np.isfinite(_dU_dmu_exact(lam, V, dH, DT)))
+    assert np.all(np.isfinite(dU_dmu_exact(lam, V, dH, DT)))
     assert np.linalg.norm(V.conj().T @ V - np.eye(H.shape[0])) < 1e-13
-    assert np.linalg.norm(_segment_propagator(lam, V, DT) - expm(-1j * DT * H)) < 1e-12
+    assert np.linalg.norm(segment_propagator(lam, V, DT) - expm(-1j * DT * H)) < 1e-12
 
 
 def test_exact_commuting_case_is_exact():
     """dH = H commutes, so dU/dmu = -1j*dt*H*expm(-1j*dt*H) analytically."""
     rng = np.random.default_rng(3)
     H = _herm(rng, 6)
-    lam, V = _segment_eig(H)
-    dU = _dU_dmu_exact(lam, V, H, DT)
+    lam, V = segment_eig(H)
+    dU = dU_dmu_exact(lam, V, H, DT)
     ref = -1j * DT * H @ expm(-1j * DT * H)
     assert np.linalg.norm(dU - ref) / np.linalg.norm(ref) < 1e-13
 
 
 def test_unknown_method_rejected():
+    """An unrecognised method is rejected by both entry points rather than
+    silently falling back to a default."""
     rng = np.random.default_rng(5)
     H = _herm(rng, 4)
     assert DU_METHODS == ("exact", "quadrature")
@@ -105,17 +117,23 @@ def test_zeta_exact_matches_quadrature_on_case_study(structure):
         H_list = [H0 + c["u1"][k] * H1 + c["u2"][k] * H2 for k in range(c["tau"])]
         dH_list = dH_structure(H0, H1, H2, c["u1"], c["u2"], structure)
         z_exact = differential_sensitivity(H_list, dH_list, dt, Uf, method="exact")
-        z_quad = differential_sensitivity(H_list, dH_list, dt, Uf, 48, method="quadrature")
+        z_quad = differential_sensitivity(
+            H_list, dH_list, dt, Uf, 48, method="quadrature"
+        )
         assert z_exact == pytest.approx(z_quad, rel=1e-7, abs=1e-12)
 
 
 def test_gradient_exact_matches_quadrature_on_case_study():
+    """The control gradient agrees between the two derivative paths on real
+    data, to the same tolerance as the sensitivity itself."""
     problem = load_problem(CTRL / "problem9.mat")
     c = load_controllers(CTRL / "controllers.csv")[0]
     H0, H1, H2, Uf = problem["H0"], problem["H1"], problem["H2"], problem["Uf"]
     dt = c["tf"] / c["tau"]
 
-    Fe, g1e, g2e = fidelity_and_gradient(H0, H1, H2, c["u1"], c["u2"], Uf, dt, method="exact")
+    Fe, g1e, g2e = fidelity_and_gradient(
+        H0, H1, H2, c["u1"], c["u2"], Uf, dt, method="exact"
+    )
     Fq, g1q, g2q = fidelity_and_gradient(
         H0, H1, H2, c["u1"], c["u2"], Uf, dt, 48, method="quadrature"
     )

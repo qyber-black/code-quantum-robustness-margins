@@ -11,13 +11,8 @@ function test_compat_csv()
     assert(numel(controllers) == 61);
 
     missing = fullfile(root_dir, 'build', 'does_not_exist_controllers.csv');
-    threw = false;
-    try
-        qrobustness.compat.read_numeric_csv(missing);
-    catch
-        threw = true;
-    end
-    assert(threw, 'expected missing-file error');
+    assert_error(@() qrobustness.compat.read_numeric_csv(missing), ...
+                 'qrobustness:compat:MissingFile', 'a missing CSV');
 
     nC = 3;
     R.H0.fid = [0.999; 0.998; 0.997];

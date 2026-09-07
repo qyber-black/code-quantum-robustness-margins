@@ -18,11 +18,11 @@ from scipy.optimize import minimize
 
 from .core import (
     DU_METHODS,
-    _dU_dmu_exact,
-    _dU_dmu_integral,
-    _gauss_legendre_01,
-    _segment_eig,
-    _segment_propagator,
+    dU_dmu_exact,
+    dU_dmu_integral,
+    gauss_legendre_01,
+    segment_eig,
+    segment_propagator,
     gate_fidelity,
     propagator,
 )
@@ -40,6 +40,11 @@ def pack_controls(u1: Array, u2: Array) -> Array:
 
 
 def unpack_controls(x: Array, tau: int) -> Tuple[Array, Array]:
+    """Split a packed control vector back into the two amplitude arrays.
+
+    Column-major, matching the MATLAB peer's ``reshape(x, 2, tau)``, so the
+    two engines read the same controller files.
+    """
     u = np.asarray(x, dtype=float).ravel().reshape((2, tau), order="F")
     return u[0].copy(), u[1].copy()
 
@@ -73,8 +78,8 @@ def fidelity_and_gradient(
 
     H_list = [H0 + u1[k] * H1 + u2[k] * H2 for k in range(tau)]
     if use_exact:
-        eigs = [_segment_eig(H) for H in H_list]
-        Useg = [_segment_propagator(lam, V, dt) for lam, V in eigs]
+        eigs = [segment_eig(H) for H in H_list]
+        Useg = [segment_propagator(lam, V, dt) for lam, V in eigs]
     else:
         eigs = []
         Useg = [expm(-1j * dt * H) for H in H_list]
@@ -96,18 +101,18 @@ def fidelity_and_gradient(
         Suff[k] = Suff[k + 1] @ Useg[k]
 
     if not use_exact:
-        nodes, weights = _gauss_legendre_01(n_quad)
+        nodes, weights = gauss_legendre_01(n_quad)
 
     g1 = np.zeros(tau, dtype=float)
     g2 = np.zeros(tau, dtype=float)
     for k in range(tau):
         if use_exact:
             lam, V = eigs[k]
-            dUk1 = _dU_dmu_exact(lam, V, H1, dt)
-            dUk2 = _dU_dmu_exact(lam, V, H2, dt)
+            dUk1 = dU_dmu_exact(lam, V, H1, dt)
+            dUk2 = dU_dmu_exact(lam, V, H2, dt)
         else:
-            dUk1 = _dU_dmu_integral(H_list[k], H1, dt, nodes, weights)
-            dUk2 = _dU_dmu_integral(H_list[k], H2, dt, nodes, weights)
+            dUk1 = dU_dmu_integral(H_list[k], H1, dt, nodes, weights)
+            dUk2 = dU_dmu_integral(H_list[k], H2, dt, nodes, weights)
         D1 = Suff[k + 1] @ dUk1 @ Pref[k]
         D2 = Suff[k + 1] @ dUk2 @ Pref[k]
         g1[k] = float(np.real(np.trace(Uf.conj().T @ D1 * e_minus_i_phi))) / N
@@ -117,6 +122,13 @@ def fidelity_and_gradient(
 
 @dataclass
 class OptimizeResult:
+    """One synthesis run: the controls found and how the optimiser ended.
+
+    ``fid_init`` is the fidelity at the random start, kept so a run can be
+    told from a lucky initialisation, and ``success``/``message`` are the
+    optimiser's own verdict rather than an inference from the fidelity.
+    """
+
     u1: Array
     u2: Array
     fid: float

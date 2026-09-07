@@ -14,7 +14,6 @@ Computes margins and \zeta, writes margins CSV + correlations tex, and paper-sty
 
 from __future__ import annotations
 
-import argparse
 import csv
 from pathlib import Path
 from typing import Sequence
@@ -39,14 +38,28 @@ from qrobustness.plotting import (
     plot_margins_vs_sensitivity,
 )
 
+from _drivers import (
+    DEFAULT_ETA,
+    DEFAULT_MAX_ERROR,
+    ZETA_N_QUAD,
+    base_parser,
+)
+
 ROOT = Path(__file__).resolve().parents[1]
 CTRL = ROOT / "data/controllers/problem9_tf15_K32_quasi-newton"
 OUT_DIR = ROOT / "results/lipschitz-margin-python"
 BUILD = ROOT / "build"
 
-FT = 0.999
-ETA = 1e-6
+ETA = DEFAULT_ETA
+#: Bracket refinement, matched to the other drivers.
+MARGIN_TOL = 1e-8
 STRUCTURES = ("H0", "H1", "H2")
+#: Fidelity-vs-delta sweep: a little past the wider margin arm, on a fixed
+#: grid, with a fallback span for a controller whose margin is degenerate.
+SWEEP_SPAN_FACTOR = 1.05
+SWEEP_SPAN_FALLBACK = 1e-3
+SWEEP_POINTS = 401
+
 XLIMS = {
     "H0": (-8e-3, 8e-3),
     "H1": (-2e-2, 2e-2),
@@ -88,16 +101,18 @@ def focal_tests(rows: list[dict]) -> list[dict]:
         Z = np.abs(np.array([r[zkey] for r in rows], dtype=float))
         rho = spearmanr(M, Z)
         tau, tau_p = kendalltau(M, Z, variant="b")
-        out.append({
-            "j": j,
-            "rho": float(rho.statistic),
-            "p": float(rho.pvalue),
-            "tau_b": float(tau),
-            "tau_p": float(tau_p),
-        })
-    for rec, padj in zip(out, holm([r["p"] for r in out])):
+        out.append(
+            {
+                "j": j,
+                "rho": float(rho.statistic),
+                "p": float(rho.pvalue),
+                "tau_b": float(tau),
+                "tau_p": float(tau_p),
+            }
+        )
+    for rec, padj in zip(out, holm([r["p"] for r in out]), strict=True):
         rec["p_holm"] = padj
-    for rec, padj in zip(out, holm([r["tau_p"] for r in out])):
+    for rec, padj in zip(out, holm([r["tau_p"] for r in out]), strict=True):
         rec["tau_p_holm"] = padj
     return out
 
@@ -109,22 +124,36 @@ def write_focal_tests(rows: list[dict], path: Path) -> list[dict]:
     # defaults to CRLF.
     with path.open("w", newline="") as f:
         w = csv.writer(f, lineterminator="\n")
-        w.writerow([
-            "comparison", "n",
-            "spearman_rho", "p_two_sided", "p_holm",
-            "kendall_tau_b", "kendall_p_two_sided", "kendall_p_holm",
-        ])
+        w.writerow(
+            [
+                "comparison",
+                "n",
+                "spearman_rho",
+                "p_two_sided",
+                "p_holm",
+                "kendall_tau_b",
+                "kendall_p_two_sided",
+                "kendall_p_holm",
+            ]
+        )
         for r in recs:
-            w.writerow([
-                f"M_H{r['j']}_vs_abs_zeta_H{r['j']}",
-                len(rows),
-                f"{r['rho']:.6f}", f"{r['p']:.6e}", f"{r['p_holm']:.6e}",
-                f"{r['tau_b']:.6f}", f"{r['tau_p']:.6e}", f"{r['tau_p_holm']:.6e}",
-            ])
+            w.writerow(
+                [
+                    f"M_H{r['j']}_vs_abs_zeta_H{r['j']}",
+                    len(rows),
+                    f"{r['rho']:.6f}",
+                    f"{r['p']:.6e}",
+                    f"{r['p_holm']:.6e}",
+                    f"{r['tau_b']:.6f}",
+                    f"{r['tau_p']:.6e}",
+                    f"{r['tau_p_holm']:.6e}",
+                ]
+            )
     return recs
 
 
 def write_correlation_tex(rows: list[dict], path: Path) -> None:
+    """Emit Table I: Pearson above the diagonal, Spearman rho below."""
     # M_j = min(M_j-, M_j+) is invariant under reversal of the parameter
     # coordinate, while zeta_j changes sign, so |zeta_j| is the
     # orientation-invariant local comparator: correlating against signed
@@ -141,19 +170,22 @@ def write_correlation_tex(rows: list[dict], path: Path) -> None:
         r"$|\zeta_1|$",
         r"$|\zeta_2|$",
     ]
-    X = np.column_stack([
-        np.abs(np.array([r[v] for r in rows], dtype=float))
-        if v in absolute
-        else np.array([r[v] for r in rows], dtype=float)
-        for v in vars_
-    ])
+    X = np.column_stack(
+        [
+            np.abs(np.array([r[v] for r in rows], dtype=float))
+            if v in absolute
+            else np.array([r[v] for r in rows], dtype=float)
+            for v in vars_
+        ]
+    )
     # Pearson (upper) / Spearman rho (lower): linear and monotone-rank
     # association side by side, both descriptive.  Reporting the pair shows a
     # result is not an artefact of linear scaling alone or of outliers.
     P = np.corrcoef(X, rowvar=False)
 
-    S = np.eye(7)
-    for i in range(7):
+    n_vars = len(vars_)
+    S = np.eye(n_vars)
+    for i in range(n_vars):
         for j in range(i):
             S[i, j] = S[j, i] = spearmanr(X[:, i], X[:, j]).statistic
 
@@ -164,9 +196,9 @@ def write_correlation_tex(rows: list[dict], path: Path) -> None:
         " & " + " & ".join(labels) + r" \\",
         r"\midrule",
     ]
-    for i in range(7):
+    for i in range(n_vars):
         cells = [labels[i]]
-        for j in range(7):
+        for j in range(n_vars):
             if i == j:
                 v = 1.0
             elif j > i:
@@ -180,19 +212,14 @@ def write_correlation_tex(rows: list[dict], path: Path) -> None:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser()
+    """Run the full case study: margins, sensitivities, tables and plots."""
+    ap = base_parser(OUT_DIR, description=__doc__)
     ap.add_argument(
         "--sweep",
         action="store_true",
         help="Compute fidelity-vs-delta sweeps and H*_all.png",
     )
     ap.add_argument("--no-plots", action="store_true", help="Skip figure generation")
-    ap.add_argument(
-        "--out",
-        type=Path,
-        default=OUT_DIR,
-        help="Publish directory (default: results/lipschitz-margin-python)",
-    )
     ap.add_argument(
         "--controller-dir",
         type=Path,
@@ -203,14 +230,8 @@ def main() -> None:
     ap.add_argument(
         "--max-error",
         type=float,
-        default=1e-4,
+        default=DEFAULT_MAX_ERROR,
         help="Nominal error filter for load_controllers",
-    )
-    ap.add_argument(
-        "--FT",
-        type=float,
-        default=FT,
-        help="Fidelity threshold for margins (default 0.999)",
     )
     args = ap.parse_args()
     ft = args.FT
@@ -228,7 +249,7 @@ def main() -> None:
             "fid": c["fid"],
             "err": c["error"],
         }
-        print(f"Controller {i+1}/{len(controllers)} fid={c['fid']:.6g}", flush=True)
+        print(f"Controller {i + 1}/{len(controllers)} fid={c['fid']:.6g}", flush=True)
         for tag in STRUCTURES:
             if tag == "H0":
                 C = structure_constant("drift", problem["H0"], dt, c["tau"])
@@ -247,22 +268,28 @@ def main() -> None:
                 dt,
                 tag,
             )
-            margin = iterative_margin(fid_fn, L, ft, mu0=0.0, eta=ETA)
+            margin = iterative_margin(
+                fid_fn, L, ft, mu0=0.0, eta=ETA, margin_tol=MARGIN_TOL
+            )
             H_list = perturbed_hamiltonians(
                 problem["H0"], problem["H1"], problem["H2"], c["u1"], c["u2"], tag, 0.0
             )
-            dH = dH_structure(problem["H0"], problem["H1"], problem["H2"], c["u1"], c["u2"], tag)
-            zeta = differential_sensitivity(H_list, dH, dt, problem["Uf"], n_quad=32)
+            dH = dH_structure(
+                problem["H0"], problem["H1"], problem["H2"], c["u1"], c["u2"], tag
+            )
+            zeta = differential_sensitivity(
+                H_list, dH, dt, problem["Uf"], n_quad=ZETA_N_QUAD
+            )
             row[f"M_{tag}"] = float(margin.M)
             row[f"Mm_{tag}"] = float(margin.M_minus)
             row[f"Mp_{tag}"] = float(margin.M_plus)
             row[f"zeta_{tag}"] = float(zeta)
 
             if args.sweep:
-                span = 1.05 * max(margin.M_minus, margin.M_plus)
+                span = SWEEP_SPAN_FACTOR * max(margin.M_minus, margin.M_plus)
                 if span <= 0:
-                    span = 1e-3
-                x = np.linspace(-span, span, 401)
+                    span = SWEEP_SPAN_FALLBACK
+                x = np.linspace(-span, span, SWEEP_POINTS)
                 x, F = fidelity_vs_delta(fid_fn, x)
                 sweeps[tag]["X"].append(x)
                 sweeps[tag]["Y"].append(1.0 - F)

@@ -1,5 +1,12 @@
 function results = run_all_tests()
 %RUN_ALL_TESTS Execute MATLAB unit tests for +qrobustness.
+%   Every test runs, whatever the ones before it did: stopping at the first
+%   failure hides how many others would also have failed, which is the
+%   number you need when deciding whether a change broke one thing or
+%   everything. The failures are reported together at the end and then
+%   raised, so the exit code still fails the build.
+%
+%   Returns a struct with fields passed, failed and total.
 
     this_dir = fileparts(mfilename('fullpath'));
     root_dir = fileparts(fileparts(this_dir));
@@ -21,10 +28,15 @@ function results = run_all_tests()
         @test_error_control
         @test_kosut_bound
         @test_traceless_and_status
+        @test_lengthspace
+        @test_lindblad
+        @test_multiparam
+        @test_timevarying
     };
 
     n = numel(tests);
     passed = 0;
+    failures = {};
     for k = 1:n
         name = func2str(tests{k});
         try
@@ -33,11 +45,22 @@ function results = run_all_tests()
             passed = passed + 1;
         catch ME
             fprintf('FAIL  %s\n  %s\n', name, ME.message);
-            rethrow(ME);
+            failures{end + 1} = sprintf('%s: %s', name, ME.message); %#ok<AGROW>
         end
     end
-    fprintf('%d / %d tests passed\n', passed, n);
-    results = struct('passed', passed, 'total', n);
+
+    failed = numel(failures);
+    fprintf('\n%d passed, %d failed of %d tests\n', passed, failed, n);
+    if failed > 0
+        fprintf('\nFailed:\n');
+        for k = 1:failed
+            fprintf('  %s\n', failures{k});
+        end
+    end
+    results = struct('passed', passed, 'failed', failed, 'total', n);
+    if failed > 0
+        error('qrobustness:test:Failures', '%d of %d tests failed', failed, n);
+    end
 end
 
 % SPDX-FileCopyrightText: (C) 2026 F. C. Langbein <frank@langbein.org>

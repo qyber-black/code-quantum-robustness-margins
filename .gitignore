@@ -1,9 +1,12 @@
+# dev-code skill: user decisions and staged patches, never committed
+/local/
 .venv/
 __pycache__/
 *.pyc
 .pytest_cache/
 *.egg-info/
 *.asv
+octave-workspace
 *.m~
 .DS_Store
 matlab/tests/html/

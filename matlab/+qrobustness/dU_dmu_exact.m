@@ -17,7 +17,9 @@ function dU = dU_dmu_exact(V, lam, dH, dt)
 %
 %   (V, lam) may be reused across several dH for the same interval.
 %
-%   See also QROBUSTNESS.SEGMENT_EIG, QROBUSTNESS.DU_DMU_QUAD.
+%   See also QROBUSTNESS.SEGMENT_EIG, QROBUSTNESS.DU_DMU_INTEGRAL.
+%
+%   Peer of python/src/qrobustness/core.py (dU_dmu_exact).
 
     lam = lam(:);
     X = 0.5 * dt * (lam.' - lam);            % X(m,n), real, antisymmetric

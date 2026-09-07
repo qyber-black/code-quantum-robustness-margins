@@ -216,18 +216,22 @@ bracket is refined until
 ```
 
 so the true margin lies in `[M, M_upper]`, and `M` itself is tightened. The
-bracket refers to the *first* boundary of the nominal safe component: the
-certified end advances to a pointwise-safe sample only when the gap from the
-current certified end is covered by that sample's own safe radius
-`(F - F_T)/L` (or bridged by safe-radius continuation), so with a nonmonotone
-fidelity a safe island beyond the first crossing cannot inflate `M`. On the
+bracket refers to the *first* boundary of the nominal safe component.
+The certified end advances to a pointwise-safe sample only when the gap
+from the current certified end is covered by that sample's own safe radius
+`(F - F_T)/L`, or bridged by safe-radius continuation. With a nonmonotone
+fidelity a safe island beyond the first crossing therefore cannot inflate
+`M`. The
+radius rule is pluggable (`safe_radius_fn`); the Choi-angular radius
+`(arccos F_T - arccos F)/C_FS(d)` dominates the Lipschitz one and is used by
+`directional_margin(..., angular_gauge=...)`. On the
 case study `margin_tol=1e-10` reaches `1e-10` in about 90 extra fidelity
 evaluations per controller. `reason_minus/plus` distinguishes `'bracketed'`
-(width at tolerance) from `'partial'` (the bracket is rigorous but
-continuation stalled before reaching the tolerance), `'boundary'` (the
-domain edge was reached while still safe -- then the margin is a *domain
-truncation*, and `M_upper = inf`), and `'exhausted'` (no unsafe point
-found; `M_upper = inf`).
+(width at tolerance) from `'partial'`, where the bracket is rigorous but
+continuation stalled before reaching the tolerance. `'boundary'` means the
+domain edge was reached while still safe, so the margin is a *domain
+truncation* and `M_upper = inf`; `'exhausted'` means no unsafe point was
+found, likewise with `M_upper = inf`.
 
 The paper drivers do not pass `margin_tol`, so the published tables are
 reproduced exactly; the option is there for anyone who needs the true value.
@@ -285,3 +289,96 @@ result carries two rigorous certificates, `w_dev_certified` and
 The two quantities that are not exact -- `M` and `w_dev` -- are the two that
 carry explicit error control. Nothing else in the package uses a fixed
 discretisation without an estimate.
+
+---
+
+## 7. Paper-2 extensions (branch `dev-xQRM`; unreleased)
+
+The successor paper generalises the margin in three directions; the
+mathematics is in the `paper-xQRM` draft and the accuracy classification
+extends as follows.
+
+Multi-parameter (`multiparam.py`): per-parameter constants `L_j = B_T C_j`
+certify the cross-polytope `sum_j L_j |mu_j - nu_j| <= F_nu - F_T`; exact
+given inputs. Directional margins reuse `iterative_margin` along rays with
+`L(d) = sum_j L_j |d_j|`, inheriting its brackets unchanged.
+
+Time-varying (`timevarying.py`): `uniform_margin` returns
+`r_0 = (F - F_T)/sum(L)`, certifying every measurable trajectory with
+`sum_j L_j ||delta_j||_inf <= F - F_T` (sup-norm semantics; the iterated
+margin certifies constant perturbations only). The adversarial probe gives
+an empirical upper bound, so `M_tv` is bracketed `[r_0, m_adv]` -- the
+lower end certified, the upper end empirical.
+
+## What guards against silent numeric change
+
+The committed `results/` tree is the regression reference. Two runs that
+agree leave `git status` empty; a run that disagrees shows exactly which
+numbers moved, and a person decides whether the change was intended. That
+covers every controller and every quantity, with no tolerance to choose
+and no fixture to re-record.
+
+There was a golden fixture doing a weaker version of this for three
+controllers, and it was removed. A golden asserts that a recorded answer
+is correct, which it never established: it pins whatever the code produced
+on the day someone ran the exporter, so if that value was wrong the test
+defends the error. It did exactly that here, freezing a diamond norm
+produced by a solver later found unreliable, and it still passed. Tests
+here check properties that can fail -- bounds that must hold, identities
+that must be exact, certificates that must not be violated -- not that
+today's numbers match yesterday's.
+
+Two things make the git check work, and both are load-bearing:
+
+- Artefacts are byte-deterministic. Figures suppress the PDF
+  `CreationDate`, and a MATLAB `.mat` fixture that stamped its save date
+  into the header was removed for exactly this reason.
+- The SDP solver is named rather than resolved, so the open-system
+  numbers do not depend on which solver an installation prefers.
+
+Figures derive from the stored CSVs, so changing how one looks costs a
+`make sync-PAPER` and not a recompute; a figure-only diff is not a
+numerical change. `make maintainer-clean` removes every generated result
+so the next paper target rebuilds from nothing, which is the strongest
+form of the check.
+
+
+Open systems (`lindblad.py`): the process fidelity is linear in the
+vectorised propagator; Lipschitz constants are
+`L_j = (1/2) sum_k dt * dnorm(G_j^(k))` with diamond norms by the Watrous
+SDP. Accuracy ledger additions:
+
+| Quantity | Function | Accuracy |
+|---|---|---|
+| `F_pro`, `S` | `process_fidelity`, `channel` | exact (`expm`) |
+| Frechet derivative | `frechet_derivative` | exact (block method; no diagonalisability assumed) |
+| `dnorm` | `diamond_norm` | SDP; the solver's primal iterate is repaired to a STORED pair whose feasibility is proved by Rump's floating-Cholesky criterion, and the objective is evaluated upward on exactly those blocks, so `value_certified` is a rigorous upper bound and `L` is conservative. No verified repair means `VerificationFailure`, not a number |
+| `dnorm` (local families) | `common_rate_local_dnorm` | exact: the closed form `2n` for common-rate local dephasing and amplitude damping, so those constants need no SDP at all |
+| Choi conversion | `choi_matrix`, `superop_from_choi` | exact reindexing of stored entries; `choi_roundtrip_exact` checks the round trip bit for bit, which is what lets the verified bound speak about the represented superoperator |
+| `T_phi`, `T_1`, `T_2` | `dephasing_time`, `relaxation_time`, `coherence_time` | exact reparametrisation; `dephasing_time` returns the PURE-dephasing time, and `coherence_time` composes both channels (`1/T_2 = 1/T_phi + 1/(2 T_1)`) |
+| `M_gamma` | `open_margin` | lower bound with `margin_tol` bracket, as in the scalar case |
+
+Measured on the case study: for local dephasing the one-step radius agrees
+with the true crossing to 0.1%, so the diamond-norm constant is sharp in
+the dissipative direction.
+
+The solver is named (`lindblad.DEFAULT_SDP_SOLVER`, CLARABEL) rather than
+left to cvxpy. cvxpy routes complex SDPs to SCS, which on these generators
+returns a repair gap up to 1.8e-4 against CLARABEL's 3e-8 and warns that the
+solution may be inaccurate. Leaving the choice to the resolver also made the
+published open-system numbers differ by up to 4e-5 relative across a
+virtualenv rebuild whose package versions were identical, so pinning versions
+does not substitute for naming the solver. Pass `solver=""` to hand the choice
+back to cvxpy. The versions themselves are pinned in
+`python/requirements-repro.txt`, which `make venv` installs from; pass
+`PINS=` to build against current releases instead.
+
+What that repair costs is recorded rather than asserted:
+`run_dnorm_certificates.py` writes
+`results/lindblad-margin-python/dnorm_certificates.csv`, one row per
+generator with the solver optimum, the verified shift, the inflation the
+upward evaluation adds, the solver status, and -- for the two families
+with a closed form -- the deviation from it. The deviation is the
+solver's accuracy, not the certificate's, and moves between solver
+builds; the certified value never falls below the closed form.
+

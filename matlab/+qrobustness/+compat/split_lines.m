@@ -2,11 +2,11 @@ function lines = split_lines(txt)
 %SPLIT_LINES Split text into lines (Octave-safe alternative to splitlines).
     if exist('splitlines', 'builtin') || (exist('splitlines', 'file') == 2 && ~qrobustness.compat.is_octave())
         lines = splitlines(txt);
-        return;
+        return
     end
     if isempty(txt)
         lines = {''};
-        return;
+        return
     end
     parts = strsplit(txt, {'\r\n', '\n', '\r'});
     if ischar(parts)

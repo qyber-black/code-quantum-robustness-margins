@@ -11,6 +11,8 @@ function [F, g1, g2] = fidelity_and_gradient(H0, H1, H2, u1, u2, Uf, dt, varargi
 %
 %   On the 'exact' path one eigendecomposition per interval serves the
 %   propagator and both control derivatives.
+%
+%   Peer of python/src/qrobustness/optimize.py.
 
     opts = qrobustness.parse_dU_options(varargin{:});
     use_exact = strcmp(opts.method, 'exact');
@@ -64,8 +66,8 @@ function [F, g1, g2] = fidelity_and_gradient(H0, H1, H2, u1, u2, Uf, dt, varargi
             dUk1 = qrobustness.dU_dmu_exact(Vs{k}, lams{k}, H1, dt);
             dUk2 = qrobustness.dU_dmu_exact(Vs{k}, lams{k}, H2, dt);
         else
-            dUk1 = qrobustness.dU_dmu_quad(H_list{k}, H1, dt, nodes, weights);
-            dUk2 = qrobustness.dU_dmu_quad(H_list{k}, H2, dt, nodes, weights);
+            dUk1 = qrobustness.dU_dmu_integral(H_list{k}, H1, dt, nodes, weights);
+            dUk2 = qrobustness.dU_dmu_integral(H_list{k}, H2, dt, nodes, weights);
         end
         D1 = Suff{k + 1} * dUk1 * Pref{k};
         D2 = Suff{k + 1} * dUk2 * Pref{k};

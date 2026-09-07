@@ -131,7 +131,8 @@ function rates = uncertainty_rates(H_list, dH_list, dt, n_quad, n_dev, dev_tol, 
     achieved = inf(1, tau);
     for k = 1:tau
         cycles(k) = (max(lams{k}) - min(lams{k})) * dt / (2 * pi);
-        n_seed(k) = min(max([round(n_dev), 3, ceil(dev_samples_per_cycle * cycles(k)) + 1]), n_dev_max);
+        % fix, not round: the Python peer uses int(n_dev), which truncates.
+        n_seed(k) = min(max([fix(n_dev), 3, ceil(dev_samples_per_cycle * cycles(k)) + 1]), n_dev_max);
         if cycles(k) > 0
             achieved(k) = (n_seed(k) - 1) / cycles(k);
         end
@@ -157,7 +158,7 @@ function rates = uncertainty_rates(H_list, dH_list, dt, n_quad, n_dev, dev_tol, 
             w_dev = max(w_dev, w_next);
             if change <= dev_tol
                 dev_converged = true;
-                break;
+                break
             end
         end
         if w_dev > 0
@@ -177,7 +178,18 @@ function rates = uncertainty_rates(H_list, dH_list, dt, n_quad, n_dev, dev_tol, 
     bracket_lo = max(0, bracket_lo);
     bracket_hi = w_unc + w_avg;
 
+    % Trajectory-worst-case measures: for |delta(t)| <= 1,
+    % ||<delta Htil>|| <= (1/T) int ||Htil|| dt = mean_k ||Hhat^(k)|| (exact
+    % by isospectrality) and the deviation is bounded by w_unc + that mean.
+    % Peer of the w_avg_traj / w_dev_traj fields in the Python reference.
+    norms_dH = zeros(1, tau);
+    for k = 1:tau
+        norms_dH(k) = norm(dH_list{k}, 2);
+    end
+    w_avg_traj = mean(norms_dH);
+
     rates = struct('w_unc', w_unc, 'w_avg', w_avg, 'w_dev', w_dev, 'T', T, ...
+        'w_avg_traj', w_avg_traj, 'w_dev_traj', w_unc + w_avg_traj, ...
         'w_dev_certified', w_dev_sampled + lipschitz_gap, ...
         'w_dev_refinement', refinement, ...
         'w_dev_bracket_lo', bracket_lo, ...
@@ -213,14 +225,14 @@ function [best, gap] = sweep(scale, polish, Vs, lams, dH_list, Pref, H_list, Hav
         if polish
             opts = optimset('TolX', 1e-15);
             for i = 1:n_grid
-                interior = i > 1 && i < n_grid && vals(i) >= vals(i-1) && vals(i) >= vals(i+1);
+                interior = i > 1 && i < n_grid && vals(i) >= vals(i - 1) && vals(i) >= vals(i + 1);
                 if ~(interior || vals(i) >= local_best)
-                    continue;
+                    continue
                 end
-                a = grid(max(i-1, 1));
-                b = grid(min(i+1, n_grid));
+                a = grid(max(i - 1, 1));
+                b = grid(min(i + 1, n_grid));
                 if b <= a
-                    continue;
+                    continue
                 end
                 g = @(s) -fdev(s, Vs{k}, lams{k}, dH_list{k}, Pref{k}, Havg);
                 [~, fval] = fminbnd(g, a, b, opts);
@@ -232,6 +244,8 @@ function [best, gap] = sweep(scale, polish, Vs, lams, dH_list, Pref, H_list, Hav
 end
 
 function v = fdev(s, V, lam, dH, P, Havg)
+%   Deviation of Htil from its time average at interval time s.
+%   The objective whose supremum over s is Omega_avg^dev.
     v = norm(htil(V, lam, dH, P, s) - Havg, 2);
 end
 

@@ -4,6 +4,8 @@ function U = propagator(H_list, dt)
 %   H_list : cell array of Hermitian Hamiltonians H{k} for interval k
 %   dt     : pulse duration Delta
 %   U      : U(tf) = U{tau} * ... * U{1}
+%
+%   Peer of python/src/qrobustness/core.py.
 
     if isempty(H_list)
         error('qrobustness:propagator:Empty', 'H_list must be non-empty.');
