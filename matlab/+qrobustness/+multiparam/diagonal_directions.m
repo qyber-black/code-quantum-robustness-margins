@@ -6,14 +6,12 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function D = diagonal_directions(p)
-%DIAGONAL_DIRECTIONS All 2^p diagonal directions, normalised in the Euclidean metric.
+%DIAGONAL_DIRECTIONS All 2^p diagonal directions, unit Euclidean norm, one per row.
+%   p - number of parameters
 %
-% MATLAB counterpart of python/src/qrobustness/multiparam.py:diagonal_directions.
+%   Peer of python/src/qrobustness/multiparam.py:diagonal_directions.
 
-    % The row order must match Python's itertools.product((-1, 1), repeat=p), which varies the LAST coordinate fastest: mmm, mmp,
-    % mpm, ... Any positional comparison of the two implementations -- a CSV column order, a parity check -- mis-pairs the
-    % directions otherwise, while
-    % every individual row still looks correct.
+    % Row order matches Python's itertools.product((-1, 1), repeat=p): last coordinate fastest.
     nv = 2^p;
     D = zeros(nv, p);
     for v = 0:(nv - 1)

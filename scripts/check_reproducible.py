@@ -6,28 +6,22 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Independent reproduction check for a paper's results.
+"""Check that a paper's results can be reproduced.
 
-Recomputing into the same tree proves nothing: a driver that did not
-run, in silence, leaves the previous answer in place and everything agrees
-with itself. We recompute into a SEPARATE tree and compare, so a
-disagreement is visible and a driver that fails to run is a missing
-file rather than a stale pass.
+Reruns the paper's drivers into a separate scratch tree (--scratch, default
+build/repro/<paper>) with the production flags from _invocations and
+SERIAL_BLAS_ENV, then:
 
-Three comparisons, each of which can fail independently:
+1. compares every committed CSV in the paper's results/ trees with its
+   recomputed copy (numeric columns to --rtol/--atol, text exactly, the
+   VOLATILE_COLUMNS skipped; a file not recomputed is reported missing);
+2. for xqrm, regenerates the tables and macros from results/ and checks
+   that every generated macro, table and figure is used by the paper and
+   every one the paper uses exists;
+3. for xqrm, compares the generated tables, figures and macros.tex with
+   the copies in the paper repository.
 
-1. recomputed result CSVs against the committed ones in results/ --
-   the numbers the drivers produce are stable;
-2. artefacts (tables, macros) regenerated from the recomputed tree
-   against those regenerated from the committed tree -- the paper
-   layer is a pure function of the results;
-3. those artefacts against the copies actually sitting in the paper
-   repository -- the paper is not carrying something older.
-
-CSVs are compared numerically with a relative tolerance, not byte for
-byte: BLAS reassociation and library versions move the last bits, and
-a check that fails on that is a check people learn to ignore. Text
-columns must match exactly.
+Prints each mismatch and missing file; exits 1 if there are any.
 
 Usage: python3 scripts/check_reproducible.py --paper xqrm [--rtol 1e-9]
                                              [--skip-recompute]"""
@@ -48,49 +42,36 @@ from _invocations import DRIVER_RUNS, SERIAL_BLAS_ENV
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# Workers for the adversarial sweeps. Each job's seeds depend on that job,
-# not on execution order, therefore this changes the wall clock and nothing else:
-# serial and parallel runs yield byte-identical CSVs. Capped so the
-# machine stays usable and so the number does not swell on a large host.
-#
-# --jobs overrides it and the Makefile passes JOBS through, since
-# computing it here meant that `make reproduce JOBS=16` throttled the drivers
-# the paper target reran and not those this script reran, which is the
-# expensive half.
+# Default workers for the adversarial sweeps (capped at 32); --jobs, which
+# the Makefile sets from JOBS, overrides it. Seeds depend on the job, not
+# on execution order, so the setting does not change the results.
 DEFAULT_JOBS = str(min(32, os.cpu_count() or 4))
 
 
-# Per-paper manifest: which drivers to rerun, and which result trees they
-# write, and which artefacts the paper carries. A third paper becomes a new
-# entry here, not a code change.
 def _with_jobs(table, jobs):
-    """The shared table, plus --jobs for the drivers that accept it.
-
-    --jobs is absent from _invocations on purpose: it sets worker count,
-    not experiment, and the caller supplies it.
-    """
+    """Copy of the DRIVER_RUNS table with --jobs added for the drivers that
+    accept it."""
     out = {k: [list(run) for run in runs] for k, runs in table.items()}
-    for script in ("run_kosut_validity.py", "run_fs_validity.py"):
+    for script in (
+        "run_kosut_validity.py",
+        "run_fs_validity.py",
+        "run_bracket_audit.py",
+    ):
         runs = out.setdefault(script, [[]])
         for run in runs:
             run += ["--jobs", str(jobs)]
     return out
 
 
+# Per-paper manifest: the drivers to rerun and the result tree each writes,
+# the trees to compare, and the artefacts the paper carries.
 PAPERS = {
     "xqrm": {
         "paper_root": ROOT / ".." / "paper-xQRM",
         "artefact_script": "gen_paper_xqrm_{}.py",
         "artefact_dir": "paper-xqrm",
-        # Extra arguments per driver. A driver may require SEVERAL runs to
-        # reproduce everything it contributes: namely the multiparameter case
-        # study writes multiparam_<FT>.csv under --step lipschitz and also
-        # multiparam_<FT>_angular.csv under --step angular, and that tree
-        # holds both -- namely the angular/Lipschitz evaluation-count macros
-        # compare them against each other. One run for each list.
-        # Taken from scripts/_invocations.py, the single source these flags now
-        # share with the Makefile recipes. --jobs is appended below, since it
-        # is a property of the machine rather than of the experiment itself.
+        # Argument lists per driver, one run per list (from _invocations,
+        # with --jobs added).
         "driver_runs": _with_jobs(DRIVER_RUNS, DEFAULT_JOBS),
         "trees": [
             "multiparameter-margin-python",
@@ -100,6 +81,9 @@ PAPERS = {
             "scaling-python",
             "lindblad-margin-python",
             "verification-python",
+            "state-examples-python",
+            "algorithm-tests-python",
+            "bracket-audit-python",
         ],
         "drivers": [
             ("run_multiparameter_case_study.py", "multiparameter-margin-python"),
@@ -121,6 +105,9 @@ PAPERS = {
             ("run_mixed_example.py", "lindblad-margin-python"),
             ("run_dnorm_certificates.py", "lindblad-margin-python"),
             ("run_theorem_verification.py", "verification-python"),
+            ("run_state_examples.py", "state-examples-python"),
+            ("run_algorithm_tests.py", "algorithm-tests-python"),
+            ("run_bracket_audit.py", "bracket-audit-python"),
         ],
     },
     "qrm": {
@@ -129,12 +116,8 @@ PAPERS = {
         "artefact_dir": None,
         "driver_runs": _with_jobs(DRIVER_RUNS, DEFAULT_JOBS),
         "trees": ["lipschitz-margin-python", "time-bandwidth-bound-python"],
-        # A tree is reproduced whole. Result trees take their names from the
-        # method, not the paper, therefore time-bandwidth-bound-python holds the
-        # universal-bound comparison this paper publishes together with the
-        # validity sweeps, budget sweep and Berberich comparison that the second
-        # paper publishes. Every driver that writes into a listed tree must be
-        # listed here, or else compare_trees demands a file nothing produced.
+        # A tree is compared whole, so every driver writing into a listed
+        # tree must be listed, including those only the xQRM paper uses.
         "drivers": [
             ("run_lipschitz_margin_case_study.py", "lipschitz-margin-python"),
             ("run_time_bandwidth_bound_comparison.py", "time-bandwidth-bound-python"),
@@ -163,12 +146,18 @@ class Report:
         return not self.failures and not self.missing
 
 
-#: No column is exempt from comparison. Nothing that is recorded measures the
-#: machine rather than the science: cost appears as an evaluation
-#: count, which is deterministic, and no wall-clock timing is recorded.
-#: A column that failed to reproduce would turn every run into a failure
-#: and hide the columns that matter.
-VOLATILE_COLUMNS = frozenset()
+#: The timing columns of run_bracket_audit.py, the only columns exempt from
+#: comparison.
+VOLATILE_COLUMNS = frozenset(
+    {
+        "t_preproc_med",
+        "t_preproc_iqr",
+        "t_eval_med",
+        "t_eval_iqr",
+        "t_dir_med",
+        "t_dir_iqr",
+    }
+)
 
 
 def compare_csv(a: Path, b: Path, rtol: float, atol: float, rep: Report):
@@ -207,6 +196,7 @@ def compare_csv(a: Path, b: Path, rtol: float, atol: float, rep: Report):
 
 
 def compare_trees(new: Path, old: Path, rtol: float, atol: float, rep: Report):
+    """Compare every CSV under ``old`` with the same path under ``new``."""
     for f in sorted(old.rglob("*")):
         if not f.is_file() or f.suffix not in (".csv",):
             continue
@@ -232,17 +222,14 @@ def compare_text(a: Path, b: Path, rep: Report, what: str):
 
 
 def check_paper_contract(paper: Path, art: Path, rep: Report):
-    """Generated inputs and source references must agree, both ways.
+    """Check generated artefacts against the paper source, both ways.
 
-    Undefined is the direction LaTeX would detect anyway. The value here is
-    the other one: a macro that is generated but cited nowhere is a number
-    the paper computes and does not report, which is what a dropped claim
-    looks like. Only numbers the paper uses exist as macros, so a spare one
-    is a failure, not tidying.
+    Fails on a macro, table or figure the paper uses that was not
+    generated, and on one generated that the paper (main.tex and tables/)
+    never uses.
     """
     source = (paper / "main.tex").read_text()
-    # Tables hold no macro today, but a macro moving into one must not read
-    # as unused, so the citation set covers every generated input the paper has.
+    # Macros used inside the paper's tables count as used.
     for tex in sorted((paper / "tables").glob("*.tex")):
         source += tex.read_text()
     macros = (art / "macros.tex").read_text()
@@ -269,15 +256,7 @@ def check_paper_contract(paper: Path, art: Path, rep: Report):
 
 
 def run(cmd, cwd=None):
-    """Run a driver under the same environment the Makefile gives it.
-
-    SERIAL_BLAS_ENV is not optional. Without it these drivers spread 8x8
-    to 64x64 work across every core as spin-wait: a reproduction run spent
-    over half an hour inside run_open_amplitude_damping, which takes 4m53s
-    pinned. That the Makefile pinned and this did not was the fourth time
-    the two diverged, which is why the environment now sits beside the
-    flags in _invocations.
-    """
+    """Run ``cmd`` with SERIAL_BLAS_ENV, as the Makefile does; return its code."""
     env = {**os.environ, **SERIAL_BLAS_ENV}
     print("  $", " ".join(str(c) for c in cmd), flush=True)
     r = subprocess.run(cmd, cwd=cwd, env=env)
@@ -333,10 +312,8 @@ def main() -> None:
         scratch.mkdir(parents=True)
         for script, tree in spec["drivers"]:
             path = ROOT / "scripts" / script
-            # A driver lacking --out writes into results/, which is the
-            # tree under comparison. Running it would overwrite the
-            # reference and convert this check into a comparison of a tree
-            # with itself, so it is refused rather than run.
+            # A driver without --out would overwrite results/, the
+            # reference, so it is reported missing instead of run.
             if not supports(path, "--out"):
                 rep.miss(
                     f"{script} has no --out; cannot recompute without "
@@ -374,8 +351,7 @@ def main() -> None:
                 compare_text(
                     t, paper / "tables" / t.name, rep, "paper table out of date"
                 )
-        # Figures are byte-reproducible (CreationDate is omitted), so
-        # they can be compared exactly rather than omitted.
+        # Figures are byte-reproducible (no CreationDate), so compared exactly.
         if (art / "figures").exists() and (paper / "figures").exists():
             for f in sorted((art / "figures").glob("*.pdf")):
                 g = paper / "figures" / f.name

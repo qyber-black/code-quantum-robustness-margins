@@ -1,8 +1,7 @@
 function y = t_omega_max()
-%T_OMEGA_MAX Largest T*Omega_bnd with F_lb > 0 (their Eq. 32), expressed in radians. y = 2*sqrt(log(1+sqrt(2))) ~= 1.8776. Beyond
-% this their bound is vacuous.
+%T_OMEGA_MAX Largest T*Omega_bnd with F_lb > 0, 2*sqrt(log(1 + sqrt(2))).
 %
-% MATLAB counterpart of python/src/qrobustness/kosut.py (the T_OMEGA_MAX constant).
+%   Peer of python/src/qrobustness/kosut.py:T_OMEGA_MAX.
 
     y = 2 * sqrt(log(1 + sqrt(2)));
 end

@@ -5,51 +5,22 @@
 % SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
-% QROBUSTNESS  Certified robustness margins for finite-time quantum gates.
+% QROBUSTNESS  Robustness margins based on fidelity for finite-time quantum control.
 %
-%   Given a controller that reaches a target gate, this toolbox answers: how
-%   large a structured perturbation can the gate absorb and still meet a
-%   fidelity threshold FT? Every number it returns is a point at which the
-%   fidelity was evaluated and found to meet the threshold, so it is a lower
-%   bound on the true margin -- never an estimate of it.
+%   Gate fidelity, structure constants C_{\hat H}, Lipschitz constants
+%   L = B_T C, exact interval derivatives, the iterative margin M and
+%   controller synthesis. Peer of python/src/qrobustness.
 %
-%   Read a result's fields, not the number alone. ITERATIVE_MARGIN reports
-%   which stopping rule fired and whether the whole segment or only the
-%   endpoint is certified, and a margin found under a domain truncation is
-%   not the same claim as a resolved one.
-%
-%   FOUR LAYERS, in dependency order.
-%
-%   1. Propagation and fidelity. PROPAGATOR composes the piecewise-constant
-%      intervals; GATE_FIDELITY is the trace-amplitude |Tr(Uf' U)|/N used
-%      throughout, the overlap of normalised Choi states, which is what
-%      makes acos(F) a metric and every angular certificate possible.
-%
-%   2. Structure constants. TRACELESS centres a perturbation structure --
-%      its trace part is a global phase the fidelity cannot see -- and
-%      STRUCTURE_CONSTANT and LIPSCHITZ_CONSTANT turn it into the
-%      sensitivity bound L = B_T C. Every gauge is built on centred
-%      structures, so what counts as a valid structure is decided by
-%      TRACELESS and nowhere else.
-%
-%   3. Exact interval derivatives. DU_DMU_EXACT evaluates the segment
-%      derivative in the Hermitian eigenbasis, closed form and free of
-%      quadrature error; DU_DMU_INTEGRAL is the Gauss-Legendre alternative,
-%      kept as a cross-check. The open-system layer must use neither:
-%      Lindblad generators can be defective, so +LINDBLAD uses the block
-%      Frechet method instead.
-%
-%   4. Algorithm 1. ITERATIVE_MARGIN chains a certified safe radius outward
-%      from the nominal point.
-%
-%   SUBPACKAGES. "help qrobustness.<name>" for each.
-%     +multiparam   joint certificates over several parameters at once
-%     +timevarying  certificates against within-gate fluctuations
-%     +lengthspace  the path gauge those two share
-%     +lindblad     open-system certificates in Liouville space
-%     +kosut        the Kosut-Lidar-Rabitz bound, specialised
-%     +berberich    the Berberich et al. bound, specialised
-%     +compat       MATLAB/Octave shims and the shared CSV schemas
+%   Subpackages ("help qrobustness.<name>"):
+%     +multiparam   joint margins over several parameters
+%     +timevarying  margins against time-varying perturbations
+%     +lengthspace  path gauge shared by +multiparam and +timevarying
+%     +lindblad     open-system margins in Liouville space
+%     +states       state-fidelity margins
+%     +openstates   open-system state-fidelity margins
+%     +kosut        Kosut-Lidar-Rabitz fidelity bound
+%     +berberich    Berberich et al. fidelity bound
+%     +compat       MATLAB/Octave shims and CSV schemas
 %
 %   Propagation and fidelity
 %     propagator                - ordered product of the interval unitaries
@@ -61,8 +32,8 @@
 %
 %   Structure constants
 %     traceless                 - remove the trace part
-%     structure_constant        - C for a drift or control structure
-%     lipschitz_constant        - L = B_T C, B_T = sqrt((1 - FT^2)/N)
+%     structure_constant        - C_{\hat H} for a drift or control structure
+%     lipschitz_constant        - L = B_T C_{\hat H}, B_T = sqrt((1 - F_T^2)/N)
 %
 %   Derivatives and sensitivity
 %     segment_eig               - Hermitian eigendecomposition of a segment
@@ -75,12 +46,12 @@
 %     fidelity_and_gradient     - fidelity and the GRAPE control gradients
 %
 %   Margins and synthesis
-%     iterative_margin          - Algorithm 1, the certified margin
+%     iterative_margin          - margin M of one parameter
 %     optimize_controller       - fidelity maximisation via fminunc + GRAPE
 %
 %   Data
 %     load_problem              - read a problem definition
-%     load_controllers          - read an ensemble, filtered by nominal error
+%     load_controllers          - read controllers, filtered by nominal error
 %
 %   Figures
 %     plot_margins_vs_index     - margins against controller index
@@ -89,7 +60,3 @@
 %     apply_plot_style          - light theme for manuscript figures
 %     log10_axis                - linear axis holding log10 data
 %     convert_log_axis_to_log10_data - rewrite log axes as log10 data
-%
-%   Python is the reference implementation; this package is its peer, held
-%   to it by the cross-engine comparisons of the committed result tables.
-%   See README.md for what the peer does not cover.

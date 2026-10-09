@@ -6,13 +6,12 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function g = angular_gauge(Hhat_lists, dt)
-%ANGULAR_GAUGE The static Choi-angular gauge.
-% The paper's strongest zero-evaluation static region. A constant displacement is a trajectory, so the exact Choi-speed certificate
-% applies with C_FS(x) = dt sum_k sqrt(x' Q^(k) x) over traceless normalised interval Grams, against the fidelity ANGLE budget
-% acos(FT) - acos(F_nu). Contains the joint Lipschitz gauge region and is insensitive to identity components (pure global phase).
-%   Master-lemma case (a-ii).
+%ANGULAR_GAUGE Static angular gauge C^stat_FS(x) = dt sum_k sqrt(x' Q^(k) x).
+%   Hhat_lists - cell{p}{tau} of structure matrices
+%   dt         - interval length
+%   g          - path-gauge struct over traceless, normalised Grams Q^(k)
 %
-% MATLAB counterpart of python/src/qrobustness/multiparam.py:angular_gauge.
+%   Peer of python/src/qrobustness/multiparam.py:angular_gauge.
 
     grams = qrobustness.lengthspace.interval_grams(Hhat_lists, true, true);
     g = qrobustness.lengthspace.path_gauge(grams, dt);

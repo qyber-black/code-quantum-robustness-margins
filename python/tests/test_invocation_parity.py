@@ -26,7 +26,7 @@ MAKEFILE = (ROOT / "Makefile").read_text()
 
 #: Given per call site, not per experiment. --jobs and --out say where
 #: to execute and where to write; --controller-dir and --max-error say which
-#: ensemble, and check-xQRM-synth uses them to aim the certificate
+#: ensemble, and verify-xQRM-synth uses them to aim the certificate
 #: harness at a newly synthesised one. None of them selects an
 #: experiment, so none belongs in the shared table.
 CONTEXT_FLAGS = {"--jobs", "--out", "--controller-dir", "--max-error"}
@@ -43,7 +43,7 @@ FLAG = re.compile(r"--[A-Za-z][A-Za-z0-9-]*")
 def _invocations(text: str) -> list[tuple[str, str]]:
     """(driver, argument text) for every driver invocation in a recipe.
 
-    We cover both spellings, the $(XRUN)/ shorthand and the expanded
+    Cover both spellings, the $(XRUN)/ shorthand and the expanded
         $(PYTHON) $(ROOT)/scripts/ form, so neither is a way past the guard."""
     pat = re.compile(
         r"(?:\$\(XRUN\)/|\$\(ROOT\)/scripts/)(run_[a-z_]+\.py)((?:[^\n\\]|\\\n)*)"

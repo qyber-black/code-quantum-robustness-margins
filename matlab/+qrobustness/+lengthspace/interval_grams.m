@@ -6,16 +6,16 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function grams = interval_grams(Hhat_lists, make_traceless, normalise)
-%INTERVAL_GRAMS Gram matrices of the structure lists on each interval.
-%   Hhat_lists     : cell{p}{tau} of structure matrices
-% make_traceless : take the traceless part of each structure
-%   normalise      : divide by the Hilbert dimension N
+%INTERVAL_GRAMS Gram matrices G^(k)_ij = Re Tr(A_i^(k)' A_j^(k)) on each interval.
+%   Hhat_lists     - cell{p}{tau} of structure matrices
+%   make_traceless - use the traceless part of each structure (default false)
+%   normalise      - divide by the Hilbert-space dimension N (default false)
+%   grams          - cell{tau} of p-by-p Gram matrices
 %
-% G^(k)_ij = Re Tr(A_i^(k)' A_j^(k)). Traceless grams construct the joint Lipschitz gauge C_joint; traceless normalised grams
-% construct the Choi-angular and trajectory gauges (the exact Choi speed). Raw grams are kept for callers that need the uncentred
-% Frobenius geometry.
+%   Traceless Grams give C_joint; traceless normalised Grams give the Choi
+%   angular and trajectory gauges.
 %
-% Counterpart of python/src/qrobustness/lengthspace.py:interval_grams.
+%   Peer of python/src/qrobustness/lengthspace.py:interval_grams.
 
     if nargin < 2 || isempty(make_traceless); make_traceless = false; end
     if nargin < 3 || isempty(normalise); normalise = false; end

@@ -6,19 +6,12 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function L = rate_lipschitz(dnorm_value, t_f)
-%RATE_LIPSCHITZ Lipschitz constant of process fidelity in a Lindblad rate.
+%RATE_LIPSCHITZ Lipschitz constant L = 0.5 t_f dnorm of F^pro in a constant Lindblad rate.
+%   dnorm_value - diamond norm of the structure generator (dn.value_certified
+%                 for the verified bound)
+%   t_f         - gate time
 %
-% L = QROBUSTNESS.LINDBLAD.RATE_LIPSCHITZ(DNORM_VALUE, T_F) yields
-%   0.5 * T_F * DNORM_VALUE, the time-independent case of
-% QROBUSTNESS.LINDBLAD.OPEN_STRUCTURE_CONSTANTS: a structure generator applied at constant strength over the whole gate contributes
-% 0.5 * t_f * dnorm(G); the factor one half is the process fidelity's sensitivity to a channel deviation measured in the diamond
-% norm.
-%
-% Pass dn.value for the solved diamond norm or dn.value_certified for the verified upper bound; which of the two is appropriate
-% remains the caller's
-%   decision, not this function's.
-%
-% MATLAB counterpart of qrobustness.lindblad.rate_lipschitz in Python.
+%   Peer of python/src/qrobustness/lindblad.py:rate_lipschitz.
 
     L = 0.5 * t_f * dnorm_value;
 end

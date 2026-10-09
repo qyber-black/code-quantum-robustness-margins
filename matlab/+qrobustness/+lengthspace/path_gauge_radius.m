@@ -6,9 +6,12 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function r = path_gauge_radius(g, d, budget)
-%PATH_GAUGE_RADIUS Certified radius budget divided by C(d) along direction d.
+%PATH_GAUGE_RADIUS Certified radius budget/C(d) along direction d.
+%   g      - from qrobustness.lengthspace.path_gauge
+%   d      - direction
+%   budget - angle or fidelity budget
 %
-%   Peer of PathGauge.radius.
+%   Peer of python/src/qrobustness/lengthspace.py:PathGauge.radius.
 
     r = qrobustness.lengthspace.margin_from(budget, ...
         qrobustness.lengthspace.path_gauge_C(g, d));

@@ -31,6 +31,7 @@ from qrobustness import (
     structure_constant,
 )
 from qrobustness import kosut
+from qrobustness.timevarying import adversarial_upper_bound
 
 ROOT = Path(__file__).resolve().parents[2]
 CTRL = ROOT / "data/controllers/problem9_tf15_K32_quasi-newton"
@@ -481,7 +482,7 @@ def test_fs_margin_certificate_holds_adversarially(case):
     q = 8
     Hr = [H for H in H_list for _ in range(q)]
     dHr = [H for H in dH for _ in range(q)]
-    Fmin, _ = adversarial_fidelity(
+    Fmin, _, _nfev = adversarial_fidelity(
         Hr, dHr, dt / q, problem["Uf"], res.r_fs, n_starts=3, maxiter=150, seed=7
     )
     assert Fmin >= FT
@@ -592,3 +593,12 @@ def test_refinement_does_not_move_the_quoted_spreads(case):
         assert abs(r_fine - r_coarse) / r_coarse < 1e-3
         assert round(r_coarse, 1) == quoted
         assert round(r_fine, 1) == quoted
+
+
+def test_adversary_counts_fidelity_evaluations():
+    H = [np.array([[0.0, 0.1], [0.1, 0.0]], dtype=complex)]
+    dH = [np.eye(2, dtype=complex)]
+    bracket = adversarial_upper_bound(
+        H, dH, 0.2, np.eye(2), 0.99, 0.0, 0.05, n_starts=2, maxiter=5, seed=0
+    )
+    assert bracket.n_evals > 1

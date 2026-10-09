@@ -118,7 +118,7 @@ def test_frechet_matches_fd():
 
 
 def test_frechet_defective_generator():
-    """The block method needs no diagonalisability: we use a Jordan block."""
+    """The block method needs no diagonalisability. The example is a Jordan block."""
     G = np.array([[0.0, 1.0], [0.0, 0.0]], dtype=complex)  # defective
     E = np.array([[0.0, 0.0], [1.0, 0.0]], dtype=complex)
     dt = 0.5
@@ -305,7 +305,7 @@ def test_the_sdp_solver_is_named_not_resolved():
     dn = lb.diamond_norm(G)
     # An explicit "" returns the choice to cvxpy, which is what the
     # package used to do implicitly; keeping that path in use means the
-    # override still works when a user has a solver we have not named.
+    # override still works for a solver this list has not named.
     assert lb.diamond_norm(G, solver="").value_certified >= 4.0 - 1e-9
     assert dn.solver == lb.DEFAULT_SDP_SOLVER, (
         f"the SDP resolved to {dn.solver}; the package names "
@@ -315,3 +315,15 @@ def test_the_sdp_solver_is_named_not_resolved():
     # The repair gap is the symptom a silent fallback would display: SCS
     # returns 2e-4 here where the named solver remains near roundoff.
     assert dn.gap < 1e-6, f"repair gap {dn.gap:.2e} suggests a loose solver"
+
+
+def test_open_structure_accepts_one_dt_per_interval(monkeypatch):
+    class _Norm:
+        value = 2.0
+
+    monkeypatch.setattr(lb, "diamond_norm", lambda G, solver=None: _Norm())
+    G = [np.eye(2), np.eye(2)]
+    L, _ = lb.open_structure_constants([G], [0.2, 0.4])
+    assert L[0] == pytest.approx(0.6)
+    with pytest.raises(ValueError, match="dt"):
+        lb.open_structure_constants([G], [0.2])

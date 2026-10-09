@@ -6,22 +6,24 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Mixed coherent-dissipative certified region: the (mu_1, gamma_z) plane.
+"""The mixed coherent-dissipative certified region in the (mu_1, gamma_z) plane.
 
-For one controller of the shipped ensemble, in the plane spanned by
-the multiplicative H1 control error mu_1 and the common local
-dephasing rate gamma_z >= 0:
+For one controller of the main ensemble, with the multiplicative H1 control
+error mu_1 and the common local dephasing rate gamma_z >= 0, computes
+F^pro on a grid (the numerically resolved contour F^pro = FT^2), the
+diamond-norm constants L_mu^op and L_gamma of the free mixed simplex
+L_mu^op |mu_1| + L_gamma gamma_z <= F^pro_0 - FT^2, and the iterated margin
+along five mixed rays (the xQRM paper, Numerical evaluation, mixed
+coherent-dissipative uncertainty). Options: --FT, --out, --controller
+(1-based), --n (grid points per axis).
 
-* a numerically resolved process-fidelity contour F_pro = F_T^2
-  (grid scan; the reference boundary, not ground truth);
-* the free mixed simplex L_mu^op |mu_1| + L_gamma gamma <= surplus
-  with the open-system coherent constant L_mu^op = (1/2) sum_k Delta
-  dnorm(-i[u_1k Hhat_1, .]) -- exposing on purpose how loose the
-  diamond-norm route is for coherent directions;
-* iterated directional margins along mixed rays (which recover the
-  reference boundary at additional evaluation cost).
-
-Writes results/lindblad-margin-python/mixed_ctrl<i>.npz."""
+Writes results/lindblad-margin-python/mixed_ctrl<i>.npz:
+    mu, gamma, F: grid axes and F^pro on the grid.
+    F0, FT, L_mu, L_gamma, surplus: nominal F^pro, threshold, constants and
+        F^pro_0 - FT^2.
+    ray_angle, ray_dmu, ray_dgamma: ray angle (degrees) and unit direction.
+    ray_free, ray_M: one-step (free simplex) radius and iterated margin.
+"""
 
 from __future__ import annotations
 
@@ -35,26 +37,23 @@ from _drivers import PAULI_Z, base_parser, load_ensemble
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT_DIR = ROOT / "results/lindblad-margin-python"
-#: Bracket refinement for the open-system margin: every probe is a
-#: Liouville-space propagation, so this is coarser than the closed-system
-#: 1e-8 the coherent drivers use.
+#: Relative bracket tolerance for the open-system margin, coarser than the
+#: closed-system 1e-8 because each probe is a Liouville-space propagation.
 MARGIN_TOL = 1e-6
 
-#: Extent of the grid used for the reference contour. We scale the mu axis from the
-#: coherent constant and afterwards widen it well past that value, because the
-#: diamond-norm route is slack along coherent directions and the contour
-#: otherwise leaves the plotted box; the gamma axis requires no such
-#: allowance.
+#: Grid extent for the contour: the mu axis is scaled from L_mu^op and widened
+#: by MU_SPAN_OVERSHOOT, since that constant is loose for coherent
+#: directions; the gamma axis is scaled from L_gamma.
 MU_SPAN_FACTOR = 3.0
 MU_SPAN_OVERSHOOT = 50
 GAMMA_SPAN_FACTOR = 2.5
 
-#: Mixed rays that we probe, running from the positive-mu axis round to the gamma axis.
+#: Ray angles from the positive mu axis to the gamma axis.
 RAY_ANGLES_DEG = (0.0, 22.5, 45.0, 67.5, 90.0)
 
 
 def main() -> None:
-    """We map the certified mixed region of a single controller."""
+    """Map the certified mixed region of one controller."""
     ap = base_parser(OUT_DIR, description=__doc__)
     ap.add_argument("--controller", type=int, default=1)
     ap.add_argument("--n", type=int, default=41)
@@ -91,9 +90,7 @@ def main() -> None:
     surplus = F0 - ft_pro
     print(f"F_pro(0) = {F0:.8f}  surplus = {surplus:.2e}", flush=True)
 
-    # Reference contour: we scan a grid (resolved numerically, not ground
-    # truth). The mu range follows the closed-system margin scale; gamma follows
-    # the rate margin scale.
+    # Contour grid, resolved numerically.
     mu_max = MU_SPAN_FACTOR * surplus / L_mu * MU_SPAN_OVERSHOOT
     g_max = GAMMA_SPAN_FACTOR * surplus / L_gamma
     mus = np.linspace(-mu_max, mu_max, args.n)
@@ -104,8 +101,8 @@ def main() -> None:
             F[i, j] = F_pro(float(m), float(g))
         print(f"row {i + 1}/{args.n}", flush=True)
 
-    # Directional margins iterated along mixed rays (mu, gamma) with
-    # gamma >= 0: we take angles from the positive-mu axis to the gamma axis.
+    # Iterated margins along mixed rays (mu, gamma), gamma >= 0.
+
     angles = np.array(RAY_ANGLES_DEG) * np.pi / 180.0
     rays = []
     for a in angles:

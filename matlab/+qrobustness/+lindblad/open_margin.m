@@ -6,16 +6,16 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function result = open_margin(fidelity_fn, L, FT_pro, varargin)
-%OPEN_MARGIN Certified margin for a scalar open-system parameter. Thin wrapper over qrobustness.iterative_margin with the
-% open-system Lipschitz constant and, by default, the one-sided domain [0, Inf) suited to a decoherence rate; the lower boundary is
-% reported through the usual omega/boundary machinery. All error control
-%   (margin_tol brackets) passes through.
+%OPEN_MARGIN Margin for a scalar open-system rate.
+%   fidelity_fn - handle rate -> F^pro
+%   L           - Lipschitz constant, e.g. from rate_lipschitz
+%   FT_pro      - process-fidelity threshold
+%   result      - as qrobustness.iterative_margin
 %
-% The default domain is the entire point of this wrapper. Without it the iteration would step to negative rates and certify them,
-% which is not
-%   a physical statement about decoherence.
+%   Name-value options are passed to qrobustness.iterative_margin; 'omega'
+%   defaults to [0, Inf], so no negative rate is certified.
 %
-% Counterpart of python/src/qrobustness/lindblad.py:open_margin.
+%   Peer of python/src/qrobustness/lindblad.py:open_margin.
 
     % Supply the default only when the caller has not asked for a domain.
     if ~any(strcmpi(varargin(1:2:end), 'omega'))

@@ -35,8 +35,7 @@ function test_timevarying()
     assert(abs(m.r_fs - (acos(FT) - acos(F0)) / m.speed) < 1e-13);
     assert(abs(m.r - max(r0, m.r_fs)) < 1e-15);
 
-    % Dominance: the geometric certificate is never weaker than the first-order certificate for the same structure (paper
-    % thm:dominance).
+    % Dominance: r_FS >= r_0 for the same structure.
     C = qrobustness.structure_constant('drift', sx, dt, tau);
     Lstruct = qrobustness.lipschitz_constant(FT, N, C);
     r0_same = qrobustness.timevarying.uniform_margin(Lstruct, F0, FT);
@@ -61,9 +60,8 @@ function test_timevarying()
     assert(abs(cos(m.theta_0) - F0) < 1e-14);
     assert(m.theta_T > m.theta_0);
 
-    % --- fs_margin_joint: the box budget across several structures ------- One structure reduces to the scalar certificate: the
-    % worst box length at m equals m times the single-structure speed, so the
-    % largest certified m is exactly r_fs.
+    % --- fs_margin_joint: the box budget across several structures -------
+    % One structure: the worst box length at m is m times the speed, so the largest certified m is r_FS.
     [ell1, budget1] = qrobustness.timevarying.fs_margin_joint({Hh}, dt, F0, FT);
     assert(abs(budget1 - (acos(FT) - acos(F0))) < 1e-13);
     assert(abs(ell1(1.0) - m.speed) < 1e-12);

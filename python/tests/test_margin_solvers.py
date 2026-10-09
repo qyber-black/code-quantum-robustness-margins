@@ -42,7 +42,7 @@ def _tent(mu):
 
 
 def _tent_zeta(mu: float) -> float:
-    """Slope of :func:`_tent`; at the kink we take the plus side."""
+    """Slope of :func:`_tent`. At the kink the plus side is used."""
     if mu < 0:
         return SLOPE
     return -SLOPE

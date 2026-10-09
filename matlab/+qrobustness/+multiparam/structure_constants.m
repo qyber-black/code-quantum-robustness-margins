@@ -6,12 +6,16 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function [C, L] = structure_constants(specs, dt, tau, FT, N)
-%STRUCTURE_CONSTANTS Constants (C, L) per parameter, with L_j = B_T C_j.
-%   specs : cell array; each entry {'drift', Hhat} or
-%           {'control', Hhat, controls}, exactly the cases of
-%           qrobustness.structure_constant.
+%STRUCTURE_CONSTANTS Per-parameter structure constants C_j and L_j = B_T C_j.
+%   specs - cell array; each entry {'drift', Hhat} or
+%           {'control', Hhat, controls} as in qrobustness.structure_constant
+%   dt    - interval length
+%   tau   - number of intervals
+%   FT    - fidelity threshold F_T
+%   N     - Hilbert-space dimension
+%   C, L  - column vectors
 %
-% Counterpart of python/src/qrobustness/multiparam.py:structure_constants.
+%   Peer of python/src/qrobustness/multiparam.py:structure_constants.
 
     p = numel(specs);
     C = zeros(p, 1);

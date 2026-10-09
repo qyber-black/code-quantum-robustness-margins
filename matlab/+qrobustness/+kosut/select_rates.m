@@ -6,16 +6,13 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function [w_avg, w_dev] = select_rates(rates, uncertainty)
-%SELECT_RATES (w_avg, w_dev) for the requested uncertainty class. 'constant' scales the measures of the structure delta*Hhat by a
-% fixed delta -- valid for constant (fixed-direction) perturbations only. 'trajectory' substitutes the certified worst-case bounds
-% over all
-%   measurable trajectories |delta(t)| <= |delta|
-%   (w_avg_traj = mean_k ||Hhat^(k)||, w_dev_traj = w_unc + w_avg_traj): a
-% a sign-modulated trajectory can defeat the coherent averaging behind the small w_avg, so the constant-delta margin is NOT a
-% supremum-norm time-varying margin (adversarial counterexamples exist), whereas the
-%   trajectory variant is.
+%SELECT_RATES (w_avg, w_dev) for an uncertainty class.
+%   rates       - from qrobustness.kosut.uncertainty_rates
+%   uncertainty - 'constant' (default): w_avg, w_dev, valid for constant delta
+%                 only; 'trajectory': w_avg_traj, w_dev_traj, valid for all
+%                 trajectories |delta(t)| <= |delta|
 %
-% MATLAB counterpart of python/src/qrobustness/kosut.py:_select_rates.
+%   Peer of python/src/qrobustness/kosut.py:_select_rates.
 
     if nargin < 2 || isempty(uncertainty); uncertainty = 'constant'; end
     uncertainty = lower(char(uncertainty));

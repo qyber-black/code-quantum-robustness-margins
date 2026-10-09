@@ -6,7 +6,15 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function run_open_system_case_study(varargin)
-%RUN_OPEN_SYSTEM_CASE_STUDY xQRM margin experiment for common-rate dephasing.
+%RUN_OPEN_SYSTEM_CASE_STUDY Open-system margins for common-rate dephasing; writes open_margins_<FT>.csv.
+%
+%   Name-value options:
+%     'root'        - repository root (default: detected)
+%     'out'         - output directory (default results/lindblad-margin-matlab)
+%     'FT'          - fidelity threshold F_T (default 0.999)
+%     'max_error'   - nominal error filter (default 1e-4)
+%     'controllers' - number of controllers (default 0 = all)
+%
 %   Peer of scripts/run_open_system_case_study.py.
 
     p = inputParser;
@@ -18,8 +26,7 @@ function run_open_system_case_study(varargin)
     parse(p, varargin{:});
     opt = p.Results;
 
-    % Bracket refinement for the open-system margin: each probe is a Liouville-space propagation, so this is looser than the
-    % closed-system 1e-8, matching the reference MARGIN_TOL in the open drivers.
+    % Bracket refinement; same value as MARGIN_TOL in the Python open-system driver.
     margin_tol = 1e-6;
     if isempty(opt.root)
         opt.root = fileparts(fileparts(fileparts(mfilename('fullpath'))));
@@ -48,8 +55,7 @@ function run_open_system_case_study(varargin)
     for ci = 1:numel(controllers)
         c = controllers{ci};
         dt = c.tf / c.tau;
-        % Per controller, not hoisted: tf is a per-row field, and the shipped ensemble has uniform tf=15 only by accident of how it
-        % was synthesised.
+        % Per controller: tf is a per-row field.
         Lgamma = qrobustness.lindblad.rate_lipschitz(dn.value, c.tf);
         H = cell(1, c.tau);
         for k = 1:c.tau
@@ -84,10 +90,8 @@ function F = fidelity_at(GH, Ggamma, gamma, dt, Uf)
 end
 
 function value = crossing(fn, threshold, lo)
-    % Bisect the true threshold crossing above a certified margin. Returns the LOWER end of the finished bracket, a rate at which
-    % the fidelity was evaluated and found to meet the threshold: a guarantee, and a lower bound on the crossing, not the midpoint.
-    % Peer of
-    % scripts/_drivers.true_crossing.
+    % Bisect the threshold crossing above a certified margin; returns the lower (safe) end of the bracket.
+    % Peer of scripts/_drivers.true_crossing.
     hi = max(10 * lo, 1e-6);
     while fn(hi) >= threshold && hi < 1e3
         lo = hi;

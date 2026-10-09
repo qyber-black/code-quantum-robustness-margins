@@ -71,7 +71,7 @@ def test_every_version_bearing_file_is_present():
 
 
 def test_all_version_declarations_agree():
-    """Every file that states a version states the same one, and it is a semantic version. Nothing derives these from each other, so we have to assert agreement."""
+    """Every file that states a version states the same one, and it is a semantic version. Nothing derives these from each other, so the test asserts agreement."""
     found = {name: fn() for name, fn in SOURCES.items()}
     for i, v in enumerate(_readme()):
         found[f"README.md[{i}]"] = v

@@ -6,9 +6,11 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function tf = polytope_contains(P, mu)
-%POLYTOPE_CONTAINS Whether mu belongs to the certified cross-polytope.
+%POLYTOPE_CONTAINS True if mu lies in the certified cross-polytope.
+%   P  - from qrobustness.multiparam.safe_polytope
+%   mu - parameter vector
 %
-%   Peer of SafePolytope.contains.
+%   Peer of python/src/qrobustness/multiparam.py:SafePolytope.contains.
 
     tf = dot(P.L, abs(mu(:) - P.centre)) <= P.surplus;
 end

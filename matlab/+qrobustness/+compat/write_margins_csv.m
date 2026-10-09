@@ -1,6 +1,8 @@
 function write_margins_csv(path, T)
-%WRITE_MARGINS_CSV Emit a margins table struct/table to CSV with fixed headers. T may be a MATLAB table or a struct with column
-% fields as column vectors.
+%WRITE_MARGINS_CSV Write a margins table to CSV with fixed headers.
+%   path - output file
+%   T    - table or struct with the columns of
+%          qrobustness.compat.margins_csv_headers
     headers = qrobustness.compat.margins_csv_headers();
     n = numel(T.controller);
     fid = fopen(path, 'w');

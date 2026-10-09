@@ -7,7 +7,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Exact closed-form segment derivative versus finite differences and quadrature.
 
-For piecewise-constant controls dU/dmu is exact in the eigenbasis of the interval Hamiltonian, so the Gauss-Legendre path is only an approximation of what qrobustness.core.dU_dmu_exact computes in closed form. We pin the closed form down directly (finite differences, commuting case, degenerate spectra) and then assert that the two paths agree on the real case-study data."""
+For piecewise-constant controls dU/dmu is exact in the eigenbasis of the interval Hamiltonian, so the Gauss-Legendre path is only an approximation of what qrobustness.core.dU_dmu_exact computes in closed form. The closed form is pinned directly (finite differences, commuting case, degenerate spectra), and the two paths are required to agree on the real case-study data."""
 
 from pathlib import Path
 

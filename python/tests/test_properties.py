@@ -5,10 +5,10 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""We check selected properties.
+"""Selected properties.
 
 * the Choi conversion is an exact rearrangement of stored entries, which lets the verified SDP bound speak about the represented superoperator (Appendix A);
-* positive-semidefiniteness verification is a genuine predicate -- it accepts matrices that are PSD with room to spare and rejects indefinite ones -- and the repaired blocks it returns are those the objective is evaluated on;
+* positive-semidefiniteness verification accepts matrices that are PSD with room to spare and rejects indefinite ones, and the repaired blocks it returns are those the objective is evaluated on;
 * the segment derivative is the true Frechet derivative on a NON-COMMUTING example, checked against the block-exponential reference; the commuting case alone would not detect a commuting approximation;
 * the static joint gauge is NOT invariant under individual amplitude sign changes for non-orthogonal structures (the counterexample behind the restricted Proposition on sign invariance), while the trajectory box gauge is;
 * analytic zero-Hamiltonian rate responses and their first-order slopes, the independent check on normalisation, propagation and the rate-response constants;
@@ -70,7 +70,7 @@ def test_verify_psd_accepts_and_rejects():
     G = (G + G.conj().T) / 2
     assert lb._verify_psd(G)
     # An indefinite matrix must fail, no matter how small the negative
-    # eigenvalue: we shift below the smallest eigenvalue.
+    # eigenvalue: shift below the smallest eigenvalue.
     lam = float(np.linalg.eigvalsh(G).min())
     assert not lb._verify_psd(G - (lam + 1.0) * np.eye(n))
     assert not lb._verify_psd(-G)

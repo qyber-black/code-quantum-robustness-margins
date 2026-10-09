@@ -5,34 +5,22 @@
 % SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
-% +MULTIPARAM  Joint certificates over several uncertain parameters.
-%
-%   With p structures uncertain at once, the certified safe set is a region
-%   in R^p rather than an interval, and this package builds three nested
-%   ones, in increasing order of what they certify and of what they cost:
-%
-%   1. The free cross-polytope, sum_j L_j |mu_j| <= F - FT (SAFE_POLYTOPE):
-%      closed form, no off-nominal fidelity evaluation at all.
-%   2. The joint and angular gauge regions (JOINT_GAUGE, ANGULAR_GAUGE):
-%      also closed form, but they see cancellations BETWEEN structures that
-%      the separable polytope cannot, so they are larger.
-%   3. Directional iteration (DIRECTIONAL_MARGIN): Algorithm 1 along a ray,
-%      which resolves the true crossing at the cost of evaluations.
-%
-%   The angular safe step never falls below the Lipschitz one, so stepping
-%   with the angular gauge is never worse and usually needs no more
-%   evaluations.
+% +MULTIPARAM  Certified regions and directional margins for p simultaneous structures.
+%   Per-parameter constants L_j = B_T C_j, the separable cross-polytope
+%   sum_j L_j |mu_j - nu_j| <= F_nu - F_T, the combined-structure gauge
+%   C_joint, the static angular gauge C^stat_FS, and directional margins
+%   along rays via qrobustness.iterative_margin.
 %
 %   Regions
-%     structure_constants              - per-parameter constants (C, L)
-%     safe_polytope                    - the free cross-polytope
+%     structure_constants              - per-parameter constants C_j, L_j
+%     safe_polytope                    - certified cross-polytope
 %     polytope_contains                - membership test
 %     polytope_boundary_point          - boundary point along a direction
-%     joint_gauge                      - combined-structure gauge region
-%     joint_gauge_L_dir                - sharp directional constant
+%     joint_gauge                      - combined-structure gauge C_joint
+%     joint_gauge_L_dir                - directional constant B_T C_joint(d)
 %     joint_gauge_inradius_certified   - certified Euclidean inradius
-%     angular_gauge                    - static Choi-angular gauge
-%     angular_gauge_budget             - the angle budget it spends
+%     angular_gauge                    - static angular gauge C^stat_FS
+%     angular_gauge_budget             - angle budget arccos F_T - arccos F_nu
 %     angular_gauge_boundary_radius    - certified radius along d
 %     angular_gauge_inradius_certified - certified Euclidean inradius
 %
@@ -40,6 +28,6 @@
 %     axis_directions      - the 2p signed coordinate directions
 %     diagonal_directions  - all 2^p normalised diagonals
 %     make_ray_fn          - restrict a fidelity function to a ray
-%     directional_margin   - certified margin along a ray
+%     directional_margin   - margin along a ray
 %
 %   Peer of python/src/qrobustness/multiparam.py.

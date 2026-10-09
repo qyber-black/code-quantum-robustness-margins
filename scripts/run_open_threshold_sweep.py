@@ -6,18 +6,23 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Threshold sweep over the dissipative certificates.
+"""Sweep the dissipative certificates over the fidelity threshold.
 
-Proposition (first-order rate response) predicts that the one-step
-radius coincides with the resolved crossing for Pauli dephasing and lies at
-half of it for amplitude damping, at first order.  The present sweep tests
-where the first-order picture ends: thresholds F_T in {0.99, 0.999,
-0.9999} on the first ten controllers, both channels, reporting the
-crossing-to-radius ratio (curvature and nominal error shift it away
-from the first-order value as the threshold, and therefore the rate,
-grows).
+For the first N controllers of the main ensemble, both common-rate local
+channels (dephasing, amplitude damping) and FT in {0.99, 0.999, 0.9999},
+computes the one-step rate radius r_0 and the bisected true crossing gamma*
+on F^pro with threshold FT^2, and their ratio (the xQRM paper, Numerical
+evaluation, beyond dephasing). A controller enters a threshold's cohort only
+if F^pro_0 - FT^2 > ELIGIBILITY_TOL, so the cohort shrinks as FT grows.
+Options: --out, --controllers N (default 10); no --FT.
 
-Writes results/lindblad-margin-python/open_threshold_sweep.csv."""
+Writes results/lindblad-margin-python/:
+open_threshold_sweep.csv
+    controller, channel, FT, F0_pro: instance, threshold and F^pro_0.
+    r0, gamma_star, ratio: one-step radius, true crossing, gamma_star / r0.
+open_threshold_cohort.csv
+    channel, FT, n_eligible, n_controllers: cohort size per threshold.
+"""
 
 from __future__ import annotations
 
@@ -36,25 +41,18 @@ SM = np.array([[0.0, 0.0], [1.0, 0.0]], dtype=complex)  # sigma_-
 
 THRESHOLDS = (0.99, 0.999, 0.9999)
 
-#: Bisection steps for the crossing; no early stop, hence every sweep point
-#: costs the same and the ratios remain comparable across thresholds.
+#: Fixed number of bisection steps for the crossing (no early stop).
 CROSSING_SWEEP_STEPS = 50
 
-#: Stated eligibility criterion. A controller joins a threshold's
-#: cohort only if its nominal process fidelity lies above that
-#: threshold by more than this amount, which is well above the cross-route
-#: evaluation discrepancy logged by the verification harness. The
-#: cohort therefore shrinks as the threshold increases, and the count is
-#: emitted per threshold: a fixed imperfect controller cannot be
-#: swept to F_T -> 1, hence a ratio trend over a CHANGING cohort must not
-#: be read as convergence to the exact-gate limit.
+#: A controller joins a threshold's cohort only if F^pro_0 exceeds FT^2 by
+#: more than this. The cohort changes with FT; its size is written per
+#: threshold.
 ELIGIBILITY_TOL = 1e-12
 
 
 def main() -> None:
     """Sweep over the threshold and report the crossing-to-radius ratio."""
-    # No --FT here: the sweep runs over THRESHOLDS, so base_parser's single
-    # threshold would be an option that this driver silently ignores.
+    # No --FT: the sweep runs over THRESHOLDS.
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--controllers", type=int, default=10)
     ap.add_argument(
@@ -73,7 +71,7 @@ def main() -> None:
         "dephasing": sum(lb.dissipator(V) for V in lb.local_ops(PAULI_Z, nq)),
         "amp_damping": sum(lb.dissipator(V) for V in lb.local_ops(SM, nq)),
     }
-    # Exact closed form 2n for both common-rate local families; SDP is omitted.
+    # Closed-form diamond norm 2n for both families; no SDP.
     dns = {k: lb.common_rate_local_dnorm(nq) for k in chans}
     for k, dn in dns.items():
         print(f"dnorm({k}) = {dn.value_certified:.6f}", flush=True)
@@ -98,8 +96,7 @@ def main() -> None:
             for ft in THRESHOLDS:
                 ft_pro = ft**2
                 if F0 - ft_pro <= ELIGIBILITY_TOL:
-                    # Not nominally safe at this threshold: omitted from
-                    # the cohort rather than certified against it.
+                    # Not nominally safe at this threshold: not in the cohort.
                     continue
                 r0 = (F0 - ft_pro) / L
                 gs = true_crossing(F_pro, ft_pro, r0, steps=CROSSING_SWEEP_STEPS)
@@ -119,8 +116,8 @@ def main() -> None:
     out = args.out
     write_rows(out / "open_threshold_sweep.csv", rows)
 
-    # Cohort membership per threshold, so a summary taken over these
-    # rows can state how many controllers it in fact covers.
+    # Cohort size per channel and threshold.
+
     cohort = [
         {
             "channel": chan,

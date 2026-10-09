@@ -6,9 +6,19 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Falsifiable checks against a paper results tree (Python peer of the MATLAB verifier).
+"""Consistency checks for the QRM paper's results tree (Python peer of
+verify_paper_consistency.m).
 
-Writes results/<results_id>/verify_paper.md
+For --results-id (default lipschitz-margin-python) it checks: the ensemble
+(61 controllers, t_f = 15, 32 intervals, nominal errors), the Heisenberg
+H0, H1, H2, recomputed nominal errors, M = min(|M^-|, |M^+|) in the margins
+table, F >= F_T at +/-M on spot controllers, zeta against recomputation and
+finite differences, the correlation table against a recomputation, the
+structure constants and Lipschitz constant, the published files, and a
+recomputed margin of controller 1.
+
+Writes build/verify_paper_<results_id>.txt and
+results/<results_id>/verify_paper.md; exits 1 if any check fails.
 """
 
 from __future__ import annotations
@@ -39,22 +49,18 @@ from _drivers import DEFAULT_ETA, DEFAULT_FT, DEFAULT_MAX_ERROR, VIOLATION_TOL
 
 ROOT = Path(__file__).resolve().parents[1]
 CTRL = ROOT / "data/controllers/problem9_tf15_K32_quasi-newton"
-#: Safe-radius continuation step, matched to the other drivers.
+#: Safe-radius continuation step eta, as in the drivers.
 ETA = DEFAULT_ETA
 FT = DEFAULT_FT
 STRUCTURES = ("H0", "H1", "H2")
 
-#: Agreement demanded of quantities that should be equal up to rounding
-#: (a recomputation, a legacy table, a closed form) and of ones that are
-#: only equal up to an iteration's own tolerance. Named as the library's
-#: verifier names them, since these are the same two kinds of claim.
+#: Tolerances for quantities equal up to rounding (TOL_EXACT) and up to an
+#: iteration's own tolerance (TOL_TIGHT).
 TOL_EXACT = 1e-12
 TOL_TIGHT = 1e-10
 
-#: Bracket refinement, matched to the drivers. Check [11] recomputes the
-#: table's margin and demands equality, so it has to certify to the same
-#: bracket the driver does; without it the recomputation stops at the last
-#: safe continuation step, ~4e-4 relative below the table.
+#: Bracket refinement as in the drivers, so check [11] reproduces the
+#: table's margin exactly.
 MARGIN_TOL = 1e-8
 
 #: Central-difference step for the finite-difference check of zeta.
@@ -220,18 +226,12 @@ def main() -> int:
     csv_path = results_dir / "margins_table_0.999.csv"
     T: dict[str, np.ndarray] | None = None
     if not csv_path.is_file():
-        # The results id is the make target name.
-        R.log(f"[4] MISSING {csv_path} (run make {results_id})")
+        R.log(f"[4] MISSING {csv_path} (run make run-QRM-margins)")
         R.check(False)
     else:
         T = load_margins_csv(csv_path)
-        # The margin table is compared against nothing here on purpose. A
-        # legacy .mat used to serve as the reference, but its margin array
-        # was regenerated from this very table, so the check compared the
-        # results with a re-exported copy of themselves; git does that
-        # comparison on the committed CSV, exactly and without a tolerance.
-        # What remains worth asserting is the relation between the columns,
-        # which check [11] does on a recomputation.
+        # Checks the relation between the columns; the values themselves
+        # are checked by recomputation in [11].
         for tag in STRUCTURES:
             Mm, Mp, M = T[f"Mm_{tag}"], T[f"Mp_{tag}"], T[f"M_{tag}"]
             dM = float(np.max(np.abs(M - np.minimum(np.abs(Mm), np.abs(Mp)))))
@@ -309,18 +309,15 @@ def main() -> int:
             f"[6] max rel|zeta-FD|(h={FD_STEP:g})={max_rel_fd:.3e}  "
             f"max|table-recompute|={max_table_dz:.3e}"
         )
-        # FD vs analytic \zeta is a soft spot-check (engine-dependent); table recompute is hard.
+        # FD vs analytic zeta is a soft check; the table recompute is hard.
         if max_rel_fd >= 2e-4:
             R.log("  NOTE soft FD check exceeded 2e-4 (not failing)")
         R.check(max_table_dz < TOL_TIGHT)
     else:
         R.log("[6] SKIP")
 
-    # The generated table, not the manuscript. A paper repository is synced
-    # from these results and can be behind them, so comparing against it
-    # would fail on a stale checkout rather than on a wrong number. Check [8]
-    # is what makes the table falsifiable: it recomputes the matrix from the
-    # results CSV and demands the printed table agree exactly.
+    # Reads the generated correlation table in results/, not the paper's
+    # copy; check [8] recomputes it from the margins table.
     corr_tex = results_dir / "correlations_0.999.tex"
     C_code = None
     if not corr_tex.is_file():
@@ -331,9 +328,8 @@ def main() -> int:
         R.log(f"[7] {corr_tex.name}: {C_code.shape[0]}x{C_code.shape[1]} parsed")
 
     if T is not None and C_code is not None:
-        # Table I correlates against the sensitivity magnitudes: min(M-, M+)
-        # is invariant under reversal of the parameter coordinate while zeta
-        # changes sign, so |zeta| is the orientation-invariant comparator.
+        # Table I uses |zeta|, which like M is invariant under reversal of
+        # the parameter's sign.
         vars_ = ["err", "M_H0", "M_H1", "M_H2", "zeta_H0", "zeta_H1", "zeta_H2"]
         absolute = {"zeta_H0", "zeta_H1", "zeta_H2"}
         X = np.column_stack([np.abs(T[v]) if v in absolute else T[v] for v in vars_])

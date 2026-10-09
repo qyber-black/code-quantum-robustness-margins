@@ -6,21 +6,20 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function m = fs_margin(Hhat_list, dt, F0, FT, r0)
-%FS_MARGIN Closed-form time-varying margin through the Fubini-Study angle. Returns a struct with fields r_fs, r0, r, speed, theta_0,
-% theta_T, F0
-%   and speed_halfspread.
+%FS_MARGIN Fubini-Study radius r_FS for time-varying perturbations.
+%   Hhat_list - cell array of interval structures \hat H^(k)
+%   dt        - interval length
+%   F0        - nominal fidelity, F_T < F0 <= 1
+%   FT        - fidelity threshold F_T
+%   r0        - Lipschitz radius r_0 (default 0)
+%   m         - struct with fields
+%                 r_fs  - (arccos F_T - theta_0)/speed
+%                 r0, r - r_0 and max(r_0, r_fs)
+%                 speed - dt sum_k ||\hat H^(k)||_F/sqrt(N), traceless parts
+%                 theta_0, theta_T - arccos F0, arccos F_T
+%                 F0, speed_halfspread - F0 and dt sum_k half-spread of \hat H^(k)
 %
-% The perturbed propagator relative to the nominal, W = U_S' U, obeys dW/dt = -i delta(t) Htil(t) W exactly. The normalised Choi
-% state of W remains maximally entangled, so its Fubini-Study speed is not merely
-%   bounded but EXACT: on interval k it is
-% |delta| ||Hhatbar^(k)||_F / sqrt(N) with Hhatbar the traceless part. The path-length bound and the triangle inequality then yield
-%
-%       r_fs = (acos FT - acos F0) / s,   s = dt sum_k ||Hhatbar||_F/sqrt(N).
-%
-% No sampling and no expansion; identity components of the structure (global phase) contribute exactly zero, and the nominal deficit
-% enters as the angle theta_0 = acos F0. Dominance r_fs >= r0 holds in every case.
-%
-% Counterpart of python/src/qrobustness/timevarying.py:fs_margin.
+%   Peer of python/src/qrobustness/timevarying.py:fs_margin.
 
     if nargin < 5 || isempty(r0)
         r0 = 0;

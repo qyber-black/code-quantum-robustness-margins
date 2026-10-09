@@ -6,26 +6,25 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function result = directional_margin(fidelity_fn, L, FT, d, varargin)
-%DIRECTIONAL_MARGIN Certified margin along the ray mu0 + s d. Invokes qrobustness.iterative_margin with the directional Lipschitz
-% constant, so every directional margin inherits its error control (margin_tol brackets, certificate classes) unchanged.
+%DIRECTIONAL_MARGIN Margin along the ray mu0 + s d.
+%   fidelity_fn - handle mu -> F for a parameter vector mu
+%   L           - per-parameter constants L_j
+%   FT          - fidelity threshold F_T
+%   d           - direction
+%   result      - as qrobustness.iterative_margin, in units of s (the
+%                 parameter excursion is M*d); method 'zero_gauge' if the
+%                 gauge vanishes along d
 %
 %   Name-value options:
-%     'mu0'           (default zeros)  ray origin
-%     'L_dir'         (default [])     sharper joint-gauge constant
-% B_T C_joint(d); otherwise that separable relaxation
-%                     sum_j L_j |d_j| is used
-% 'angular_gauge' (default []) path-gauge structure; step and certify
-%                     with the Choi-angular safe radius
-%                     (acos FT - acos F)/C_FS(d) instead of the Lipschitz
-% surplus rule. Under full-gauge dominance the angular
-%                     step is never smaller, so the same crossing is
-%                     resolved with fewer evaluations.
-% Remaining options pass through to iterative_margin.
+%     'mu0'           - ray origin (default zeros)
+%     'L_dir'         - directional constant, e.g. B_T C_joint(d) (default []
+%                       uses sum_j L_j |d_j|)
+%     'angular_gauge' - angular gauge from angular_gauge; if set, the safe
+%                       radius is (arccos F_T - arccos F)/C^stat_FS(d)
+%                       (default [])
+%   Other options are passed to qrobustness.iterative_margin.
 %
-% The returned margins are expressed in units of s: the certified parameter
-%   excursion is M*d.
-%
-% Counterpart of python/src/qrobustness/multiparam.py:directional_margin.
+%   Peer of python/src/qrobustness/multiparam.py:directional_margin.
 
     p = inputParser;
     p.KeepUnmatched = true;
@@ -54,6 +53,26 @@ function result = directional_margin(fidelity_fn, L, FT, d, varargin)
     end
 
     ag = p.Results.angular_gauge;
+    if ~isempty(ag)
+        zero_gauge = qrobustness.lengthspace.path_gauge_C(ag, d) == 0;
+    else
+        zero_gauge = L_dir == 0;
+    end
+    if zero_gauge
+        % The combined structure vanishes on every interval along d: the whole admissible ray is certified, up to the nearer edge
+        % of omega.
+        omega = [-Inf, Inf];
+        if isfield(extra, 'omega')
+            omega = extra.omega;
+        end
+        M_zero = min(abs(omega(1)), abs(omega(2)));
+        result = struct('M_minus', M_zero, 'M_plus', M_zero, 'M', M_zero, 'converged_minus', true, 'converged_plus', true, ...
+                        'mu_minus', -M_zero, 'mu_plus', M_zero, 'method', 'zero_gauge', 'status_minus', 'zero_gauge', ...
+                        'status_plus', 'zero_gauge', 'certificate', 'segment', 'reason_minus', 'zero_gauge', ...
+                        'reason_plus', 'zero_gauge', 'M_upper_minus', Inf, 'M_upper_plus', Inf, 'M_upper', Inf, ...
+                        'margin_uncertainty', Inf, 'n_unresolved', 0, 'safeguard_minus', false, 'safeguard_plus', false);
+        return
+    end
     if ~isempty(ag) && ~any(strcmp(names, 'safe_radius_fn'))
         C_FS = qrobustness.lengthspace.path_gauge_C(ag, d);
         acFT = acos(FT);

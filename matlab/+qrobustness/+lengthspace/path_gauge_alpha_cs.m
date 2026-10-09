@@ -6,12 +6,11 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function a = path_gauge_alpha_cs(g)
-%PATH_GAUGE_ALPHA_CS Certified upper bound on max_{|d|_2 = 1} C(d). Cauchy-Schwarz over intervals: C(d) <= sqrt(t_f * d' (sum_k dt
-% G^(k)) d), so the maximum on the sphere is bounded by sqrt(t_f * lambda_max(...)) -- one eigenvalue computation, certified though
-% possibly conservative. A
-%   sphere-sampled value would only be an estimate.
+%PATH_GAUGE_ALPHA_CS Certified upper bound on C(d) over the unit sphere |d|_2 = 1.
+%   g - from qrobustness.lengthspace.path_gauge
+%   a - sqrt(t_f lambda_max(sum_k dt G^(k))), by Cauchy-Schwarz over intervals
 %
-%   Peer of PathGauge.alpha_cs.
+%   Peer of python/src/qrobustness/lengthspace.py:PathGauge.alpha_cs.
 
     p = size(g.grams{1}, 1);
     Gsum = zeros(p, p);

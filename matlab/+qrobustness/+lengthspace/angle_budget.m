@@ -6,9 +6,11 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function b = angle_budget(F0, FT)
-%ANGLE_BUDGET Angle budget acos(FT) - acos(F0) of the metric case.
+%ANGLE_BUDGET Angle budget arccos F_T - arccos F_0.
+%   F0 - nominal fidelity F_0
+%   FT - fidelity threshold F_T
 %
-% Counterpart of python/src/qrobustness/lengthspace.py:angle_budget.
+%   Peer of python/src/qrobustness/lengthspace.py:angle_budget.
 
     b = acos(FT) - acos(min(F0, 1.0));
 end

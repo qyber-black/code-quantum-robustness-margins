@@ -1,7 +1,10 @@
 function L = lipschitz_constant(FT, N, C_H)
-%LIPSCHITZ_CONSTANT L = B_T * C_H with B_T = sqrt((1-FT^2)/N).
+%LIPSCHITZ_CONSTANT Lipschitz constant L = B_T C_{\hat H}, B_T = sqrt((1 - F_T^2)/N).
+%   FT  - fidelity threshold F_T, 0 < F_T < 1
+%   N   - Hilbert-space dimension
+%   C_H - structure constant C_{\hat H}
 %
-%   Peer of python/src/qrobustness/core.py.
+%   Peer of python/src/qrobustness/core.py:lipschitz_constant.
     if ~(FT > 0 && FT < 1)
         error('qrobustness:lipschitz:FT', 'FT must satisfy 0 < FT < 1.');
     end

@@ -5,20 +5,8 @@
 % SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
-% +COMPAT  MATLAB/Octave portability shims and shared CSV schemas.
-%
-%   Nothing here is part of the certificate machinery. Two kinds of thing
-%   live in this package, and both exist so the peers can be held to the
-%   Python reference rather than to each other:
-%
-%   1. Language shims. Octave and MATLAB differ on graphics toolkits,
-%      legend placement, string splitting, rounding and the rank
-%      statistics, so the drivers call these rather than branching on
-%      IS_OCTAVE at every site.
-%   2. The result-file schemas. Column names and order are fixed here, in
-%      one place, because the Python peer writes the same files and a
-%      cross-engine comparison that disagreed about column order would be
-%      comparing the wrong numbers.
+% +COMPAT  MATLAB/Octave portability shims and the result-file CSV schemas.
+%   The schemas fix column names and order shared with the Python scripts.
 %
 %   Portability
 %     is_octave            - true when running under GNU Octave

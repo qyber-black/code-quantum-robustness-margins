@@ -1,9 +1,5 @@
 function test_dU_dmu_exact()
-% Exact closed-form segment derivative against finite differences and quadrature.
-%
-% For piecewise-constant controls dU/dmu is exact in the eigenbasis of the interval Hamiltonian, so the Gauss-Legendre path only
-% approximates what qrobustness.dU_dmu_exact computes in closed form. We pin the closed form down directly, then assert that the two
-% paths agree on the real case-study data.
+% Closed-form interval derivative against finite differences, and against quadrature on the case-study data.
 
     dt = 0.4688;
     rng(20260730);

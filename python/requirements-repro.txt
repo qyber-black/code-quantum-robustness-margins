@@ -10,7 +10,7 @@
 #
 # pyproject.toml keeps floors so the library installs anywhere; this file
 # pins what the numbers in results/ and in the papers were produced with,
-# and `make venv` installs from it. Regenerate with
+# and `make install` installs from it. Regenerate with
 #   .venv/bin/python -m pip freeze > requirements-repro.txt
 # after deliberately moving the environment, and expect the open-system
 # results to move with it.

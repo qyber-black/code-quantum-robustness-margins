@@ -6,12 +6,14 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Compare two engines' full case-study margin tables.
+"""Compare the case-study margin tables of two engines, column by column.
 
-Python is the reference implementation, so the informative comparison is
-always <engine> against python; comparing two non-reference engines to
-each other only establishes that they agree, not that either is right.
-Defaults repeat the historical matlab-vs-python invocation."""
+Reads results/lipschitz-margin-<engine>/margins_table_0.999.csv for --a
+(default matlab) and --b (default python, the reference), or the files given
+by --a-csv/--b-csv, and compares fid, err and M, Mm, Mp, zeta per structure
+H0, H1, H2 within _compare's tolerances. Writes the report to --out (default
+build/<a>_<b>_full_compare.txt) ending in overall=PASS|FAIL; exit code 0 on
+pass, 1 on a mismatch, 2 on a missing table."""
 
 from __future__ import annotations
 
@@ -46,7 +48,7 @@ def main() -> int:
     for engine, csv_path in ((args.a, a_csv), (args.b, b_csv)):
         if not csv_path.exists():
             print(
-                f"Missing {csv_path}; run make paper-QRM-margins ENGINE={engine}",
+                f"Missing {csv_path}; run make run-QRM-margins ENGINE={engine}",
                 file=sys.stderr,
             )
             return 2

@@ -47,7 +47,6 @@ keywords:
   - Python
 license: AGPL-3.0-or-later
 version: 1.1.0
-date-released: "2026-08-03"
 repository-code: "https://qyber.black/spinnet/code-quantum-robustness-margins"
 repository: "https://github.com/qyber-black/code-quantum-robustness-margins"
 url: "https://qyber.black/spinnet/code-quantum-robustness-margins"

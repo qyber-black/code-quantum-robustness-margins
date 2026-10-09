@@ -6,22 +6,40 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Time-varying and multi-parameter margins for the paper-2 case study.
+"""Joint static and time-varying margins, p = 3, on the main ensemble.
 
-For each controller (p = 3 joint structures H0, H1, H2) we record:
-  - certified safe-polytope radii (per axis, together with l2 and linf inradii);
-  - directional margins on the 6 axis and 8 diagonal directions
-    (Euclidean-normalised), carrying margin_tol brackets;
-  - uniform time-varying margins r0 for each structure and for the joint;
-  - optionally (--adversary N) time-varying brackets [r_FS, m_adv] on
-    the first N controllers for structure H1, with the
-    constant-class bracket [M_const, M_const_upper] at that same
-    controller, structure and threshold, and the constancy-gap endpoints
-    built from those values. We keep every quantity the gap needs in one record, so no
-    later join can pair margins computed to different tolerances.
+For each controller, with the structures H0, H1, H2, computes the
+Lipschitz constants L_j, the safe-polytope axis radii and inradii, the
+uniform time-varying radius r_0 per structure and jointly, and the
+directional margin M with witness M_upper on the six axis and eight
+diagonal directions using the C_joint directional constant (or the
+C^stat_FS angular step with --step angular). With --adversary N it also
+brackets the time-varying margin for H1 on the first N controllers,
+r_FS <= M_tv <= m_adv, together with the constant-class bracket [M, M_upper]
+and the constancy-gap endpoints from the same run. (The xQRM paper, Scenario
+J, and Numerical evaluation, joint coherent margins and time variation.)
 
-Writes results/multiparameter-margin-python/multiparam_<FT>.csv and
-tv_bracket_<FT>.csv."""
+Options: --FT, --out, --max-error, --controllers N (first N; 0 = all),
+--adversary N, --step (lipschitz or angular).
+
+Writes results/multiparameter-margin-python/:
+multiparam_<FT>.csv (multiparam_<FT>_angular.csv with --step angular)
+    controller, fid, err: instance and nominal fidelity / error.
+    L_H0, L_H1, L_H2: L_j.
+    poly_r_H0, poly_r_H1, poly_r_H2, inradius_linf, inradius_l2: safe-polytope
+        axis radii and inradii.
+    r0_joint, r0_H0, r0_H1, r0_H2: r_0 jointly and per structure.
+    M_<d>, Mupper_<d>, nev_<d>: M, M_upper and evaluation count for d in
+        +e0..+e2, -e0..-e2 and diag<ppp..mmm>.
+tv_bracket_<FT>.csv (only with --adversary)
+    controller, structure, FT: instance.
+    r0, r_fs: r_0 and r_FS.
+    M_const, M_const_upper: constant-class bracket [M, M_upper].
+    m_adv, F_at_adv, adv_violated: adversarial upper witness m_adv, the
+        fidelity found there, and whether a violation was exhibited.
+    gap_lower, gap_upper: constancy-gap endpoints (empty if unavailable).
+    n_adversary_calls: adversary evaluations.
+"""
 
 from __future__ import annotations
 
@@ -70,10 +88,9 @@ def main() -> None:
         choices=("lipschitz", "angular"),
         default="lipschitz",
         help="Directional continuation rule: the Lipschitz "
-        "surplus step (default; reproduces the historical "
-        "output byte-for-byte) or the dominating Choi-angular "
-        "step (same crossings, fewer evaluations; writes "
-        "multiparam_<FT>_angular.csv)",
+        "surplus step (default; writes multiparam_<FT>.csv) or "
+        "the angular step, never shorter "
+        "(writes multiparam_<FT>_angular.csv)",
     )
     args = ap.parse_args()
     ft = args.FT
@@ -135,11 +152,8 @@ def main() -> None:
         G = mp.joint_gauge(dHs, dt)
         AG = mp.angular_gauge(dHs, dt) if args.step == "angular" else None
         for d, name in zip(directions, dir_names, strict=True):
-            # Tighter directional constant belonging to the joint gauge
-            # (Theorem gauge); the separable sum_j L_j |d_j| is the
-            # fallback relaxation. When --step angular is set the iteration
-            # advances and certifies using the dominating Choi-angular
-            # radius instead.
+            # Directional constant of the joint gauge; with --step angular
+            # the iteration steps by the angular radius instead.
             L_dir = G.L_dir(d, ft, problem["dim"])
             res = mp.directional_margin(
                 fn,
@@ -183,19 +197,13 @@ def main() -> None:
             )
             F0_scalar = scalar_fn(0.0)
             r0 = tv.uniform_margin(L[1], F0_scalar, ft)
-            # The constancy gap requires BOTH ends of the constant-class
-            # bracket, so we run the scalar margin at the same
-            # tolerance used for the directional ones. M_upper remains finite only
-            # when an unsafe constant perturbation was in fact
-            # evaluated; a domain edge or a search that has been exhausted leaves it
-            # infinite, and the upper endpoint of the gap is then unavailable
-            # rather than clipped to something finite.
+            # Constant-class bracket at the directional tolerance. M_upper is
+            # infinite unless an unsafe point was evaluated; the gap's upper
+            # endpoint is then left empty.
             res_const = iterative_margin(scalar_fn, L[1], ft, margin_tol=MARGIN_TOL)
             M = res_const.M
             M_upper = res_const.M_upper
-            # The lower trajectory certificate for that same controller,
-            # structure and threshold, obtained here rather than joined
-            # in later from a separate run.
+            # Lower trajectory certificate r_FS for the same instance.
             fsm = tv.fs_margin(Hhat, dt, F0_scalar, ft, r0)
             br = tv.adversarial_upper_bound(
                 H_list,
@@ -207,10 +215,12 @@ def main() -> None:
                 2.0 * M,
                 rel_tol=2e-2,
                 seed=1000 + ci,
+                n_starts=4,
+                starts="legacy",
+                maxiter=200,
             )
-            # An upper witness is present only if the adversary exhibited a
-            # violating trajectory; the call to adversarial_upper_bound returns
-            # delta_adv exactly then.
+            # delta_adv is set only when a violating trajectory was found.
+
             adv_violated = br.delta_adv is not None
             gap_lo = max(0.0, M - br.m_adv) if adv_violated else None
             gap_hi = (M_upper - fsm.r_fs) if np.isfinite(M_upper) else None

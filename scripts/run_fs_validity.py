@@ -6,18 +6,26 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Compute and adversarially test the Fubini-Study trajectory margin r_FS.
+"""Compute the Fubini-Study trajectory margin r_FS and attack it.
 
-For every controller and structure we form r_FS = (arccos FT - arccos F0) /
-(dt sum_k E_k), which certifies every measurable trajectory ||delta||_inf <=
-r_FS (see qrobustness.timevarying.fs_margin).  The adversary attacks at
-budgets r_FS and 1.05 r_FS on the control grid and with every interval
-split x4 and x16 (the certificate covers arbitrarily fast trajectories,
-and sub-interval sign modulation is the known failure mode of weaker
-readings, so the refined grids carry the burden of proof).
+For every controller of the main ensemble and structure H0, H1, H2, computes
+r_FS = (arccos FT - theta_0)/s_j and the least fidelity the multi-start
+adversary finds at budgets r_FS and 1.05 r_FS on the control grid and its x4
+and x16 refinements (the xQRM paper, Scenario T, a geometric trajectory
+certificate). Exit status 1 if any attack at r_FS violates FT by more than
+VIOLATION_TOL.
 
-Writes results/time-bandwidth-bound-python/fs_validity_<FT>.csv; it also
-serves as the ensemble record of r_FS."""
+Options: --FT, --out, --controller-dir, --max-error, --n-starts, --maxiter,
+--seed, --starts (legacy or mixed adversary starts), --jobs (worker
+processes), --first N (first N controllers only).
+
+Writes results/time-bandwidth-bound-python/fs_validity_<FT>.csv:
+    controller, structure, fid, err: instance and nominal fidelity / error.
+    r_fs, speed: r_FS and the Choi speed s_j.
+    Fmin_m1_x<q>, Fmin_m105_x<q>: adversarial minimum at r_FS and 1.05 r_FS,
+        q in 1, 4, 16.
+    violated: 1 if an attack at r_FS fell below FT - VIOLATION_TOL.
+"""
 
 from __future__ import annotations
 
@@ -98,7 +106,7 @@ def attack_one(job):
     for g, q in enumerate(REFINEMENTS):
         Hg, Hhatg = refine_lists(H_list, dH, q)
         for b, fac in enumerate(BUDGET_FACTORS):
-            Fmin, _ = adversarial_fidelity(
+            Fmin, _, _nfev = adversarial_fidelity(
                 Hg,
                 Hhatg,
                 dt / q,

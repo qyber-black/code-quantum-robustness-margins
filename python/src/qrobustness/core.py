@@ -5,39 +5,13 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Core numerical routines that mirror matlab/+qrobustness.
+"""Closed-system core: propagation, fidelity, structure constants and margins.
 
-Four layers, ordered by dependency:
-
-* **Propagation and fidelity.** :func:`propagator` multiplies the
-  piecewise-constant intervals; :func:`gate_fidelity` is the
-  trace-amplitude ``|Tr(Uf^dag U)| / N`` used throughout, the overlap of
-  normalised Choi states that makes ``arccos F`` a metric.
-* **Structure constants.** :func:`traceless` centres a perturbation
-  structure -- the trace part is a global phase the fidelity cannot see --
-  and :func:`structure_constant` and :func:`lipschitz_constant` convert it
-  into the sensitivity bound ``L = B_T C``. Every gauge in the package is
-  built on the centred structures, so what counts as a valid structure is
-  decided by :func:`traceless` and nowhere else.
-* **Exact interval derivatives.** :func:`dU_dmu_exact` evaluates the
-  segment derivative in the Hermitian eigenbasis, closed form and free of
-  quadrature error; :func:`dU_dmu_integral` is the Gauss-Legendre
-  alternative kept for cross-checking. The open-system layer must not use
-  either: Lindblad generators can be defective, so
-  :mod:`qrobustness.lindblad` uses the block Frechet method instead.
-* **Algorithm 1.** :func:`iterative_margin` chains a certified safe radius
-  outward from a nominal point, returning a :class:`MarginResult`. Read its
-  fields rather than the number alone: ``certificate`` distinguishes a
-  ``segment`` result, where every point between ``mu0`` and the endpoint is
-  certified, from an ``endpoint`` one, where only the endpoint is; ``status``
-  says which stopping rule fired, and a ``domain_truncated`` result
-  certifies only the distance to the domain edge rather than a resolved
-  margin; and with ``margin_tol`` set, ``M`` and ``M_upper`` bracket the
-  true margin instead of ``M`` standing alone.
-
-``M`` is always a point at which the fidelity was evaluated at or above the
-threshold, so it is a lower bound on the true margin -- never an estimate
-of it."""
+This module holds the piecewise-constant propagator, the trace-amplitude
+gate fidelity F, the centred structure constant C_{\\hat H} and the
+Lipschitz constant L = B_T C_{\\hat H}, the exact segment derivatives, the
+one-dimensional margin algorithm :func:`iterative_margin`, and the loaders
+for the problem and controller files. The MATLAB peer is matlab/+qrobustness."""
 
 from __future__ import annotations
 
@@ -74,10 +48,20 @@ DU_METHODS = ("exact", "quadrature")
 
 
 def propagator(H_list: HList, dt: float) -> Array:
-    """Propagator for a piecewise-constant Hamiltonian on equal intervals.
+    """Propagator ``exp(-i dt H_K) ... exp(-i dt H_1)`` of a piecewise-constant Hamiltonian.
 
-    The product ``exp(-i dt H_K) ... exp(-i dt H_1)``, applied in time
-    order, so the first element of ``H_list`` acts first.
+    Parameters
+    ----------
+    H_list :
+        Interval Hamiltonians H^(k), each (N, N) Hermitian, in time order
+        (the first element acts first).
+    dt :
+        Interval length Delta.
+
+    Returns
+    -------
+    ndarray
+        (N, N) unitary propagator U(t_f).
     """
     if len(H_list) == 0:
         raise ValueError("H_list must be non-empty")
@@ -88,21 +72,40 @@ def propagator(H_list: HList, dt: float) -> Array:
 
 
 def gate_fidelity(U: Array, Uf: Array) -> float:
-    """Trace-amplitude gate fidelity ``|Tr(Uf^dag U)| / N``.
+    """Trace-amplitude gate fidelity ``F = |Tr(Uf^dag U)| / N``.
 
-    Insensitive to phase by construction, and the overlap of the two
-    normalised Choi states, which is what makes ``arccos F`` a metric --
-    every angular certificate in the package rests on that.
+    Parameters
+    ----------
+    U :
+        (N, N) achieved unitary.
+    Uf :
+        (N, N) target unitary U_f.
+
+    Returns
+    -------
+    float
+        F in [0, 1], invariant under a global phase of either argument.
     """
     N = U.shape[0]
     return float(np.abs(np.trace(Uf.conj().T @ U)) / N)
 
 
 def lipschitz_constant(FT: float, N: int, C_H: float) -> float:
-    """Bound on sensitivity ``L = B_T C_H`` at the threshold ``FT``.
+    """Lipschitz constant ``L = B_T C_{\\hat H}`` with ``B_T = sqrt((1 - F_T^2) / N)``.
 
-    ``B_T = sqrt((1 - FT^2) / N)`` converts fidelity to distance at
-    the threshold; ``C_H`` is the structure constant.
+    Parameters
+    ----------
+    FT :
+        Fidelity threshold F_T, 0 < F_T < 1.
+    N :
+        Hilbert-space dimension.
+    C_H :
+        Structure constant C_{\\hat H} (see :func:`structure_constant`).
+
+    Returns
+    -------
+    float
+        L, valid on the safe set {F > F_T}.
     """
     if not (0.0 < FT < 1.0):
         raise ValueError("FT must satisfy 0 < FT < 1")
@@ -110,22 +113,32 @@ def lipschitz_constant(FT: float, N: int, C_H: float) -> float:
     return float(B_T * C_H)
 
 
-#: Acceptance of Hermiticity for a perturbation structure. Named because this
-#: check gates every gauge path -- scalar, joint and angular -- because the
-#: gauges were gathered onto this function, so what counts as a valid
-#: structure is decided here and nowhere else.
+#: Tolerances for the Hermiticity check in :func:`traceless`, which every gauge uses.
 HERMITIAN_RTOL = 1e-10
 HERMITIAN_ATOL = 1e-12
 
 
 def traceless(Hhat: Array) -> Array:
-    """Subtract the trace part: Hbar = H - (Tr H / N) I.
+    """Traceless part ``Hbar = H - (Tr H / N) I`` of a Hermitian structure.
 
-    The trace-amplitude fidelity is invariant under a global phase, and the
-    trace part of a perturbation structure contributes only such a phase to
-    the propagator.  Centring therefore leaves the fidelity -- and hence the
-    margin -- unchanged while making ``||Hbar||_F <= ||H||_F``, so it can only
-    tighten the Lipschitz constant (paper, Sec. IV).
+    The trace part only adds a global phase, so centring leaves F unchanged
+    and can only tighten the constants.
+
+    Parameters
+    ----------
+    Hhat :
+        (N, N) Hermitian structure \\hat H.
+
+    Returns
+    -------
+    ndarray
+        (N, N) traceless Hbar.
+
+    Raises
+    ------
+    ValueError
+        If ``Hhat`` is not square or not Hermitian within
+        ``HERMITIAN_RTOL`` / ``HERMITIAN_ATOL``.
     """
     H = np.asarray(Hhat)
     if H.ndim != 2 or H.shape[0] != H.shape[1]:
@@ -143,12 +156,27 @@ def structure_constant(
     tau: int,
     controls: Array | None = None,
 ) -> float:
-    """Structure constant C_Hhat that bounds sum_k ||dU^(k)/dmu||_F on the safe set.
+    """Structure constant C_{\\hat H} of a drift or control structure, centred first.
 
-    The structure is centred to its traceless part first (see ``traceless``):
-    the trace part only shifts the propagator by a global phase, so removing it
-    leaves the certified margin valid while shrinking ``||Hhat||_F``.  For the
-    traceless case-study structures this changes nothing.
+    Parameters
+    ----------
+    kind :
+        ``'drift'`` (C = tau dt ||Hbar||_F) or ``'control'``
+        (C = dt ||u||_1 ||Hbar||_F).
+    Hhat :
+        (N, N) Hermitian structure \\hat H.
+    dt :
+        Interval length Delta.
+    tau :
+        Number of intervals.
+    controls :
+        Control amplitudes of the perturbed control; required for
+        ``kind='control'``.
+
+    Returns
+    -------
+    float
+        C_{\\hat H}.
     """
     nf = float(np.linalg.norm(traceless(Hhat), "fro"))
     kind = kind.lower()
@@ -170,11 +198,23 @@ def perturbed_hamiltonians(
     structure: str,
     delta: float,
 ) -> List[Array]:
-    """Hamiltonians on each interval with one structure perturbed by ``delta``.
+    """Interval Hamiltonians with one term scaled by ``(1 + delta)``.
 
-    ``structure`` selects the drift (``H0``, additive) or a control
-    (``H1``/``H2``, multiplicative, so the perturbation scales with the
-    control amplitude on each interval).
+    Parameters
+    ----------
+    H0, H1, H2 :
+        (N, N) drift and control Hamiltonians.
+    u1, u2 :
+        Control amplitudes, one per interval (equal length).
+    structure :
+        ``'H0'``, ``'H1'`` or ``'H2'``: the term to perturb.
+    delta :
+        Relative perturbation mu.
+
+    Returns
+    -------
+    list of ndarray
+        H^(k)(delta) for each interval.
     """
     u1 = np.asarray(u1).ravel()
     u2 = np.asarray(u2).ravel()
@@ -202,11 +242,21 @@ def dH_structure(
     u2: Array,
     structure: str,
 ) -> List[Array]:
-    """Perturbation structure ``dH/dmu`` on each interval for one parameter.
+    """Per-interval structure ``dH^(k)/dmu`` of :func:`perturbed_hamiltonians`.
 
-    The derivative of :func:`perturbed_hamiltonians` in ``delta``: the drift
-    contributes ``H0`` on every interval, a control contributes its own
-    amplitude times the control operator.
+    Parameters
+    ----------
+    H0, H1, H2 :
+        (N, N) drift and control Hamiltonians.
+    u1, u2 :
+        Control amplitudes, one per interval.
+    structure :
+        ``'H0'``, ``'H1'`` or ``'H2'``.
+
+    Returns
+    -------
+    list of ndarray
+        ``H0`` on every interval, or ``u_m[k] H_m`` for a control.
     """
     u1 = np.asarray(u1).ravel()
     u2 = np.asarray(u2).ravel()
@@ -231,11 +281,24 @@ def gauss_legendre_01(n: int) -> Tuple[Array, Array]:
 def dU_dmu_integral(
     H: Array, dH: Array, dt: float, nodes: Array, weights: Array
 ) -> Array:
-    """Segment derivative by quadrature, used as the cross-check of the exact form.
+    """Segment derivative ``d/dmu exp(-i dt H)`` by quadrature.
 
-    Evaluates ``-i dt int_0^1 e^{-i dt H (1-s)} dH e^{-i dt H s} ds`` on the
-    supplied nodes. :func:`dU_dmu_exact` computes the same quantity in
-    closed form and is what the package uses.
+    Evaluates ``-i dt int_0^1 e^{-i dt H (1-s)} dH e^{-i dt H s} ds``; the
+    closed form is :func:`dU_dmu_exact`.
+
+    Parameters
+    ----------
+    H, dH :
+        (N, N) segment Hamiltonian and its structure.
+    dt :
+        Interval length Delta.
+    nodes, weights :
+        Quadrature rule on [0, 1] (see :func:`gauss_legendre_01`).
+
+    Returns
+    -------
+    ndarray
+        (N, N) derivative.
     """
     dU = np.zeros_like(H, dtype=complex)
     for s, w in zip(nodes, weights, strict=True):
@@ -246,10 +309,16 @@ def dU_dmu_integral(
 
 
 def segment_eig(H: Array) -> Tuple[Array, Array]:
-    """Hermitian eigendecomposition of the segment Hamiltonian.
+    """Hermitian eigendecomposition ``H = V diag(lam) V^dag`` of a segment Hamiltonian.
 
-    Symmetrises first so the Hermitian LAPACK path is taken unconditionally,
-    which is what guarantees a unitary eigenvector matrix.
+    ``H`` is symmetrised first so the eigenvector matrix is unitary.
+
+    Returns
+    -------
+    lam : ndarray
+        (N,) real eigenvalues.
+    V : ndarray
+        (N, N) unitary eigenvectors.
     """
     Hs = 0.5 * (np.asarray(H, dtype=complex) + np.asarray(H, dtype=complex).conj().T)
     lam, V = np.linalg.eigh(Hs)
@@ -257,23 +326,30 @@ def segment_eig(H: Array) -> Tuple[Array, Array]:
 
 
 def segment_propagator(lam: Array, V: Array, dt: float) -> Array:
-    """exp(-1j*dt*H) from the eigendecomposition of H."""
+    """``exp(-i dt H)`` from the eigendecomposition ``(lam, V)`` of H; returns (N, N)."""
     return (V * np.exp(-1j * dt * lam)) @ V.conj().T
 
 
 def dU_dmu_exact(lam: Array, V: Array, dH: Array, dt: float) -> Array:
-    """Closed-form d/dmu exp(-1j*dt*H) for constant H, given its eigendecomposition.
+    """Closed-form ``d/dmu exp(-i dt H)`` in the eigenbasis of a Hermitian H.
 
-    For piecewise-constant controls the Frechet derivative
+    Uses the divided difference ``exp(a/2) sin(X)/X`` with
+    ``X = dt (lam_n - lam_m)/2``, which has no cancellation; Hermitian H only
+    (Lindblad generators use :mod:`qrobustness.lindblad`).
 
-        dU/dmu = -1j*dt * int_0^1 exp(-1j*dt*H*(1-s)) dH exp(-1j*dt*H*s) ds
+    Parameters
+    ----------
+    lam, V :
+        Eigendecomposition of H from :func:`segment_eig`.
+    dH :
+        (N, N) structure.
+    dt :
+        Interval length Delta.
 
-    is a divided difference in the eigenbasis.  Writing a = -1j*dt*(lam_n-lam_m),
-
-        (exp(a) - 1) / a = exp(a/2) * sin(X)/X,   X = 0.5*dt*(lam_n - lam_m),
-
-    which is exact because a is purely imaginary, so there is no cancellation
-    and no magnitude threshold to tune -- only X == 0 needs masking.
+    Returns
+    -------
+    ndarray
+        (N, N) derivative.
     """
     X = 0.5 * dt * (lam[None, :] - lam[:, None])
     ph = np.exp(-0.5j * dt * lam)
@@ -293,12 +369,27 @@ def differential_sensitivity(
     *,
     method: str = "exact",
 ) -> float:
-    """Sensitivity of gate fidelity, zeta, at the given point.
+    """Differential sensitivity ``zeta = dF/dmu`` at the given point.
 
-    method='exact' (default) evaluates the segment derivative in closed form in
-    the eigenbasis of each H^(k), which is exact for the piecewise-constant
-    controls assumed throughout; 'quadrature' uses Gauss-Legendre with n_quad
-    nodes.  n_quad is inert under 'exact'.
+    Parameters
+    ----------
+    H_list :
+        Interval Hamiltonians H^(k).
+    dH_list :
+        Interval structures dH^(k)/dmu.
+    dt :
+        Interval length Delta.
+    Uf :
+        Target unitary U_f.
+    n_quad :
+        Gauss-Legendre nodes for ``method='quadrature'``; ignored for ``'exact'``.
+    method :
+        ``'exact'`` (closed form, default) or ``'quadrature'``.
+
+    Returns
+    -------
+    float
+        zeta. Raises ValueError if F = 0 (the phase is undefined).
     """
     if method not in DU_METHODS:
         raise ValueError(f"Unknown method={method!r}; expected one of {DU_METHODS}")
@@ -346,14 +437,44 @@ def differential_sensitivity(
 
 @dataclass
 class MarginResult:
-    """Return value of Algorithm 1, and how much of that value is certified.
+    """Result of :func:`iterative_margin`.
 
-    ``M = min(M_minus, M_plus)`` is a certified lower bound on the true
-    margin: the fidelity was evaluated at the reported endpoints and met the
-    threshold there. Read the accompanying fields rather than the number
-    alone -- ``certificate`` says whether the whole segment or only the
-    endpoint is certified, ``status_*`` which stopping rule fired, and with
-    ``margin_tol`` set, ``M_upper`` closes a bracket around the true margin.
+    Attributes
+    ----------
+    M_minus, M_plus, M :
+        Margins in each direction and ``M = min(M_minus, M_plus)``; M is a
+        lower bound on the true margin.
+    converged_minus, converged_plus :
+        False only when the iteration limit was hit.
+    mu_minus, mu_plus :
+        Endpoints reached on each ray.
+    method :
+        Method used.
+    n_evals, n_steps :
+        Fidelity evaluations and steps (with ``return_diagnostics``).
+    status_minus, status_plus :
+        Stopping rule: ``'eta_band'``, ``'domain_truncated'`` (certifies only
+        the distance to the domain edge, not a resolved margin) or
+        ``'iteration_limit'``.
+    safeguard_minus, safeguard_plus :
+        True if an overshoot (F < F_T after a step) was bisected back.
+    M_upper_minus, M_upper_plus, M_upper :
+        Evaluated unsafe witnesses (``inf`` if none); filled with ``margin_tol``.
+    margin_uncertainty :
+        ``M_upper - M``.
+    reason_minus, reason_plus :
+        Bracket outcome with ``margin_tol``: ``'bracketed'`` (width within
+        eps), ``'partial'`` (valid bracket wider than eps), ``'unresolved'``
+        (stopped at a probe within eps_num of F_T), ``'boundary'`` (domain
+        edge reached safe) or ``'exhausted'`` (no unsafe point found).
+    certificate :
+        ``'segment'`` (every point from mu0 to the endpoint is safe) or
+        ``'endpoint'`` (only the endpoint; ``doubling``, ``newton_probe``).
+    n_unresolved :
+        Probes within eps_num of F_T, classified neither safe nor unsafe.
+    n_evals_minus, n_evals_plus :
+        Evaluations per ray (with ``return_diagnostics``); ``n_evals`` is
+        their sum plus one at mu0.
     """
 
     M_minus: float
@@ -366,44 +487,25 @@ class MarginResult:
     method: str = "algorithm1"
     n_evals: Optional[int] = None
     n_steps: Optional[int] = None
-    #: Which stopping rule of Algorithm 1 fired in each direction. Always
-    #: filled, independently of ``margin_tol``. A domain-truncated result
-    #: differs conceptually from an eta-band termination: it certifies
-    #: only that the margin is no smaller than the distance to the domain edge, so it
-    #: must not be read as a resolved margin. ``converged_*`` is kept for
-    #: backward compatibility but merges the first two.
     status_minus: str = "unknown"
     status_plus: str = "unknown"
-    #: True when the bisection safeguard fired at least once in that direction,
-    #: i.e. a floating-point/approximate evaluation reported F < FT after an
-    #: exact-arithmetic-safe step.
     safeguard_minus: bool = False
     safeguard_plus: bool = False
-    # --- error control (filled when margin_tol is given) --------------
-    # M is always a point with F >= FT, and is therefore a LOWER bound on the true
-    # margin. M_upper is the closest point known to violate F >= FT, so the
-    # true margin lies in [M, M_upper] and margin_uncertainty bounds that error.
     M_upper_minus: float = float("inf")
     M_upper_plus: float = float("inf")
     M_upper: float = float("inf")
     margin_uncertainty: float = float("inf")
     reason_minus: str = "unknown"
     reason_plus: str = "unknown"
-    #: 'segment' when every point between mu0 and mu_end is certified F >= FT
-    #: (algorithm1, lipschitz_*); 'endpoint' when only the endpoint is
-    #: (doubling, newton_probe -- these probe past the Lipschitz radius).
     certificate: str = "unknown"
-    #: Probes whose fidelity lay within +-``eval_tol`` of the threshold
-    #: and were therefore treated as neither safe nor unsafe. They
-    #: move neither end of the bracket. A non-zero count means the
-    #: reported bracket is limited by evaluation uncertainty instead of
-    #: by the requested tolerance.
     n_unresolved: int = 0
+    n_evals_minus: Optional[int] = None
+    n_evals_plus: Optional[int] = None
 
 
 @dataclass
 class _EvalCounter:
-    """Wrap a fidelity callable and tally evaluations."""
+    """Count calls to a fidelity function."""
 
     fn: Callable[[float], float]
     n_evals: int = 0
@@ -429,21 +531,31 @@ def _clamp(mu: float, mu_lo: float, mu_hi: float) -> float:
     return min(max(mu, mu_lo), mu_hi)
 
 
+def _is_safe(F: float, FT: float, strict: bool) -> bool:
+    """Safe side of the threshold.
+
+    With ``strict`` (a positive evaluation band) equality is unresolved, so
+    safe means ``F > FT``. Otherwise ``F >= FT``, and ``F = FT`` stays safe.
+    """
+    return F > FT if strict else F >= FT
+
+
 def _bisect_safe(
     fidelity_fn: Callable[[float], float],
     mu_safe0: float,
     mu_bad: float,
     FT: float,
     eta: float,
+    strict: bool = False,
 ) -> Tuple[float, float]:
-    """Paper Algorithm 1 overshoot polish: retain a point with F >= FT."""
+    """Bisect ``[mu_safe0, mu_bad]``; return the last safe point and its F."""
     a = mu_safe0
     b = mu_bad
     Fa = fidelity_fn(a)
     for _ in range(60):
         mid = 0.5 * (a + b)
         Fm = fidelity_fn(mid)
-        if Fm >= FT:
+        if _is_safe(Fm, FT, strict):
             a = mid
             Fa = Fm
             if (Fa - FT) < eta:
@@ -460,6 +572,7 @@ def _bracket_root_safe(
     FT: float,
     eta: float,
     root_solver: str,
+    strict: bool = False,
 ) -> Tuple[float, float]:
     """Locate a safe endpoint in [mu_safe, mu_bad] with 0 <= F - FT < eta when possible.
 
@@ -467,17 +580,19 @@ def _bracket_root_safe(
     the safe side so the returned point satisfies F >= FT (certificate side).
     """
     if root_solver == "bisection":
-        return _bisect_safe(fidelity_fn, mu_safe, mu_bad, FT, eta)
+        return _bisect_safe(fidelity_fn, mu_safe, mu_bad, FT, eta, strict)
 
     def g(mu: float) -> float:
         return fidelity_fn(mu) - FT
 
-    g_safe = g(mu_safe)
-    g_bad = g(mu_bad)
-    if g_safe < 0:
-        raise ValueError("mu_safe must satisfy F >= FT")
-    if g_bad >= 0:
+    if not _is_safe(fidelity_fn(mu_safe), FT, strict):
+        raise ValueError("mu_safe must lie on the safe side of FT")
+    if _is_safe(fidelity_fn(mu_bad), FT, strict):
         return mu_safe, fidelity_fn(mu_safe)
+    # A root finder needs a strict sign change. Equality on the bad side
+    # (the closed band) is bisected instead.
+    if g(mu_safe) <= 0 or g(mu_bad) >= 0:
+        return _bisect_safe(fidelity_fn, mu_safe, mu_bad, FT, eta, strict)
 
     xtol = max(eta / 10.0, 1e-14 * max(1.0, abs(mu_safe), abs(mu_bad)))
     a, b = (mu_safe, mu_bad) if mu_safe < mu_bad else (mu_bad, mu_safe)
@@ -501,13 +616,13 @@ def _bracket_root_safe(
         max(mu_safe, mu_bad),
     )
     F_try = fidelity_fn(mu_try)
-    if F_try >= FT:
+    if _is_safe(F_try, FT, strict):
         return mu_try, F_try
     # Fallback: classical bisection starting from the known safe endpoint.
-    return _bisect_safe(fidelity_fn, mu_safe, mu_bad, FT, eta)
+    return _bisect_safe(fidelity_fn, mu_safe, mu_bad, FT, eta, strict)
 
 
-#: Algorithm 1 stopping rules, listed in the order the algorithm tests them.
+#: Stopping rules of :func:`iterative_margin`, in the order they are tested.
 MARGIN_STATUS = ("eta_band", "domain_truncated", "iteration_limit")
 
 
@@ -532,11 +647,14 @@ def _stop_one_direction(
     mu_hi: float,
     k: int,
     k_max: int,
+    strict: bool = False,
 ) -> Tuple[bool, bool, float, str]:
     """Return (done, converged, M, status)."""
-    if _on_boundary(mu_next, mu_lo, mu_hi) and (F_next - FT >= eta):
+    surplus = F_next - FT
+    if _on_boundary(mu_next, mu_lo, mu_hi) and surplus >= eta:
         return True, True, abs(mu0 - mu_next), "domain_truncated"
-    if 0 <= (F_next - FT) < eta:
+    in_band = (0 < surplus if strict else 0 <= surplus) and surplus < eta
+    if in_band:
         return True, True, abs(mu0 - mu_next), "eta_band"
     if k >= k_max:
         return True, False, abs(mu0 - mu_next), "iteration_limit"
@@ -554,6 +672,7 @@ def _one_direction_lipschitz(
     ell: int,
     root_solver: str,
     safe_radius_fn: Callable[[float], float],
+    strict: bool = False,
 ) -> _DirOutcome:
     """Certified safe-radius advance; polish any overshoot with root_solver."""
     sign_step = (-1) ** ell
@@ -570,13 +689,13 @@ def _one_direction_lipschitz(
     while True:
         mu_next = _clamp(mu + sign_step * safe_radius_fn(Fmu), mu_lo, mu_hi)
         F_next = fidelity_fn(mu_next)
-        if F_next < FT:
+        if not _is_safe(F_next, FT, strict):
             safeguard = True
             mu_next, F_next = _bracket_root_safe(
-                fidelity_fn, mu, mu_next, FT, eta, root_solver
+                fidelity_fn, mu, mu_next, FT, eta, root_solver, strict
             )
         done, converged, M, status = _stop_one_direction(
-            mu0, mu_next, F_next, FT, eta, mu_lo, mu_hi, k, k_max
+            mu0, mu_next, F_next, FT, eta, mu_lo, mu_hi, k, k_max, strict
         )
         if done:
             return _DirOutcome(M, converged, mu_next, n_steps, status, safeguard)
@@ -597,32 +716,29 @@ def _one_direction_doubling(
     ell: int,
     root_solver: str,
     safe_radius_fn: Callable[[float], float],
+    strict: bool = False,
 ) -> _DirOutcome:
-    """Aggressive geometric probe past the certified radius, then bracket.
-
-    The certificate is weaker than Algorithm 1 unless F is monotone on the ray:
-    only the returned endpoint is guaranteed F >= FT, not the whole segment.
-    """
+    """Geometric probes past the safe radius, then bracket; endpoint-certified only."""
     sign_step = (-1) ** ell
     mu_lo, mu_hi = omega
     n_steps = 0
     mu_safe = mu0
     F_safe = fidelity_fn(mu_safe)
-    # Initial probe no smaller than the certified safe radius (the eta floor
-    # stays on L: it is a nonzero-probe floor in parameter units, rather than a
-    # certificate).
+    # Initial probe: at least the safe radius; eta / L only keeps it nonzero.
     step = max(safe_radius_fn(F_safe), eta / max(L, 1e-30))
     mu_probe = _clamp(mu_safe + sign_step * step, mu_lo, mu_hi)
     F_probe = fidelity_fn(mu_probe)
     k = 1  # tallies evaluated trial points, so k_max of them are permitted
 
-    while F_probe >= FT:
+    while _is_safe(F_probe, FT, strict):
         if _on_boundary(mu_probe, mu_lo, mu_hi):
             done, converged, M, status = _stop_one_direction(
-                mu0, mu_probe, F_probe, FT, eta, mu_lo, mu_hi, k, k_max
+                mu0, mu_probe, F_probe, FT, eta, mu_lo, mu_hi, k, k_max, strict
             )
             return _DirOutcome(M, converged, mu_probe, n_steps, status)
-        if 0 <= (F_probe - FT) < eta:
+        surplus = F_probe - FT
+        in_band = (0 < surplus if strict else 0 <= surplus) and surplus < eta
+        if in_band:
             return _DirOutcome(abs(mu0 - mu_probe), True, mu_probe, n_steps, "eta_band")
         if k >= k_max:
             return _DirOutcome(
@@ -643,7 +759,7 @@ def _one_direction_doubling(
         n_steps += 1
 
     mu_end, F_end = _bracket_root_safe(
-        fidelity_fn, mu_safe, mu_probe, FT, eta, root_solver
+        fidelity_fn, mu_safe, mu_probe, FT, eta, root_solver, strict
     )
     return _DirOutcome(abs(mu0 - mu_end), True, mu_end, n_steps, "eta_band", True)
 
@@ -660,14 +776,9 @@ def _one_direction_newton_probe(
     root_solver: str,
     safe_radius_fn: Callable[[float], float],
     zeta_fn: Callable[[float], float],
+    strict: bool = False,
 ) -> _DirOutcome:
-    """Safeguarded Newton-sized probes; past the certified radius the method behaves
-    like doubling.
-
-    When |zeta| is tiny or the Newton step exceeds the certified radius, the
-    probe is treated as an aggressive (non-certified) jump and polished by
-    bracketing on overshoot -- same guarantee class as ``doubling``.
-    """
+    """Newton-sized probes, never shorter than the safe radius; endpoint-certified only."""
     sign_step = (-1) ** ell
     mu_lo, mu_hi = omega
     k = 1  # tallies evaluated trial points, so k_max of them are permitted
@@ -685,20 +796,18 @@ def _one_direction_newton_probe(
             newt_step = abs((Fmu - FT) / zeta)
         else:
             newt_step = cert_step
-        # Prefer the Newton size when it is larger (aggressive); never smaller
-        # than the certified radius.
         step = max(cert_step, newt_step)
         mu_next = _clamp(mu + sign_step * step, mu_lo, mu_hi)
         F_next = fidelity_fn(mu_next)
-        if F_next < FT:
+        if not _is_safe(F_next, FT, strict):
             mu_next, F_next = _bracket_root_safe(
-                fidelity_fn, mu, mu_next, FT, eta, root_solver
+                fidelity_fn, mu, mu_next, FT, eta, root_solver, strict
             )
             return _DirOutcome(
                 abs(mu0 - mu_next), True, mu_next, n_steps, "eta_band", True
             )
         done, converged, M, status = _stop_one_direction(
-            mu0, mu_next, F_next, FT, eta, mu_lo, mu_hi, k, k_max
+            mu0, mu_next, F_next, FT, eta, mu_lo, mu_hi, k, k_max, strict
         )
         if done:
             return _DirOutcome(M, converged, mu_next, n_steps, status, safeguard)
@@ -708,9 +817,9 @@ def _one_direction_newton_probe(
             mu_probe = _clamp(mu_next + sign_step * step2, mu_lo, mu_hi)
             F_probe = fidelity_fn(mu_probe)
             n_steps += 1
-            if F_probe < FT:
+            if not _is_safe(F_probe, FT, strict):
                 mu_next, F_next = _bracket_root_safe(
-                    fidelity_fn, mu_next, mu_probe, FT, eta, root_solver
+                    fidelity_fn, mu_next, mu_probe, FT, eta, root_solver, strict
                 )
                 return _DirOutcome(
                     abs(mu0 - mu_next), True, mu_next, n_steps, "eta_band", True
@@ -737,44 +846,21 @@ def _certify_direction(
     safe_radius_fn: Optional[Callable[[float], float]] = None,
     eval_tol: float = 0.0,
 ) -> Tuple[float, float, str, int]:
-    """Bracket the first component boundary along the ray.
+    """Bracket the first boundary of the nominal safe component on one ray.
 
-    ``mu_end`` is the terminus of safe-radius continuation from
-    ``mu0``, so ``|mu0 - mu_end|`` is a certified lower bound on the
-    ray margin of the NOMINAL safe component.  This routine (i) searches
-    outward for an unsafe point -- any unsafe point on the ray is
-    a rigorous UPPER witness for the component margin, since the first
-    boundary precedes it -- and (ii) refines the bracket.
+    Probes outward from the continuation endpoint ``mu_end`` for an unsafe
+    witness, then bisects. A safe sample becomes the certified end only if
+    its own safe radius covers the gap to the current certified end (or
+    continuation bridges it), so a safe island beyond the first boundary
+    never enlarges M. Probes with ``|F - FT| <= eval_tol`` are unresolved:
+    neither promoted nor taken as witnesses, and counted.
 
-    Certified-promotion rule: the certified lower endpoint advances to
-    a pointwise-safe candidate ``cand`` only if the gap from the
-    current certified end is covered by ``cand``'s own safe radius,
-    ``|cand - mu_cert| <= safe_radius_fn(F(cand))`` (default
-    ``(F - FT)/L``; the segment then lies in
-    the safe set and joins ``cand`` to the nominal component); when
-    the gap is larger, safe-radius continuation steps from ``mu_cert``
-    toward ``cand`` bridge as far as they certify.  Pointwise-safe
-    samples are never promoted without this verification, so with a
-    nonmonotone fidelity a safe island beyond the first boundary
-    cannot inflate the certified margin.  Consequently the component
-    margin always lies in ``[M, M_upper]``; the bracket width reaches
-    ``margin_tol`` when continuation keeps pace with bisection (in
-    particular under a single threshold crossing on the ray), and the
-    reason ``'partial'`` reports the cases where it does not.
-
-    ``eval_tol`` is the recorded evaluation uncertainty of the fidelity
-    callable.  A probe with ``|F - FT| <= eval_tol`` is UNRESOLVED: it
-    is neither promoted to the certified end nor accepted as an unsafe
-    witness, since either reading would be an empirical allowance
-    dressed as a certificate.  Unresolved probes are counted and
-    reported.  The default ``0.0`` reproduces the historical
-    classification bit for bit.
-
-    Returns ``(M, M_upper, reason, n_unresolved)`` with reason
-    ``'bracketed'`` (width at tolerance), ``'partial'`` (rigorous
-    bracket, width above tolerance), ``'boundary'`` (domain edge
-    reached while certified safe; ``M_upper = inf``), or ``'exhausted'``
-    (no unsafe point found; ``M_upper = inf``).
+    Returns
+    -------
+    tuple
+        ``(M, M_upper, reason, n_unresolved)``; reason is ``'bracketed'``,
+        ``'partial'``, ``'unresolved'``, ``'boundary'`` or ``'exhausted'``
+        (the last two with ``M_upper = inf``).
     """
     sign_step = (-1) ** ell
     mu_lo, mu_hi = omega
@@ -784,9 +870,17 @@ def _certify_direction(
 
     n_unresolved = 0
 
+    # Each point is evaluated once; the classifiers below share the value.
+    evaluated: dict = {}
+    raw_fidelity = fidelity_fn
+
+    def fidelity_fn(mu: float) -> float:
+        if mu not in evaluated:
+            evaluated[mu] = raw_fidelity(mu)
+        return evaluated[mu]
+
     def is_unsafe(mu: float) -> bool:
-        """Resolved-unsafe: beneath the threshold by more than the
-        evaluation uncertainty."""
+        """True if F < FT - eval_tol."""
         return fidelity_fn(mu) < FT - eval_tol
 
     def is_unresolved(mu: float) -> bool:
@@ -794,34 +888,38 @@ def _certify_direction(
 
     def can_promote(cand: float, cert: float) -> bool:
         F = fidelity_fn(cand)
-        if F < FT + eval_tol:
+        # eval_tol == 0 keeps F == FT safe. A positive band is closed, so
+        # F == FT + eval_tol stays unresolved and is not promoted.
+        if eval_tol > 0.0:
+            if F <= FT + eval_tol:
+                return False
+        elif F < FT:
             return False
         if safe_radius_fn is None:
-            # No radius rule supplied: revert to continuation-only
-            # promotion (never promote across a gap).
+            # Without a radius rule, never promote across a gap.
             return cand == cert
         return abs(cand - cert) <= safe_radius_fn(F)
 
     def continue_toward(cert: float, target_pt: float, max_steps: int = 64) -> float:
-        """Safe-radius continuation from ``cert`` toward ``target_pt``;
-        returns the farthest certified point reached."""
+        """Continue from ``cert`` toward ``target_pt``; return the farthest safe point."""
         if safe_radius_fn is None:
             return cert
         for _ in range(max_steps):
             F = fidelity_fn(cert)
-            if F < FT:
-                return cert  # cannot happen for a certified point
+            if (eval_tol > 0.0 and F <= FT + eval_tol) or (eval_tol == 0.0 and F < FT):
+                return cert
             step_r = safe_radius_fn(F)
             if step_r <= abs(target_pt - cert) * 1e-15 + 1e-300:
                 return cert  # stalled at the band
             nxt = cert + sign_step * min(step_r, abs(target_pt - cert))
             if sign_step * (nxt - target_pt) >= 0:
-                return target_pt if fidelity_fn(target_pt) >= FT else cert
+                target_F = fidelity_fn(target_pt)
+                safe = target_F > FT + eval_tol if eval_tol > 0.0 else target_F >= FT
+                return target_pt if safe else cert
             cert = nxt
         return cert
 
-    # Geometric probe outward for an unsafe upper witness; the certified
-    # end advances only under the promotion rule.
+    # Geometric probe outward for an unsafe witness.
     mu_cert = mu_end
     frontier = mu_end
     mu_unsafe = None
@@ -834,9 +932,6 @@ def _certify_direction(
             mu_unsafe = cand
             break
         if eval_tol > 0.0 and is_unresolved(cand):
-            # Neither safe nor unsafe inside the evaluation tolerance:
-            # continue probing outward without promoting the certified end
-            # and without recording a witness.
             n_unresolved += 1
             frontier = cand
             step *= 2.0
@@ -846,18 +941,13 @@ def _certify_direction(
         else:
             mu_cert = continue_toward(mu_cert, cand)
             if mu_cert != cand:
-                # A stall beneath a pointwise-safe sample: the component
-                # boundary sits between mu_cert and cand's far side;
-                # keep probing outward for an unsafe witness.
-                pass
+                pass  # stalled: the boundary lies before cand; keep probing
         frontier = cand
         step *= 2.0
     if mu_unsafe is None:
         return abs(mu0 - mu_cert), float("inf"), "exhausted", n_unresolved
 
-    # Refinement: unsafe midpoints always tighten the upper witness; safe
-    # midpoints move the certified end forward only via the promotion rule
-    # or bridged continuation.
+    # Refinement: safe midpoints are promoted only as in the probe phase.
     target = max(
         margin_tol * max(abs(mu_cert - mu0), 1e-300), 1e-16 * max(1.0, abs(mu_cert))
     )
@@ -871,9 +961,7 @@ def _certify_direction(
             mu_unsafe = mid
             continue
         if eval_tol > 0.0 and is_unresolved(mid):
-            # An unresolved midpoint cannot move either end. Halt rather
-            # than iterate on it: the bracket is rigorous, just wider than
-            # the tolerance asked for.
+            # An unresolved midpoint moves neither end: stop with a wider bracket.
             n_unresolved += 1
             return (
                 abs(mu0 - mu_cert),
@@ -886,7 +974,7 @@ def _certify_direction(
         else:
             reached = continue_toward(mu_cert, mid)
             if reached == mu_cert:
-                # Continuation has stalled: rigorous bracket, above tolerance.
+                # Continuation stalled: valid bracket wider than margin_tol.
                 return (
                     abs(mu0 - mu_cert),
                     abs(mu0 - mu_unsafe),
@@ -915,6 +1003,7 @@ def _dispatch_one_direction(
     root_solver: str,
     zeta_fn: Optional[Callable[[float], float]],
     safe_radius_fn: Callable[[float], float],
+    strict: bool = False,
 ) -> _DirOutcome:
     if method == "algorithm1":
         return _one_direction_lipschitz(
@@ -928,6 +1017,7 @@ def _dispatch_one_direction(
             ell,
             "bisection",
             safe_radius_fn,
+            strict,
         )
     if method == "lipschitz_brent":
         return _one_direction_lipschitz(
@@ -941,6 +1031,7 @@ def _dispatch_one_direction(
             ell,
             "brent",
             safe_radius_fn,
+            strict,
         )
     if method == "lipschitz_toms748":
         return _one_direction_lipschitz(
@@ -954,6 +1045,7 @@ def _dispatch_one_direction(
             ell,
             "toms748",
             safe_radius_fn,
+            strict,
         )
     if method == "doubling":
         rs = root_solver if root_solver != "bisection" else "toms748"
@@ -968,6 +1060,7 @@ def _dispatch_one_direction(
             ell,
             rs,
             safe_radius_fn,
+            strict,
         )
     if method == "newton_probe":
         if zeta_fn is None:
@@ -985,6 +1078,7 @@ def _dispatch_one_direction(
             rs,
             safe_radius_fn,
             zeta_fn,
+            strict,
         )
     raise ValueError(f"Unknown method={method!r}; expected one of {MARGIN_METHODS}")
 
@@ -1005,63 +1099,64 @@ def iterative_margin(
     safe_radius_fn: Optional[Callable[[float], float]] = None,
     eval_tol: float = 0.0,
 ) -> MarginResult:
-    """One-dimensional robustness margin, certified or exploratory.
+    """One-dimensional robustness margin. Continuation starts at mu0 and steps by the safe radius.
 
-    The preferred certified default is ``method='algorithm1'`` (Lipschitz advance +
-    bisection). Lipschitz steps rarely overshoot, so Brent/TOMS748 polish does
-    not meaningfully reduce fidelity evals versus bisection; we keep them as
-    optional polish only. Aggressive advance (``doubling`` / ``newton_probe``)
-    can cut evals but drops the full segment certificate unless F is monotone
-    on the ray. See ``docs/margin-solvers-notes.md``.
+    The walk steps outward in both directions by the safe radius until F is
+    within eta of F_T. It can then bracket the boundary to the relative
+    tolerance eps (``margin_tol``). M is a lower bound on the true margin.
+    M_upper is an evaluated unsafe witness. It is not a certified bound.
 
     Parameters
     ----------
+    fidelity_fn :
+        Scalar fidelity F(mu).
+    L :
+        Lipschitz constant B_T C_{\\hat H} (> 0).
+    FT :
+        Fidelity threshold F_T; requires F(mu0) > F_T.
+    mu0 :
+        Nominal parameter.
+    eta :
+        Continuation band: stop once 0 <= F - F_T < eta.
+    omega :
+        Admissible interval (mu_lo, mu_hi).
+    k_max :
+        Maximum fidelity evaluations per direction.
     method :
-        ``algorithm1`` (default) -- paper Algorithm 1: Lipschitz steps + bisection.
-        ``lipschitz_brent`` / ``lipschitz_toms748`` -- the same certified advance,
-        Brent or TOMS748 overshoot polish (full Lipschitz certificate; little
-        speed gain when overshoot is rare).
-        ``doubling`` -- geometric probes beyond the Lipschitz radius, then
-        bracket (weaker: endpoint-safe unless F is monotone on the ray).
-        ``newton_probe`` -- Newton-sized probes via ``zeta_fn``; the same guarantee
-        class as ``doubling`` when probing beyond the Lipschitz radius.
+        ``'algorithm1'`` (default; safe-radius steps, bisection on
+        overshoot), ``'lipschitz_brent'`` / ``'lipschitz_toms748'`` (same
+        steps, Brent or TOMS748 on overshoot); these certify the whole
+        segment. ``'doubling'`` and ``'newton_probe'`` probe past the safe
+        radius and certify only the endpoint.
     root_solver :
-        Bracket polish for non-``algorithm1`` methods: ``toms748`` (default),
-        ``brent``, or ``bisection``. Ignored when ``method='algorithm1'``.
+        ``'toms748'`` (default), ``'brent'`` or ``'bisection'``; used by
+        ``doubling`` and ``newton_probe`` (``'bisection'`` falls back to
+        ``'toms748'`` there), ignored otherwise.
     zeta_fn :
-        Required for ``method='newton_probe'``; returns differential sensitivity
-        zeta(mu).
+        Differential sensitivity zeta(mu); required for ``'newton_probe'``.
     return_diagnostics :
-        If True, populate ``n_evals``, ``n_steps``, and ``method`` on the result.
+        If True, fill ``n_evals``, ``n_evals_minus``, ``n_evals_plus`` and
+        ``n_steps``.
+    margin_tol :
+        Relative bracket tolerance eps; if given, fills ``M_upper*``,
+        ``reason_*``, ``margin_uncertainty`` and ``n_unresolved``.
     safe_radius_fn :
-        Optional certified safe-radius rule: maps the fidelity ``F`` at an
-        evaluated safe point on the ray to a certified lower bound on the
-        distance (in ray-parameter units) from that point to the unsafe
-        set.  Must be non-negative, non-decreasing in ``F``, and vanish as
-        ``F -> FT`` (termination relies on this).  Default is the Lipschitz
-        rule ``(F - FT)/L`` (bit-identical to the historical behaviour).
-        The Choi-angular rule ``(arccos FT - arccos F)/C_FS(d)`` dominates
-        it (full-gauge dominance) and is supplied by
-        ``multiparam.directional_margin(..., angular_gauge=...)``.
+        Safe radius r(F) at an evaluated safe point, in parameter units;
+        must be non-negative, non-decreasing in F and vanish at F_T.
+        Default ``(F - F_T)/L``; ``multiparam.directional_margin`` supplies
+        the angular radius ``(arccos F_T - arccos F)/C^stat_FS(d)``.
     eval_tol :
-        Recorded evaluation uncertainty of ``fidelity_fn``, used only by
-        the ``margin_tol`` bracket refinement: a probe within
-        ``+-eval_tol`` of the threshold is classified UNRESOLVED and
-        moves neither end of the bracket, so an empirical allowance is
-        never spent as a certificate. Counted in ``n_unresolved``. The
-        default ``0.0`` reproduces the historical classification
-        exactly.
+        Evaluation band eps_num of ``fidelity_fn``. Continuation treats a
+        point as safe only above F_T + eps_num, while the safe radius uses
+        the computed fidelity; in the bracket, probes within eps_num of F_T
+        are unresolved and counted in ``n_unresolved``.
 
-    Notes
-    -----
-    ``status_minus`` / ``status_plus`` always state which Algorithm 1 stopping
-    rule fired -- ``'eta_band'``, ``'domain_truncated'`` or
-    ``'iteration_limit'`` -- independently of ``margin_tol``.  A
-    ``'domain_truncated'`` result certifies only that the margin is at least
-    the distance to the edge of ``omega``, so it must not be read as a resolved
-    margin; ``converged_*`` cannot distinguish the two.  ``reason_*`` is a
-    different quantity: the outcome of the optional ``margin_tol`` bracket
-    refinement.
+    Returns
+    -------
+    MarginResult
+        Margins, endpoints, stopping status, certificate kind and, with
+        ``margin_tol``, the bracket. ``status_* = 'domain_truncated'``
+        certifies only the distance to the edge of ``omega``.
     """
     if L <= 0:
         raise ValueError("Lipschitz constant L must be positive")
@@ -1079,10 +1174,13 @@ def iterative_margin(
     if safe_radius_fn is None:
         safe_radius_fn = lambda F: (F - FT) / L  # noqa: E731
 
+    # Continuation accepts a point as safe only above the evaluation band.
+    FT_safe = FT + eval_tol
+    n0 = counter.n_evals
     out_m = _dispatch_one_direction(
         counter,
         L,
-        FT,
+        FT_safe,
         mu0,
         eta,
         omega,
@@ -1092,11 +1190,14 @@ def iterative_margin(
         root_solver,
         zeta_fn,
         safe_radius_fn,
+        eval_tol > 0.0,
     )
+    n_m = counter.n_evals - n0
+    n0 = counter.n_evals
     out_p = _dispatch_one_direction(
         counter,
         L,
-        FT,
+        FT_safe,
         mu0,
         eta,
         omega,
@@ -1106,7 +1207,9 @@ def iterative_margin(
         root_solver,
         zeta_fn,
         safe_radius_fn,
+        eval_tol > 0.0,
     )
+    n_p = counter.n_evals - n0
     steps_m, steps_p = out_m.n_steps, out_p.n_steps
     result = MarginResult(
         M_minus=out_m.M,
@@ -1128,6 +1231,7 @@ def iterative_margin(
     if margin_tol is not None:
         if not (margin_tol > 0):
             raise ValueError("margin_tol must be positive")
+        n0 = counter.n_evals
         lo_m, up_m, why_m, unres_m = _certify_direction(
             counter,
             mu0,
@@ -1140,6 +1244,8 @@ def iterative_margin(
             safe_radius_fn,
             eval_tol,
         )
+        n_m += counter.n_evals - n0
+        n0 = counter.n_evals
         lo_p, up_p, why_p, unres_p = _certify_direction(
             counter,
             mu0,
@@ -1152,6 +1258,7 @@ def iterative_margin(
             safe_radius_fn,
             eval_tol,
         )
+        n_p += counter.n_evals - n0
         # The refined safe ends are stricter lower bounds than the eta-based ones.
         result.M_minus = max(result.M_minus, lo_m)
         result.M_plus = max(result.M_plus, lo_p)
@@ -1165,6 +1272,8 @@ def iterative_margin(
         result.n_unresolved = unres_m + unres_p
     if return_diagnostics:
         result.n_evals = counter.n_evals
+        result.n_evals_minus = n_m
+        result.n_evals_plus = n_p
         result.n_steps = steps_m + steps_p
     return result
 
@@ -1173,7 +1282,13 @@ def fidelity_vs_delta(
     fidelity_fn: Callable[[float], float],
     delta_grid: Iterable[float],
 ) -> Tuple[Array, Array]:
-    """Sample a fidelity function on a grid and return the grid and values."""
+    """Sample ``fidelity_fn`` on ``delta_grid``.
+
+    Returns
+    -------
+    x, F : ndarray
+        The grid and the fidelities on it.
+    """
     x = np.asarray(list(delta_grid), dtype=float)
     F = np.array([fidelity_fn(float(d)) for d in x], dtype=float)
     return x, F
@@ -1189,10 +1304,25 @@ def make_fidelity_fn(
     dt: float,
     structure: str,
 ) -> Callable[[float], float]:
-    """Close over a controller so that fidelity is a function of ``delta``.
+    """Fidelity of a controller as a function of the relative perturbation ``delta``.
 
-    The one-parameter function Algorithm 1 iterates on: perturb the chosen
-    structure by ``delta``, propagate, and compare with the target.
+    Parameters
+    ----------
+    H0, H1, H2 :
+        (N, N) drift and control Hamiltonians.
+    u1, u2 :
+        Control amplitudes per interval.
+    Uf :
+        Target unitary U_f.
+    dt :
+        Interval length Delta.
+    structure :
+        ``'H0'``, ``'H1'`` or ``'H2'`` (see :func:`perturbed_hamiltonians`).
+
+    Returns
+    -------
+    callable
+        ``delta -> F``.
     """
 
     def fn(delta: float) -> float:
@@ -1204,22 +1334,26 @@ def make_fidelity_fn(
 
 
 def load_problem(mat_path: Union[str, Path]) -> dict:
-    """Load a problem definition from the MATLAB ``.mat`` format.
+    """Load a problem definition (variable ``problem``) from a MATLAB ``.mat`` file.
 
-    Returns the drift, the two control operators, the target, and both the
-    qubit count and the Hilbert-space dimension under unambiguous names --
-    the stored field ``N`` is the number of qubits, not the dimension, which
-    is the kind of thing that is wrong exactly once and expensively.
+    Parameters
+    ----------
+    mat_path :
+        Path to the ``.mat`` file.
+
+    Returns
+    -------
+    dict
+        ``H0``, ``H1``, ``H2`` (Hamiltonians), ``Uf`` (target), ``n_qubits``
+        and ``dim = 2**n_qubits``. The stored field ``N`` is the qubit
+        count, not the dimension.
     """
     S = loadmat(mat_path, squeeze_me=True, struct_as_record=False)
     if "problem" not in S:
         raise KeyError("Expected variable 'problem'")
     p = S["problem"]
     H = p.H
-    # H may be object array of length 3
     H0, H1, H2 = H[0], H[1], H[2]
-    # problem.N in the MAT file stores the number of qubits; the Hilbert space
-    # dimension is 2**N. We return both under unambiguous names.
     n_qubits = int(np.asarray(p.N).reshape(-1)[0])
     return {
         "H0": np.asarray(H0, dtype=complex),
@@ -1232,14 +1366,22 @@ def load_problem(mat_path: Union[str, Path]) -> dict:
 
 
 def load_controllers(csv_path: Union[str, Path], max_error: float = 1e-4) -> List[dict]:
-    """Load a controller ensemble, keeping those under ``max_error``.
+    """Load a controller ensemble from CSV and sort it by nominal error.
 
-    Sorted by nominal error, so the ensemble order is a property of the file
-    and not of the synthesis run. The 1e-4 default is the paper's filter
-    (61 of 100 controllers) and is spelled the same way in
-    ``scripts/_drivers.DEFAULT_MAX_ERROR`` and in the MATLAB peer; the
-    library cannot import from the drivers, so the value is repeated here
-    deliberately rather than shared.
+    Parameters
+    ----------
+    csv_path :
+        CSV; columns 2-4 are ``tf``, ``tau``, ``error``, then the controls
+        interleaved ``u1_1, u2_1, u1_2, ...``.
+    max_error :
+        Keep controllers with ``error <= max_error``; the
+        default matches ``scripts/_drivers.DEFAULT_MAX_ERROR`` and MATLAB.
+
+    Returns
+    -------
+    list of dict
+        Per controller: ``tf``, ``tau``, ``error``, ``fid = 1 - error``,
+        ``u1``, ``u2`` (length ``tau``).
     """
     data = np.loadtxt(csv_path, delimiter=",")
     if data.ndim == 1:

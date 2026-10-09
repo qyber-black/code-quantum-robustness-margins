@@ -6,8 +6,7 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function test_lindblad()
-%TEST_LINDBLAD Open-system layer: superoperators and the diamond norm. The diamond norm is checked against the analytic value 2n of
-% the paper lem:2n, which is the strongest check available: it does not depend on the Python implementation being right.
+%TEST_LINDBLAD Superoperators, channel, open_margin and the diamond norm (against the analytic value 2n).
 
     sz = [1 0; 0 -1];
     sm = [0 1; 0 0];
@@ -19,9 +18,7 @@ function test_lindblad()
     Sh = qrobustness.lindblad.hamiltonian_superop(H);
     assert(norm(Sh * reshape(I2, [], 1)) < 1e-12);
 
-    % A dissipator is trace annihilating: Tr D[V](rho) = 0 for all rho. Seeded so a failure is reproducible, as the Python peer
-    % test_lindblad.py does; the property holds for every R, so the seed cannot decide the outcome, only which R exhibits a
-    % regression.
+    % A dissipator is trace annihilating: Tr D[V](rho) = 0 for all rho (seeded for reproducibility).
     D = qrobustness.lindblad.dissipator(sm);
     rng(0);
     for t = 1:4
@@ -43,8 +40,7 @@ function test_lindblad()
     assert(abs(trace(Jid) - 2) < 1e-12);
     assert(norm(Jid - Jid', 'fro') < 1e-12);
 
-    % Diamond norm: sum_q D[sigma_z^(q)] has diamond norm exactly 2n (paper lem:2n). The same holds for sigma_- under that
-    % normalisation.
+    % Diamond norm: sum_q D[sigma_z^(q)] has diamond norm exactly 2n; the same holds for sigma_-.
     for n = 1:3
         tot = [];
         for q = 1:n
@@ -95,9 +91,7 @@ function test_lindblad()
                  'qrobustness:lindblad:channel', 'an empty generator list');
 
     % --- open_margin: the one-sided rate domain ------------------------
-    % The wrapper is present to impose omega = [0, Inf): a decoherence rate below zero is not a physical certificate, and the
-    % generic iteration
-    % would happily step there.
+    % The default domain is omega = [0, Inf): no negative rate is certified.
     FT = 0.999;
     fid = @(g) 1 - (1 - FT) * (g / 0.02)^2;
     r = qrobustness.lindblad.open_margin(fid, 50, FT, 'eta', 1e-10);

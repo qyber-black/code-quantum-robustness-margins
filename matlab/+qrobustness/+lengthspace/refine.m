@@ -6,9 +6,12 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function [H_ref, Hhat_ref] = refine(H_list, Hhat_list, q)
-%REFINE Partition each control interval into q equal sub-intervals.
-%   The caller scales its time step by 1/q.  Peer of
-%   python/src/qrobustness/lengthspace.py:refine.
+%REFINE Split each control interval into q equal sub-intervals.
+%   H_list, Hhat_list - interval Hamiltonians and structures, equal length
+%   q                 - positive integer
+%   H_ref, Hhat_ref   - each entry repeated q times; the caller divides dt by q
+%
+%   Peer of python/src/qrobustness/lengthspace.py:refine.
 
     if ~(isscalar(q) && q >= 1 && q == floor(q))
         error('qrobustness:lengthspace:refine', 'q must be a positive integer.');

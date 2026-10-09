@@ -1,18 +1,18 @@
 function [F, g1, g2] = fidelity_and_gradient(H0, H1, H2, u1, u2, Uf, dt, varargin)
-%FIDELITY_AND_GRADIENT Gate fidelity together with GRAPE gradients dF/du1, dF/du2.
+%FIDELITY_AND_GRADIENT Gate fidelity and its gradients with respect to the controls.
+%   H0, H1, H2 - drift and control Hamiltonians
+%   u1, u2     - controls per interval
+%   Uf         - target gate
+%   dt         - interval length
+%   F          - gate fidelity
+%   g1, g2     - dF/du1, dF/du2 (GRAPE gradients)
 %
-%   Name-value:
-%     'method'   'exact' (default) or 'quadrature'; see
-%                QROBUSTNESS.DIFFERENTIAL_SENSITIVITY
-% 'n_quad' quadrature nodes, used only under 'quadrature' (default 32)
+%   Name-value options:
+%     'method' - 'exact' (default) or 'quadrature'
+%     'n_quad' - Gauss-Legendre nodes for 'quadrature' (default 32); a bare
+%                numeric eighth argument is read as n_quad
 %
-% A positional n_quad at argument 8 is accepted; it applies only to the
-%   'quadrature' method.
-%
-% On the 'exact' path a single eigendecomposition per interval serves the
-%   propagator and both control derivatives.
-%
-%   Peer of python/src/qrobustness/optimize.py.
+%   Peer of python/src/qrobustness/optimize.py:fidelity_and_gradient.
 
     opts = qrobustness.parse_dU_options(varargin{:});
     use_exact = strcmp(opts.method, 'exact');
@@ -42,11 +42,12 @@ function [F, g1, g2] = fidelity_and_gradient(H0, H1, H2, u1, u2, Uf, dt, varargi
         Pref{k} = Useg{k - 1} * Pref{k - 1};
     end
     Utot = Pref{tau + 1};
-    F = qrobustness.gate_fidelity(Utot, Uf);
+    Ufd = Uf';
+    z = trace(Ufd * Utot);
+    F = abs(z) / N;
     if F <= 0
         error('qrobustness:grad:ZeroFid', 'Fidelity must be positive for phase.');
     end
-    z = trace(Uf' * Utot);
     e_minus_i_phi = conj(z / abs(z));
 
     Suff = cell(1, tau + 1);
@@ -71,8 +72,8 @@ function [F, g1, g2] = fidelity_and_gradient(H0, H1, H2, u1, u2, Uf, dt, varargi
         end
         D1 = Suff{k + 1} * dUk1 * Pref{k};
         D2 = Suff{k + 1} * dUk2 * Pref{k};
-        g1(k) = real(trace(Uf' * D1 * e_minus_i_phi)) / N;
-        g2(k) = real(trace(Uf' * D2 * e_minus_i_phi)) / N;
+        g1(k) = real(trace(Ufd * D1 * e_minus_i_phi)) / N;
+        g2(k) = real(trace(Ufd * D2 * e_minus_i_phi)) / N;
     end
 end
 

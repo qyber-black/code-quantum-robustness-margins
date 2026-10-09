@@ -1,8 +1,9 @@
 function test_traceless_and_status()
-%TEST_TRACELESS_AND_STATUS Centred structure constant and Alg. 1 stop status. Counterpart of the Python tests in
-% python/tests/test_core.py.
+%TEST_TRACELESS_AND_STATUS Traceless structure constant, iterative_margin stopping status and Kendall tau_b.
+%   Peer of tests in python/tests/test_core.py.
 
-    % % Traceless centring of the perturbation structure An identity structure only rephases U, so it cannot move the fidelity.
+    %% Traceless centring of the perturbation structure
+    % An identity structure only rephases U, so it cannot move the fidelity.
     assert(qrobustness.structure_constant('drift', eye(4), 0.5, 32) == 0);
     assert(qrobustness.structure_constant('control', 2.5 * eye(4), 0.5, 32, ones(1, 32)) == 0);
 
@@ -32,7 +33,7 @@ function test_traceless_and_status()
     assert_error(@() qrobustness.structure_constant('drift', [0 1; 0 0], 0.5, 4), ...
                  'qrobustness:traceless:Hermitian', 'a non-Hermitian structure');
 
-    %% Algorithm 1 stopping status
+    %% iterative_margin stopping status
     FT = 0.999;
     f = @(mu) FT + 0.01 - abs(mu);   % tent, crossing at |mu| = 0.01
 
@@ -69,7 +70,7 @@ function test_traceless_and_status()
     assert(any(strcmp(r.status_minus, {'eta_band', 'domain_truncated', 'iteration_limit'})));
     assert(strcmp(r.reason_minus, 'unknown'));
 
-    % % Kendall tau_b matches the SciPy reference to machine precision
+    %% Kendall tau_b matches SciPy to machine precision
     % Perfect monotone association, no ties.
     x = (1:20)';
     assert(abs(qrobustness.compat.kendall_tau_b(x, exp(-x)) + 1) < 1e-14);

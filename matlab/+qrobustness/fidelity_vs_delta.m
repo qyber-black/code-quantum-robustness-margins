@@ -1,7 +1,10 @@
 function [delta_grid, F] = fidelity_vs_delta(fidelity_fn, delta_grid)
-%FIDELITY_VS_DELTA Dense sweep F(delta) intended for plotting (not a certificate).
+%FIDELITY_VS_DELTA Evaluate F(delta) on a grid, for plotting.
+%   fidelity_fn - handle delta -> F
+%   delta_grid  - perturbation values (returned unchanged)
+%   F           - fidelities, same size as delta_grid
 %
-%   Peer of python/src/qrobustness/core.py.
+%   Peer of python/src/qrobustness/core.py:fidelity_vs_delta.
     F = zeros(size(delta_grid));
     for k = 1:numel(delta_grid)
         F(k) = fidelity_fn(delta_grid(k));

@@ -1,5 +1,7 @@
 function write_kosut_csv(path, T)
-%WRITE_KOSUT_CSV Emit a Kosut-comparison table struct to CSV with fixed headers.
+%WRITE_KOSUT_CSV Write a Kosut-comparison table to CSV with fixed headers.
+%   path - output file
+%   T    - struct with the columns of qrobustness.compat.kosut_csv_headers
     headers = qrobustness.compat.kosut_csv_headers();
     n = numel(T.controller);
     fid = fopen(path, 'w');

@@ -1,14 +1,11 @@
 function y = time_bandwidth(rates, delta, uncertainty)
-%TIME_BANDWIDTH T*Omega_bnd of their Eq. 29 evaluated at perturbation delta.
-%   Uses linearity of their Eq. 28 in delta:
-%     T*Omega_bnd(delta) = sqrt(a*delta^2 + b*|delta|),
-%     a = T^2*w_unc*w_dev,  b = 4*T*w_avg.
+%TIME_BANDWIDTH T*Omega_bnd(delta) = sqrt(a delta^2 + b |delta|).
+%   rates       - from qrobustness.kosut.uncertainty_rates
+%   delta       - perturbation
+%   uncertainty - 'constant' (default) or 'trajectory'; see select_rates
+%   With a = T^2 w_unc w_dev and b = 4 T w_avg.
 %
-% uncertainty : 'constant' (default) or 'trajectory'; consult SELECT_RATES.
-%
-% Related: QROBUSTNESS.KOSUT.UNCERTAINTY_RATES, QROBUSTNESS.KOSUT.SELECT_RATES.
-%
-%   Peer of python/src/qrobustness/kosut.py.
+%   Peer of python/src/qrobustness/kosut.py:time_bandwidth.
 
     if nargin < 3; uncertainty = 'constant'; end
     [w_avg, w_dev] = qrobustness.kosut.select_rates(rates, uncertainty);

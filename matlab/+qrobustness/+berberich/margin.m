@@ -6,19 +6,21 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function r = margin(H_list, dH_list, dt, FT, varargin)
-%MARGIN Implied margin of arXiv:2509.08481 Theorem 2.1 (their Eq. 14). Largest budget that theorem certifies for this controller.
+%MARGIN Margin implied by the Berberich et al. bound for one controller.
+%   H_list  - cell array of interval Hamiltonians H^(k)
+%   dH_list - cell array of perturbation structures dH^(k)/dmu
+%   dt      - interval length
+%   FT      - fidelity threshold F_T
+%   r       - struct with fields m, uncertainty, s_T, a, b, w_max, w_mean,
+%             gamma, magnus_ok, vacuous
 %
 %   Name-value options:
-%     'nominal_error' (default 0)             absorbed as an angle
-% 'uncertainty' (default 'independent') 'independent' case (trajectory
-%                     class) or 'systematic' (constant class)
-%     'rates'         (default [])            precomputed Kosut
-% measures in the interaction picture, systematic only
+%     'nominal_error' - nominal error 1 - F(mu0), absorbed as theta_0 (default 0)
+%     'uncertainty'   - 'independent' (default) or 'systematic'
+%     'rates'         - precomputed qrobustness.kosut.uncertainty_rates
+%                       (systematic only; default [])
 %
-% Returns a structure with fields m, uncertainty, s_T, a, b, w_max,
-%   w_mean, gamma, magnus_ok and vacuous.
-%
-% MATLAB counterpart of python/src/qrobustness/berberich.py:margin.
+%   Peer of python/src/qrobustness/berberich.py:margin.
 
     p = inputParser;
     addParameter(p, 'nominal_error', 0);
@@ -35,6 +37,10 @@ function r = margin(H_list, dH_list, dt, FT, varargin)
     end
     if ~(FT > 0 && FT < 1)
         error('qrobustness:berberich:FT', 'FT must satisfy 0 < FT < 1');
+    end
+    if ~(eps0 >= 0 && eps0 <= 1)
+        error('qrobustness:berberich:nominal_error', ...
+            'nominal_error must satisfy 0 <= nominal_error <= 1');
     end
 
     tau = numel(H_list);
@@ -76,7 +82,12 @@ function r = margin(H_list, dH_list, dt, FT, varargin)
         gamma = NaN;
     end
 
+    magnus_ok = delta < pi;
+    if strcmp(unc, 'systematic') && ~magnus_ok
+        error('qrobustness:berberich:Magnus', ...
+            'Magnus condition failed for systematic uncertainty');
+    end
     r = struct('m', m, 'uncertainty', unc, 's_T', s_T, 'a', a, 'b', b, ...
                'w_max', w_max, 'w_mean', w_mean, 'gamma', gamma, ...
-               'magnus_ok', delta < pi, 'vacuous', false);
+               'magnus_ok', magnus_ok, 'vacuous', false);
 end

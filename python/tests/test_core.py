@@ -107,7 +107,7 @@ def test_threshold_error():
 
 
 def test_load_case_study_smoke():
-    """We load the shipped ensemble with the dimensions and count the paper quotes, and its recorded fidelities match a fresh propagation."""
+    """Load the shipped ensemble with the dimensions and count the paper quotes, and check that its recorded fidelities match a fresh propagation."""
     CTRL = ROOT / "data/controllers/problem9_tf15_K32_quasi-newton"
     problem = load_problem(CTRL / "problem9.mat")
     assert problem["dim"] == 8
@@ -151,8 +151,8 @@ def test_iterative_margin_case_study_certificate():
         dt,
         "H0",
     )
-    # margin_tol matches the production driver: the published table we compared
-    # against below is produced with bracket refinement, so without it the
+    # margin_tol matches the production driver: the published table compared
+    # below is produced with bracket refinement, so without it the
     # two differ by ~5e-4 and the 1e-10 assertions fail.
     res = iterative_margin(fid_fn, L, FT, mu0=0.0, eta=eta, margin_tol=1e-8)
     assert res.M == min(res.M_minus, res.M_plus)
@@ -166,7 +166,7 @@ def test_iterative_margin_case_study_certificate():
     table_csv = ROOT / "results/lipschitz-margin-matlab/margins_table_0.999.csv"
     assert table_csv.is_file(), (
         f"{table_csv} is missing from the repository; regenerate it with "
-        "make paper-QRM-margins ENGINE=matlab"
+        "make run-QRM-margins ENGINE=matlab"
     )
     with table_csv.open(newline="") as f:
         row = next(csv.DictReader(f))
@@ -236,7 +236,7 @@ def test_certified_bracket_partial_when_island_masks_first_crossing():
 
 
 # --------------------------------------------------------------------------
-# We apply traceless centring to the perturbation structure (paper Sec. IV)
+# Apply traceless centring to the perturbation structure (paper Sec. IV)
 # --------------------------------------------------------------------------
 
 

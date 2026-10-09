@@ -137,7 +137,7 @@ def test_thm_polytope(chain3):
 
 
 def test_lem_tv_lipschitz(chain3):
-    """Lemma (trajectory Lipschitz): the fidelity gap between two trajectories is bounded by the constants times their separation, and we check this on sampled pairs and homotopies."""
+    """Lemma (trajectory Lipschitz): the fidelity gap between two trajectories is bounded by the constants times their separation. The check uses sampled pairs and homotopies."""
     m = 0.5 * float((chain3["fid"] - FT) / chain3["L"].sum())
     rep = verify.check_lipschitz_pairs(
         chain3["H_list"],
@@ -219,7 +219,7 @@ def test_fidelity_cross_check_tightness(chain3):
 
 
 def test_thm_fs_choi_speed_is_exact(chain3):
-    """The Choi-state FS speed equals ||Gbar||_F/sqrt(N) exactly: we compare the angle accrued over a short evolution against the formula."""
+    """The Choi-state FS speed equals ||Gbar||_F/sqrt(N) exactly. The angle accrued over a short evolution is compared with the formula."""
     from scipy.linalg import expm
 
     dH = chain3["dHs"][1]

@@ -1,7 +1,10 @@
 function [tau, pval] = kendall_tau_b(x, y)
-%KENDALL_TAU_B Kendall's tau_b together with its two-sided asymptotic p-value. Hand-rolled rather than delegating to
-% corr(...,'Type','Kendall') or the Octave statistics package, so MATLAB, Octave and the Python reference (scipy.stats.kendalltau,
-% variant='b', method='asymptotic') agree bit for bit. Ties are handled by the standard tau_b corrections.
+%KENDALL_TAU_B Kendall's tau_b and its two-sided asymptotic p-value.
+%   x, y - vectors of equal length
+%   tau  - tau_b, with tie corrections
+%   pval - two-sided asymptotic p-value
+%
+%   Matches scipy.stats.kendalltau(variant='b', method='asymptotic').
 
     x = x(:);
     y = y(:);
@@ -31,10 +34,7 @@ function [tau, pval] = kendall_tau_b(x, y)
 
     % Asymptotic variance of S with tie corrections.
     v0 = n * (n - 1) * (2 * n + 5);
-    % Tie cross-term: SciPy uses 2*xtie*ytie/(n*(n-1)). This read
-    % xtie*ytie/(2*n*(n-1)), a quarter of that term, so any tie in either input made v too small, |z| too large and the p-value too
-    % small -- against a docstring promising agreement with scipy.stats.kendalltau. Checked
-    % on tied data: 6.05340e-4 before, 6.13591e-4 now, SciPy 6.13591e-4.
+    % Tie cross-term 2*xtie*ytie/(n*(n-1)), as in SciPy.
     v = (v0 - t1c - t2c) / 18 ...
         + t1b * t2b / (9 * n * (n - 1) * (n - 2)) ...
         + 2 * t1 * t2 / (n * (n - 1));

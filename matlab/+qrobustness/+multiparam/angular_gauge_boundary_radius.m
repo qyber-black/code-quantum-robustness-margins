@@ -6,9 +6,13 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function r = angular_gauge_boundary_radius(g, d, F_nu, FT)
-%ANGULAR_GAUGE_BOUNDARY_RADIUS Certified radius along d given the angle budget.
+%ANGULAR_GAUGE_BOUNDARY_RADIUS Certified radius along d, (arccos F_T - arccos F_nu)/C^stat_FS(d).
+%   g    - from qrobustness.multiparam.angular_gauge
+%   d    - direction
+%   F_nu - fidelity F_nu at the centre
+%   FT   - fidelity threshold F_T
 %
-%   Peer of AngularGauge.boundary_radius.
+%   Peer of python/src/qrobustness/multiparam.py:AngularGauge.boundary_radius.
 
     r = qrobustness.lengthspace.path_gauge_radius(g, d, ...
         qrobustness.multiparam.angular_gauge_budget(F_nu, FT));

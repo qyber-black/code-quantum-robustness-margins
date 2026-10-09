@@ -6,9 +6,13 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function r = joint_gauge_inradius_certified(g, surplus, FT, N)
-%JOINT_GAUGE_INRADIUS_CERTIFIED Certified Euclidean inradius of that region.
+%JOINT_GAUGE_INRADIUS_CERTIFIED Certified Euclidean inradius of the joint-gauge region.
+%   g       - from qrobustness.multiparam.joint_gauge
+%   surplus - F_nu - F_T
+%   FT      - fidelity threshold F_T
+%   N       - Hilbert-space dimension
 %
-%   Peer of JointGauge.inradius_certified.
+%   Peer of python/src/qrobustness/multiparam.py:JointGauge.inradius_certified.
 
     L = qrobustness.lipschitz_constant(FT, N, ...
         qrobustness.lengthspace.path_gauge_alpha_cs(g));

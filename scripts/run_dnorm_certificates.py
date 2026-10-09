@@ -6,23 +6,23 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Diagnostics for every diamond norm the certificates rest on.
+"""Diagnostics for every diamond norm used by the certificates.
 
-A certified diamond norm is the solver optimum repaired to exact
-feasibility and re-evaluated upward, so three quantities describe it: the
-solver optimum, the verified positive-semidefinite shift applied to the
-primal iterate, and the inflation the upward evaluation adds. The paper
-quotes bounds on the last of these and on the deviation of the certified
-value from the closed forms of Lemma 2n, and neither was recorded
-anywhere -- the appendix said they were.
+Computes the certified diamond norm, with its solver optimum, verified
+feasibility shift and upward-evaluation inflation, for the local dephasing
+and amplitude-damping dissipators on 1, 2 and 3 qubits (closed form 2n) and
+the coherent superoperators of H0, H1, H2 of the main ensemble (the xQRM
+paper, Verified diamond-norm upper bounds). The norm depends only on the
+generator, so there is no --FT. Options: --out.
 
-The norm depends only on the generator, not on the controller or the
-threshold, so the distinct generators are few and this driver is cheap.
-It covers the two dissipative families the paper certifies at the sizes
-it proves them for, and the coherent superoperators of the three-qubit
-case study.
-
-Writes results/lindblad-margin-python/dnorm_certificates.csv."""
+Writes results/lindblad-margin-python/dnorm_certificates.csv:
+    generator, n_qubits, dim: the generator and its size.
+    raw, certified, gap, rel_inflation: solver optimum, certified upper bound,
+        their difference, and gap/raw.
+    feas_shift, status, solver: PSD shift applied to the primal iterate,
+        solver status and solver name.
+    closed_form, dev_closed_form: 2n and |certified - 2n| (dissipators only).
+"""
 
 from __future__ import annotations
 
@@ -39,8 +39,7 @@ OUT_DIR = ROOT / "results/lindblad-margin-python"
 
 SM = np.array([[0.0, 0.0], [1.0, 0.0]], dtype=complex)  # sigma_-
 
-#: Qubit counts for the exact families. The closed form 2n is established for
-#: all n; these are the sizes at which the appendix reports a check.
+#: Qubit counts at which the dissipative families are checked against 2n.
 FAMILY_SIZES = (1, 2, 3)
 
 
@@ -54,14 +53,11 @@ def _row(name, n_qubits, S, closed_form=None):
         "raw": d.raw,
         "certified": d.value_certified,
         "gap": d.gap,
-        # The inflation the paper bounds: what the upward evaluation adds onto,
-        # relative to the optimum it is inflating.
+        # Upward-evaluation inflation relative to the solver optimum.
         "rel_inflation": d.gap / d.raw,
         "feas_shift": d.feas_shift,
         "status": d.status,
-        # Which solver produced it. The value depends on that choice, and
-        # leaving it to cvxpy is how those published numbers came to differ
-        # across a virtualenv rebuild that used identical package versions.
+        # The value depends on the solver, so it is recorded.
         "solver": d.solver,
         "closed_form": "" if closed_form is None else closed_form,
         "dev_closed_form": (
@@ -72,8 +68,8 @@ def _row(name, n_qubits, S, closed_form=None):
 
 def main() -> None:
     """Certify each generator and record what that certification cost."""
-    # No --FT and no --controllers: a diamond norm is a property of that
-    # generator alone, so neither would change any single number here.
+    # No --FT: a diamond norm depends on the generator alone.
+
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out", type=Path, default=OUT_DIR)
     args = ap.parse_args()

@@ -1,25 +1,14 @@
 function dU = dU_dmu_exact(V, lam, dH, dt)
-%DU_DMU_EXACT Exact derivative of expm(-1i*dt*H) when H is constant and Hermitian. dU = DU_DMU_EXACT(V, lam, dH, dt) with [V, lam] =
-% qrobustness.segment_eig(H)
-%   returns
+%DU_DMU_EXACT Closed-form derivative of expm(-1i*dt*H) along dH.
+%   dU = qrobustness.dU_dmu_exact(V, lam, dH, dt)
 %
-%     dU/dmu = -1i*dt * int_0^1 expm(-1i*dt*H*(1-s)) dH expm(-1i*dt*H*s) ds
+%   V, lam - eigendecomposition of H from qrobustness.segment_eig
+%   dH     - derivative dH/dmu on the interval
+%   dt     - interval length
+%   dU     - -1i*dt * int_0^1 expm(-1i*dt*H*(1-s)) dH expm(-1i*dt*H*s) ds,
+%            evaluated as a divided difference in the eigenbasis of H
 %
-% in closed form. H is constant on the interval (piecewise-constant controls), so the integral becomes a divided difference in the
-% eigenbasis of H.
-%   With a = -1i*dt*(lam_n - lam_m) and X = 0.5*dt*(lam_n - lam_m),
-%
-%     (exp(a) - 1)/a = exp(a/2) * sin(X)/X.
-%
-% a is purely imaginary, so this form has no cancellation and requires no magnitude threshold: only the literal X == 0 entries (the
-% diagonal and
-%   any exact degeneracies) require masking.
-%
-% (V, lam) can be reused across several dH for the same interval.
-%
-% Related functions: QROBUSTNESS.SEGMENT_EIG, QROBUSTNESS.DU_DMU_INTEGRAL.
-%
-% MATLAB counterpart of python/src/qrobustness/core.py (dU_dmu_exact).
+%   Peer of python/src/qrobustness/core.py:dU_dmu_exact.
 
     lam = lam(:);
     X = 0.5 * dt * (lam.' - lam);            % X(m,n), real, antisymmetric
@@ -31,7 +20,8 @@ function dU = dU_dmu_exact(V, lam, dH, dt)
     S(nz) = sin(X(nz)) ./ X(nz);
 
     Phi = P .* S;
-    dU = -1i * dt * (V * ((V' * dH * V) .* Phi) * V');
+    Vh = V';
+    dU = -1i * dt * (V * ((Vh * dH * V) .* Phi) * Vh);
 end
 
 % SPDX-FileCopyrightText: (C) 2026 F. C. Langbein <frank@langbein.org>

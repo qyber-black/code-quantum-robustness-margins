@@ -6,26 +6,27 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Two-qubit CNOT case study: synthesis together with the full margin suite.
+"""Two-qubit CNOT case study: synthesis, then the full margin suite.
 
-System: always-on Ising coupling with fixed opposite detunings,
+Synthesises the CNOT ensemble with qrobustness.synthesis.grape_ensemble
+(deterministic seeds) on the always-on Ising model of _drivers.cnot_model,
+controls X1, X2, t_f = 4, tau = 20, and computes per controller, for the
+multiplicative structures H0, X1, X2, the iterated margin M, the uniform
+time-varying radii r_0 and r_FS, the Kosut margins M^K and M^{K,tri}_tv, the
+joint polytope inradii, and the common-rate local-dephasing margin with its
+true crossing (the xQRM paper, Numerical evaluation, transfer and scaling).
+Options: --FT, --out.
 
-    H0 = 2 pi J ZZ + pi D (Z1 - Z2),   J = 0.5, D = 0.1,
-
-controls X1, X2 (individually addressable x drives), target CNOT,
-t_f = 4, tau = 20.  Controllers are synthesised in-repository by
-qrobustness.synthesis.grape_ensemble with deterministic seeds, so the
-whole study reproduces from this script on its own.
-
-Per controller and structure (drift H0, controls X1, X2,
-multiplicative as in the main study) the script computes the iterated
-margin M with bracket, the uniform time-varying radii r_0 and r_FS,
-the universal-bound margins M^K / M^K_tv (angular absorption), the
-joint polytope inradii, and the common-rate local-dephasing margin
-(certified M_gamma vs the bisected true crossing gamma*).
-
-Writes results/cnot-python/cnot_margins_<FT>.csv and
-data/controllers/cnot_tf4_K20_lbfgs/controllers.csv."""
+Writes results/cnot-python/cnot_margins_<FT>.csv:
+    controller, seed, fid, err: instance and nominal fidelity / error.
+    M_<s>, r0_<s>, rfs_<s>, KM_<s>, KMtv_<s>: M, r_0, r_FS, M^K, M^{K,tri}_tv
+        for each structure s in H0, X1, X2.
+    inradius_l2, inradius_linf: inradii of the joint safe polytope.
+    M_gamma, r0_gamma, gamma_star: dephasing-rate margin, one-step radius and
+        bisected true crossing (NaN if F^pro_0 <= FT^2).
+Writes the ensemble to data/controllers/cnot_tf4_K20_lbfgs/ (controllers.csv:
+seed, fid, err, u1_k, u2_k; problem.npz), or under --out when one is given.
+"""
 
 from __future__ import annotations
 
@@ -115,11 +116,9 @@ def main() -> None:
     )[:N_KEEP]
     print(f"kept {len(ens)} controllers", flush=True)
 
-    # The synthesised ensemble is an input artefact, not a result, hence it
-    # normally lands in data/. A scratch run (--out) must not touch the
-    # committed ensemble: check_reproducible rejects drivers that lack --out
-    # exactly to protect the reference tree, and writing outside --out
-    # defeated that guard. Tie it to --out whenever one is given.
+    # The ensemble is an input artefact and lands in data/, except under
+    # --out, so a scratch run never overwrites the committed ensemble.
+
     data_dir = DATA_DIR if args.out == OUT_DIR else args.out / DATA_DIR.name
     data_dir.mkdir(parents=True, exist_ok=True)
     with (data_dir / "controllers.csv").open("w", newline="") as f:

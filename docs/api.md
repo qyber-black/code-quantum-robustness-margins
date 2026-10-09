@@ -1,235 +1,230 @@
-# Shared API contract (Python <-> MATLAB)
+# API reference
 
-The mathematics, paper cross-references, and accuracy of each quantity are in [theory.md](theory.md).
-Both languages expose the same conceptual API. Python is the reference implementation and uses the module `qrobustness`; MATLAB uses the package `qrobustness.*`.
+Python is the reference implementation (`import qrobustness`). MATLAB and
+Octave provide the peer package `+qrobustness` (`help qrobustness`) with the
+same names, inputs and outputs. Where Python returns a dataclass, the peer
+returns a struct. The mathematics, the experiments and the results are in
+the papers: QRM (scalar margin, Algorithm 1) and xQRM (joint, trajectory,
+open-system and state certificates, Algorithm 2). The symbols below are the
+papers'.
 
 ## Conventions
 
-- Units with \(\hbar = 1\).
-- Complex dense matrices; Hamiltonians are Hermitian.
-- Piecewise-constant controls on \(\tau\) intervals of length \(\Delta = t_f/\tau\).
-- Ordered product: \(U(t_f) = U^{(\tau)}\cdots U^{(1)}\) with \(U^{(k)}=\exp(-\mathrm{i} H^{(k)}\Delta)\).
-- Gate fidelity: \(\mathcal{F} = \frac{1}{N}\lvert\mathrm{Tr}(U_f^\dagger U)\rvert\).
-- Perturbation parameter \(\delta = \mu - \mu_0\) with \(\mu_0 = 0\) by default in the case study (multiplicative structure on \(H_j\)).
+- Units with hbar = 1; dense complex matrices; Hamiltonians Hermitian.
+- Piecewise-constant controls on tau intervals of length Delta = t_f/tau;
+  `H_list` is the list of interval Hamiltonians H^(k), `dt` is Delta.
+- Propagator U(t_f) = U^(tau) ... U^(1), U^(k) = exp(-i Delta H^(k)).
+- Gate fidelity F = |Tr(U_f^dagger U)|/N (trace amplitude); `FT` is the
+  threshold F_T. Process fidelity F^pro = F^2 for unitaries.
+- A structure is a list `Hhat_list` (or `dH_list`) of interval
+  perturbations \hat H^(k); the perturbed generator is H^(k) + mu \hat H^(k).
+- Open systems use column-stacked superoperators.
 
-## Numerical defaults
+## Defaults
 
-| Symbol | Name | Default |
-|--------|------|---------|
-| \(\mathcal{F}_T\) | `fidelity_threshold` | `0.999` (case study) |
-| \(\eta\) | `eta` | `1e-6` |
-| \(K_{\max}\) | `k_max` | `10000` (maximum evaluated steps per direction; `k` starts at 1 and the guard is `k >= k_max`, matching Algorithm 1) |
-| \(\Omega_\mu\) | `omega` | `[-Inf, Inf]` unless set |
-| Consistency tol | `rtol` / `atol` | `1e-8` / `1e-10` (tests) |
+| Symbol | Argument | Default |
+| :--- | :--- | :--- |
+| F_T | `FT` | none (drivers use 0.999) |
+| eta (continuation band) | `eta` | `1e-6` |
+| eps (relative bracket tolerance) | `margin_tol` | `None` (no bracket) |
+| eps_num (evaluation band) | `eval_tol` | `0` |
+| K_max (continuation steps per ray) | `k_max` | `10000` |
+| Omega (admissible ray interval) | `omega` | `(-inf, inf)` |
 
-## Functions
+## Margins: `iterative_margin`
 
-### `propagator(H_list, dt)`
+`iterative_margin(fidelity_fn, L, FT, mu0=0, eta=1e-6, omega=(-inf, inf),
+k_max=10000, method="algorithm1", root_solver="toms748", zeta_fn=None,
+return_diagnostics=False, margin_tol=None, safe_radius_fn=None,
+eval_tol=0)` returns a `MarginResult`.
 
-- **In:** cell/list of Hermitian matrices \(H^{(k)}\); step `dt`.
-- **Out:** unitary \(U(t_f)\).
+Along each ray from `mu0` the continuation steps by the safe radius.
+The default radius is (F - F_T)/L. `safe_radius_fn` supplies another, for
+example the angular radius. The walk stops when the fidelity surplus is
+below `eta`. With `margin_tol` it then searches outward for an unsafe point
+and refines the bracket [M, M_upper]. With `eval_tol = 0`, a point is safe when F >= F_T. With `eval_tol > 0`, a
+point is safe only when F > F_T + eval_tol. The continuation and the bracket
+use that same test. A point is unsafe only if F < F_T - eval_tol. A point
+between those bounds is unresolved. The safe radius uses the computed fidelity.
 
-### `gate_fidelity(U, Uf)`
+| `method` | step | overshoot polish | certificate |
+| :--- | :--- | :--- | :--- |
+| `algorithm1` (default) | safe radius | bisection | segment |
+| `lipschitz_brent`, `lipschitz_toms748` | safe radius | Brent / TOMS748 | segment |
+| `doubling` | geometric probe | `root_solver` | endpoint |
+| `newton_probe` | Newton probe via `zeta_fn` | `root_solver` | endpoint |
 
-- **Out:** scalar \(\mathcal{F}\in[0,1]\).
+`MarginResult` fields:
 
-### `lipschitz_constant(FT, N, C_H)`
+| field | meaning |
+| :--- | :--- |
+| `M_minus`, `M_plus`, `M` | certified margins per ray and their minimum (lower bounds) |
+| `mu_minus`, `mu_plus` | end points of the continuation |
+| `status_minus`, `status_plus` | continuation stop: `eta_band`, `domain_truncated` (margin is at least the distance to the edge of `omega`), `iteration_limit` |
+| `M_upper_minus`, `M_upper_plus`, `M_upper` | evaluated unsafe witnesses (`inf` if none) |
+| `margin_uncertainty` | `M_upper - M` |
+| `reason_minus`, `reason_plus` | bracket outcome: `bracketed` (width <= eps), `partial` (valid bracket, wider), `unresolved` (an in-band probe stopped refinement), `boundary` (edge of `omega` reached while safe), `exhausted` (no unsafe point found), `zero_gauge` (direction leaves the dynamics unchanged) |
+| `n_unresolved` | probes inside the evaluation band |
+| `certificate` | `segment` or `endpoint` |
+| `converged_*`, `safeguard_*` | continuation converged; overshoot polish was needed |
+| `n_evals`, `n_evals_minus`, `n_evals_plus`, `n_steps` | with `return_diagnostics`: evaluations in total (both rays plus `mu0`), per ray, and continuation steps |
 
-- \(B_T = \sqrt{(1-\mathcal{F}_T^2)/N}\), \(L = B_T\, C_{\hat{H}}\).
-- Helpers build \(C_{\hat{H}}\):
-  - drift: \(C = t_f \|H_0\|_F\)
-  - control \(m\): \(C = \Delta \|f_m\|_{\ell^1}\|H_m\|_F\)
+The paper's statuses correspond as follows: resolved = `bracketed`;
+lower certificate only = `boundary`, `exhausted`, `zero_gauge`;
+unresolved = `unresolved`; `partial` is a valid bracket wider than eps.
 
-### `structure_constant(kind, Hhat, dt, tau, controls=None)`
+## Modules
 
-- `kind`: `"drift"` or `"control"`.
-- Returns \(C_{\hat{H}}\).
-- The structure is centred to its traceless part \(\overline{\hat{H}}_\mu = \hat{H}_\mu - N^{-1}(\operatorname{Tr}\hat{H}_\mu) I\) first (`traceless(Hhat)`), as in the paper. The trace part only rephases the propagator, which the trace-amplitude fidelity ignores, so removing it leaves the certificate valid while shrinking \(\|\hat{H}_\mu\|_F\). For traceless structures -- including the case-study \(H_0, H_1, H_2\) -- nothing changes; for a non-traceless one (e.g. a single-level detuning) the resulting margin is strictly larger. `Hhat` must be square and Hermitian.
+Functions marked (s) are reached through their submodule
+(`qrobustness.states`, `qrobustness.openstates`, `qrobustness.kosut`,
+`qrobustness.berberich`); all others are also exported at package level.
 
-### `differential_sensitivity(H_list, dH_list, dt, Uf, n_quad=32, method="exact")`
+### `core`
 
-- Implements the paper's \(\zeta\) via the product-derivative form, inserting \(\partial U^{(k)}/\partial\mu\) into the ordered product.
-- `dH_list[k] = \partial\tilde{H}^{(k)}/\partial\mu` at the evaluation point.
-- `method="exact"` (default) evaluates \(\partial U^{(k)}/\partial\mu\) in closed form in the eigenbasis of \(H^{(k)}\). Since the controls are piecewise constant, \(H^{(k)}\) is constant on the interval and the defining integral is a divided difference -- so this is exact to roundoff, not an approximation.
-- `method="quadrature"` uses Gauss-Legendre with `n_quad` nodes. Retained as an alternative and as a cross-check on the closed form; it is not needed for accuracy.
-- `n_quad` applies only to `method="quadrature"`; under the default it is accepted and unused. A positional form, `differential_sensitivity(..., Uf, 32)`, is accepted.
-- The same `method` / `n_quad` options are accepted by `fidelity_and_gradient` and threaded through `optimize_controller`. MATLAB takes them as name-value pairs; `qrobustness.DU_METHODS` lists the valid values.
-- On the exact path one eigendecomposition per interval serves both the propagator and the derivatives, so \(U^{(k)}\) and \(\partial U^{(k)}/\partial\mu\) are exactly consistent. `propagator()` uses `expm`, so fidelities computed the two ways can differ at ~1e-15.
+| function | in | out |
+| :--- | :--- | :--- |
+| `propagator(H_list, dt)` | interval Hamiltonians | U(t_f) |
+| `gate_fidelity(U, Uf)` | unitaries | F |
+| `lipschitz_constant(FT, N, C_H)` | F_T, dimension N, C_{\hat H} | L = B_T C_{\hat H}, B_T = sqrt((1 - F_T^2)/N) |
+| `traceless(Hhat)` | matrix | traceless part |
+| `structure_constant(kind, Hhat, dt, tau, controls=None)` | `kind` "drift" or "control" | C_{\hat H} of the centred structure |
+| `perturbed_hamiltonians`, `dH_structure`, `make_fidelity_fn` | QRM case-study model (H0, H1, H2, u1, u2) | perturbed H_list, structure list, F(mu) |
+| `differential_sensitivity(H_list, dH_list, dt, Uf, n_quad=32, method="exact")` | structure at the evaluation point | zeta = dF/dmu; `method="quadrature"` uses `n_quad` Gauss-Legendre nodes |
+| `segment_eig`, `segment_propagator`, `dU_dmu_exact`, `dU_dmu_integral`, `gauss_legendre_01` | interval data | per-interval propagator and derivative |
+| `iterative_margin(...)` | see above | `MarginResult` |
+| `fidelity_vs_delta(fidelity_fn, delta_grid)` | grid | (grid, F) for plots |
+| `load_problem(path)`, `load_controllers(path, max_error=1e-4)` | MAT file, controller CSV | dict `H0, H1, H2, Uf, n_qubits, dim`; list of controllers with eps_0 <= `max_error` |
 
-### `iterative_margin(fidelity_fn, L, FT, mu0=0, eta=1e-6, omega=(-inf,inf), k_max=10000, method="algorithm1", root_solver="toms748", zeta_fn=None, return_diagnostics=False, margin_tol=None)`
+### `multiparam`
 
-The default `method="algorithm1"` is Algorithm 1 of the paper, used by every paper driver and by the consistency tests:
+| function | out |
+| :--- | :--- |
+| `structure_constants(specs, dt, tau, FT, N)` | (C_j, L_j) for specs `("drift", H)` / `("control", H, u)` |
+| `safe_polytope(centre, L, F, FT)` | `SafePolytope` sum_j L_j \|x_j\| <= F - F_T (`axis_radii`, `inradius_l2`, `inradius_linf`, `contains`, `boundary_point`) |
+| `joint_gauge(Hhat_lists, dt)` | `JointGauge`: C_joint(x) = Delta sum_k sqrt(x^T P^(k) x) (`C`, `L_dir`, `contains`, `boundary_radius`, `inradius_certified`) |
+| `angular_gauge(Hhat_lists, dt)` | `AngularGauge`: C^stat_FS(x) = Delta sum_k sqrt(x^T Q^(k) x), budget arccos F_T - arccos F (`C`, `budget`, `contains`, `boundary_radius`, `inradius_certified`) |
+| `directional_margin(fidelity_fn, L, FT, d, mu0=None, L_dir=None, angular_gauge=None, **kw)` | `MarginResult` along mu0 + s d; with `angular_gauge` it steps by the angular radius |
+| `make_multiparam_fidelity_fn`, `make_ray_fn` | F(mu) on the joint model, F(s) on a ray |
+| `axis_directions(p)`, `diagonal_directions(p)`, `sphere_directions(p, n, seed)` | direction designs |
+| `SafeUnion` | union of certified polytopes |
 
-- For each direction \(\ell\in\{1,2\}\) (decrease / increase):
-  - step \(\mu \leftarrow \mu + (-1)^\ell (\mathcal{F}_\mu-\mathcal{F}_T)/L\)
-  - clamp to \(\Omega_\mu\)
-  - if overshoot \(\mathcal{F}<\mathcal{F}_T\), bisect back to a safe point
-  - stop on tolerance, domain boundary, or \(K_{\max}\)
+### `lengthspace`
 
-Selectable `method` (default stays Algorithm 1 for paper reproduction):
+`interval_grams(Hhat_lists, make_traceless=False, normalise=False)` (P^(k);
+Q^(k) with both flags), `angle_budget(F0, FT)` (arccos F_T - arccos F_0),
+`margin_from(budget, speed)` (budget/speed, `inf` at zero speed),
+`refine(H_list, Hhat_list, q)` (q-fold interval refinement), `PathGauge`,
+`traceless`.
 
-| `method` | Advance | Overshoot polish | Certificate |
-|----------|---------|------------------|-------------|
-| `algorithm1` | Lipschitz \((F-F_T)/L\) | in-place bisection | Full (paper; preferred certified default) |
-| `lipschitz_brent` | same Lipschitz | Brent (`scipy.optimize.brentq` / MATLAB `fzero`) | Full (optional polish; little speed gain vs bisection) |
-| `lipschitz_toms748` | same Lipschitz | TOMS748 (Python); MATLAB maps to `fzero` | Full (same as Brent polish) |
-| `doubling` | geometric probe beyond Lip radius | Brent/TOMS748 | Endpoint-only unless monotone |
-| `newton_probe` | Newton-sized probe via `zeta_fn` | Brent/TOMS748 | Same as `doubling` when probing |
+### `timevarying`
 
-Lipschitz + bisection is the recommended certified path; Brent/TOMS748 are optional polish only. See [margin-solvers-notes.md](margin-solvers-notes.md).
+| function | out |
+| :--- | :--- |
+| `uniform_margin(L, F, FT)` | r_0 = (F - F_T)/sum L_j |
+| `fs_margin(Hhat_list, dt, F0, FT, r0=0)` | `FSMargin`: speed s, theta_0, r_FS |
+| `fs_margin_joint(Hhat_lists, dt, F0, FT)` | trajectory box gauge (vertex and separable) |
+| `tv_fidelity_and_gradient(H_list, Hhat_list, delta, dt, Uf)` | F[delta] and its gradient for a piecewise-constant trajectory |
+| `adversarial_fidelity(H_list, Hhat_list, dt, Uf, m, ...)` | smallest fidelity found, the trajectory, and the number of fidelity evaluations |
+| `toggling_frame_integral(H_list, dHhat_list, dt)` | toggling-frame integral of a structure |
+| `adversarial_upper_bound(H_list, Hhat_list, dt, Uf, FT, r0, m_hi, rel_tol=0.01, seed=None, n_starts=4, starts="legacy", maxiter=200)` | `TVBracket` [r_0, m_adv]; `n_evals` counts fidelity evaluations; m_adv is a found violating budget (heuristic search), not a certificate |
 
-- `root_solver`: `toms748` (default), `brent`, or `bisection` -- used by non-`algorithm1` bracket polish; ignored for `algorithm1`.
-- `zeta_fn(mu)`: required for `newton_probe`.
-- `return_diagnostics=True`: also sets `n_evals`, `n_steps`, `method` on the result.
-- `margin_tol`: if set, certify the margin to this relative precision. The safe/unsafe bracket is refined until `(M_upper - M)/M <= margin_tol`, and `M` itself is tightened. See below.
-- **Returns:** `M_minus`, `M_plus`, `M = min(M_minus, M_plus)`, `converged_minus`, `converged_plus`, `mu_minus`, `mu_plus`, `status_minus`, `status_plus`, `safeguard_minus`, `safeguard_plus`, `certificate`; and with `margin_tol`: `M_upper_minus`, `M_upper_plus`, `M_upper`, `margin_uncertainty`, `reason_minus`, `reason_plus`.
+### `lindblad`
 
-#### Accuracy of the margin
+Builders `hamiltonian_superop`, `dissipator`, `generator(H, Vs, gammas)`,
+`channel(G_list, dt)`, `unitary_superop`; `process_fidelity`,
+`average_gate_fidelity`; `frechet_derivative(G, E, dt)`; Choi
+`choi_matrix`, `superop_from_choi`, `choi_roundtrip_exact`; diamond norms
+`diamond_norm(S, solver)` (SDP, needs `qrobustness[open]`),
+`diamond_norm_free(S)` (no solver), `common_rate_local_dnorm(n)` (2n for
+common-rate local dephasing and amplitude damping),
+`hamiltonian_part(S)` / `hamiltonian_dnorm(S)` (Rump-verified
+lambda_max - lambda_min for -i[B, .]), `local_ops`, `local_dephasing_ops`.
+Each diamond-norm function returns a `DiamondNorm` whose
+`value_certified` is a verified upper bound; a failed verification raises
+`VerificationFailure`. Margins: `open_structure_constants(G_structs, dt)`
+(C^op_j, L^op_j; `dt` is a scalar or one length per interval), `make_open_fidelity_fn`, `open_margin(fidelity_fn, L,
+FT_pro, omega=(0, inf))` (F_T^pro = F_T^2). Coherence times
+`dephasing_time`, `relaxation_time`, `coherence_time`, `rates_from_times`.
 
-`M` is always the distance to a point at which `F >= FT` was evaluated, so it is a lower bound: conservative, never optimistic.
+### `states` (s) and `openstates` (s)
 
-`eta` is a fidelity band, not a margin band. The induced uncertainty in `mu` is `~eta/|zeta|`, unbounded as `zeta -> 0` (i.e. for the flattest, most robust controllers). On the case study the default `eta=1e-6` leaves about 5e-4 relative error in `M`, so `margins_table_0.999.csv` carries ~3-4 significant figures of margin despite printing 6. Pass `margin_tol` to fix this: `margin_tol=1e-10` reaches 1e-10 in about 90 extra fidelity evaluations. Paper drivers do not pass it, so published tables reproduce exactly.
+`half_spread(H)` (||X||_c), `state_speed(Hhat_list, dt)` (C^st),
+`state_speed_joint(Hhat_lists, dt, x)`, `propagate_state`, `state_fidelity`
+(f = \|<chi\|psi>\|), `fs_angle`, `state_lipschitz_constant(FT, C)`,
+`state_angular_margin(fidelity_fn, C, FT, angular=True, **kw)`,
+`trajectory_radius(budget, speed)`; preparation:
+`nondegenerate_eigenvector(H, index=0)` (state, eigenvalue, gap gamma),
+`preparation_speed(dH, psi0, gap, bound="sigma")` (sigma/gamma or
+\|\|dH\|\|_c/gamma, a bound on C_prep), `gapped_preparation_radius(budget, gap,
+prep_spread, evolution_speed=0)`. Open: `open_speed(Ghat_list, dt, norm=None,
+exact_hamiltonian=False)` (D), `evolve_density`, `trace_distance`,
+`open_state_fidelity_margin(fidelity_fn, D, FT, omega)`.
 
-`certificate` is `'segment'` when every point between `mu0` and the endpoint is covered by a safe-radius certificate (`algorithm1`, `lipschitz_*`), and `'endpoint'` when only the endpoint is verified (`doubling`, `newton_probe` probe beyond the Lipschitz radius). `reason_*` is `'bracketed'` (width at tolerance), `'partial'` (rigorous bracket, width above tolerance -- safe-radius continuation stalled), `'boundary'` (domain edge reached while still safe -- the margin is a domain truncation, `M_upper = inf`), or `'exhausted'` (no unsafe point found, `M_upper = inf`). The bracket targets the *first* boundary of the nominal safe component: pointwise-safe samples are promoted to the certified end only when connected by their safe radius `(F - F_T)/L` or by safe-radius continuation, so safe islands beyond the first crossing cannot inflate `M`. The radius rule is pluggable via `safe_radius_fn` (default `(F - F_T)/L`); `multiparam.directional_margin(..., angular_gauge=...)` supplies the dominating Choi-angular radius.
+### Comparison bounds: `kosut` (s) and `berberich` (s)
 
-`status_*` reports which Algorithm 1 stopping rule fired in that direction -- `'eta_band'`, `'domain_truncated'` or `'iteration_limit'` -- and is always populated, independently of `margin_tol`. A `'domain_truncated'` result certifies only that the margin is at least the distance to the edge of `omega`, so it must not be read as a resolved margin; `converged_*` is `True` in both cases and is kept only for backward compatibility. `safeguard_*` is `True` if the bisection safeguard fired, i.e. a floating-point evaluation reported `F < FT` after a step that cannot overshoot in exact arithmetic. Note `reason_*` is a *different* quantity: the outcome of the optional `margin_tol` bracket refinement.
+`kosut.uncertainty_rates(H_list, dH_list, dt, ...)` (`UncertaintyRates`:
+w_unc, w_avg, w_dev per unit delta, with the w_dev error-control fields;
+`n_quad` is accepted and ignored), `time_bandwidth`, `fidelity_bound`,
+`fidelity_bound_at`, `effective_threshold(FT, nominal_error, absorption)`,
+`threshold_time_bandwidth`, `margin(rates, FT, nominal_error=0,
+absorption="angular", uncertainty="constant")` (M^K; `"trajectory"` gives
+M^{K,tri}_tv; package-level alias `kosut_margin`). `absorption="additive"`
+is kept for the QRM tables and is not a sufficient condition.
+`berberich.margin(H_list, dH_list, dt, FT, nominal_error=0,
+uncertainty="independent", rates=None)` (`BerberichMargin`: M^B_tv for
+`"independent"`, M^B for `"systematic"`; `"systematic"` raises when the
+Magnus condition fails).
 
-`fidelity_fn(mu)` must return \(\mathcal{F}_\mu\). See [margin-solvers-notes.md](margin-solvers-notes.md) for guarantees and the bench harness.
+### `synthesis`, `optimize`, `verify`, `plotting`
 
-### `fidelity_vs_delta(fidelity_fn, delta_grid)`
+`synthesis.grape`, `grape_ensemble`, `grape_robust` (L-BFGS-B GRAPE with
+seeded standard-normal initialisation; `GrapeResult`),
+`fidelity_and_control_gradient`. `optimize.optimize_controller`,
+`fidelity_and_gradient`, `pack_controls`, `unpack_controls` (QRM workflow;
+MATLAB uses `fminunc`). `verify.check_*` (numerical checks of each
+certified inequality; `CheckReport` with probes, minimum slack, tolerance,
+arg-min), `unitarity_defect`, `fidelity_cross_check`. `plotting`: the QRM
+figures (`plot_margins_vs_index`, `plot_margins_vs_sensitivity`,
+`plot_fidelity_error_sweeps`, `log10_axis`, `apply_plot_style`,
+`save_fig`; needs `qrobustness[plot]`). `ylim` is optional. Omitted, the
+historical limits stay when every positive point lies inside them, and
+widen when a point falls outside.
 
-- Dense sweep for plotting only (not the certificate).
+## Accuracy classes
 
-### Plotting (Python: `qrobustness.plotting`; optional `matplotlib`)
+| quantity | class |
+| :--- | :--- |
+| propagators, fidelities, structure constants, Grams, gauges, r_0, r_FS, w_unc, w_avg | exact to roundoff (closed form) |
+| zeta (`method="exact"`) | exact to roundoff (divided difference) |
+| M | certified lower bound; without `margin_tol` its relative error is of order eta/\|zeta\| |
+| [M, M_upper] | bracket refined to `margin_tol` when reason is `bracketed` |
+| w_dev | sampled supremum with two certificates; residual error optimistic |
+| diamond norms (`value_certified`) | verified upper bound of the represented superoperator |
+| m_adv, adversarial minima | numerically validated witnesses of a heuristic search |
 
-Mirrors MATLAB `+qrobustness` helpers. Decade axes use \(\log_{10}\) of values on linear axes, not log scales.
+## Paper symbols and code names
 
-| Function | Role |
-|----------|------|
-| `plot_margins_vs_index(err, M0, M1, M2)` | Controllers sorted by \(\varepsilon_0\); \(\log_{10}\) of error/margins on linear \(y\) |
-| `plot_margins_vs_sensitivity(\|z0\|,\|z1\|,\|z2\|,M0,M1,M2)` | Two-panel \(M\) vs \(\log_{10}\lvert\zeta\rvert\) |
-| `plot_fidelity_error_sweeps(X_list, Y_list, FT)` | Spaghetti fidelity-error vs \(\delta\); \(\log_{10}\) error on linear \(y\) |
-| `log10_axis(ax, which, raw_lim)` | Decade tick labels for pre-transformed data |
-| `apply_plot_style(fig)` | White background / black axes |
+| paper | code |
+| :--- | :--- |
+| F_T, F_T^pro | `FT`, `FT_pro` |
+| C_{\hat H}, B_T, L = B_T C | `structure_constant`, inside `lipschitz_constant`, `lipschitz_constant` |
+| C_j, L_j | `structure_constants` |
+| C_joint, L_dir, P^(k) | `JointGauge.C`, `JointGauge.L_dir`, `interval_grams(make_traceless=True)` |
+| C^stat_FS, Q^(k) | `AngularGauge.C`, `interval_grams(make_traceless=True, normalise=True)` |
+| s_j, theta_0, r_0, r_FS | `FSMargin.speed`, `theta_0`, `r0`, `r_fs` |
+| M, M_upper, M_const, m_adv | `MarginResult.M`, `M_upper`, CSV `M_const`, `TVBracket.m_adv` |
+| eps, eta, eps_num | `margin_tol`, `eta`, `eval_tol` |
+| C^op_j = L^op_j, D | `open_structure_constants`, `open_speed` |
+| \|\|X\|\|_c, C^st, C_prep bound, gamma (gap) | `half_spread`, `state_speed`, `preparation_speed`, `nondegenerate_eigenvector` |
+| w_unc, w_avg, w_dev, \bar w | `UncertaintyRates.w_unc`, `w_avg`, `w_dev`, `w_avg_traj` |
+| M^K, M^{K,tri}_tv | `kosut.margin(uncertainty="constant")`, `uncertainty="trajectory"` |
+| M^B, M^B_tv | `berberich.margin(uncertainty="systematic")`, `uncertainty="independent"` |
 
-Install: `pip install 'qrobustness[plot]'`. Full paper runs:
+## MATLAB and Octave
 
-`ENGINE` selects which engine runs every target (`python`, the
-reference implementation, by default; `matlab`; `octave`). `PAPER` is `QRM` or `xQRM`.
-
-- `make paper-PAPER` -> every experiment of one paper; `make paper-PAPER-EXPNAME` -> one experiment
-- `make reproduce-PAPER` -> recompute into a scratch tree and compare (does the tree come back the same?)
-- `make check-PAPER` -> falsifiable property checks (are the numbers right?); `check-xQRM-theorems`, `check-xQRM-synth`, `check-QRM-consistency`
-- `make sync-PAPER` -> copy generated artefacts into the sibling paper repository (see `docs/layout.md`)
-- `make test` -> tests for `ENGINE`, synthesis smoke, then parity against Python; `make test-parity-all` covers both peers
-- `make test-synth` -> synthesis on unseen controllers; never a paper input
-
-`make help` lists the full set. Driver flags are defined once in
-`scripts/_invocations.py` and shared by the Makefile and
-`scripts/check_reproducible.py`.
-
-### Case-study helpers
-
-- `load_problem(path_mat)` -> `H0, H1, H2, Uf, n_qubits, dim`. Note `problem.N` in the MAT file is the number of qubits; `dim = 2**n_qubits` is the Hilbert space dimension and is what `lipschitz_constant` expects. Both are returned under unambiguous names rather than a single overloaded `N`.
-- `load_controllers(path_csv, max_error=1e-4)` -> list of `{fid, error, u1, u2, tf, tau}`
-- `perturbed_hamiltonians(H0, H1, H2, u1, u2, structure, delta)` -> `H_list` for structure in `{H0,H1,H2}`
-
-### Synthesis (fidelity maximisation)
-
-Paper-aligned defaults: \(t_f=15\), \(\tau=32\), Gaussian init \(\mathcal{N}(0,1)\), GRAPE gradient of \(\mathcal{F}\).
-
-| Function | Role |
-|----------|------|
-| `fidelity_and_gradient(H0,H1,H2,u1,u2,Uf,dt)` | \(\mathcal{F}\) and \(\partial\mathcal{F}/\partial u_m\) |
-| `optimize_controller(...)` | Single-run quasi-Newton / L-BFGS-B maximisation of \(\mathcal{F}\) |
-
-MATLAB uses `fminunc` (quasi-Newton); Python uses `scipy.optimize.minimize(..., method="L-BFGS-B")`. Final errors need not match bit-for-bit across languages; hard consistency remains on the analysis API.
-
-Ensemble drivers write `results/synth-*/{controllers.csv,meta.json,problem9.mat}`. Analysis drivers accept an arbitrary controller directory (`controller_dir` / `--controller-dir`).
-
-### Kosut et al. time-bandwidth bound (`qrobustness.kosut`)
-
-Supplementary and experimental; outside the reproduction gate `make reproduce-QRM-margins`.
-See [time-bandwidth-bound.md](time-bandwidth-bound.md) for the specialisation,
-the caveats and the results.
-
-```
-uncertainty_rates(H_list, dH_list, dt, n_quad=None, n_dev=17, dev_tol=1e-9,
-                  n_dev_max=4097, adaptive_dev=True, dev_samples_per_cycle=16)
-```
-
-Returns `w_unc`, `w_avg`, `w_dev`, `T` and the error-control fields
-`w_dev_certified`, `w_dev_bracket_lo/hi`, `w_dev_refinement`, `n_dev_used`,
-`dev_converged`, `dev_cycles_max`, `dev_samples_per_cycle`, `dev_resolved` --
-fourteen fields, identical in both languages (Python returns the
-`UncertaintyRates` dataclass, MATLAB a struct).
-
-Accuracy: `w_unc` and `w_avg` are exact to roundoff, the latter because the time
-average is a closed-form divided difference rather than a quadrature, so
-`n_quad` is accepted and unused. `w_dev` is a supremum recovered by sampling at
-a density derived from the Bohr bandwidth, then polished; it carries two
-rigorous certificates. Sampling under-estimates a supremum and a smaller `w_dev`
-gives a larger margin, so the residual error is biased optimistic.
-
-| Function | Role |
-|----------|------|
-| `uncertainty_rates(H_list, dH_list, dt, ...)` | Eq. 28 measures per unit `delta` |
-| `time_bandwidth(rates, delta)` | `T*Omega_bnd` (Eq. 29) |
-| `fidelity_bound(T_omega_bnd)` / `fidelity_bound_at(rates, delta)` | `F_lb` (Eq. 30) |
-| `effective_threshold(FT, nominal_error=0, absorption='angular')` | Achieved-gate threshold implied by `FT` on the target |
-| `threshold_time_bandwidth(FT, nominal_error=0, absorption='angular')` | Closed-form inverse of `F_lb` |
-| `margin(rates, FT, nominal_error=0, absorption='angular')` | Implied margin `M^K` (Python re-export: `kosut_margin`) |
-| `t_omega_max()` / `T_OMEGA_MAX` | `2*sqrt(log(1+sqrt(2))) = 1.8776`; bound vacuous beyond this |
-
-Their Theorem 1 bounds the fidelity to the *achieved* nominal gate and assumes
-`F_nom = 1`. The nominal deficit is absorbed into the threshold through the
-angular relation `cos(arccos(FT) - arccos(1 - eps_0))`, which is the sufficient
-condition because `arccos` of the gate fidelity is an angle and obeys the
-triangle inequality. `absorption='additive'` (`FT + eps_0`) is not sufficient
-and is retained only to reproduce pre-1.0.1 numbers. `M^K` certifies *constant*
-perturbations only; it is not a sup-norm trajectory margin.
-
-MATLAB lives in `matlab/+qrobustness/+kosut/`, Python in
-`python/src/qrobustness/kosut.py` (re-exported at package level). Drivers:
-`scripts/run_time_bandwidth_bound_comparison.py` and
-`matlab/examples/run_time_bandwidth_bound_comparison.m`; both write the CSV
-columns fixed by `CSV_HEADERS` (Python) and
-`qrobustness.compat.kosut_csv_headers` (MATLAB). Compare with
-`scripts/compare_time_bandwidth_bound.py`, run by `make test-parity` for a
-non-Python `ENGINE`.
-
-## Paper-2 extensions (branch `dev-xQRM`; unreleased)
-
-Python is the reference implementation. MATLAB/Octave peers exist for
-`lengthspace`, `multiparam`, `timevarying`, `lindblad` and `berberich`
-(struct-based rather than `classdef`, so they run under both engines).
-`verify` and `synthesis` remain Python-only: the first is a test layer,
-the second an optimiser-dependent workflow. The open-system layer is no
-longer blocked on an SDP solver -- the diamond norm is computed from a
-feasible point of the Watrous program and refined, needing no CVX or
-SDPT3. See `docs/verification.md` for the parity table and the accuracy
-this achieves.
-
-- `multiparam`: `structure_constants`, `safe_polytope`,
-  `directional_margin` (reuses `iterative_margin`; `margin_tol` passes
-  through), `SafeUnion`, direction designs.
-- `timevarying`: `uniform_margin`, `tv_fidelity_and_gradient`,
-  `adversarial_upper_bound` -> bracket `[r_0, m_adv]` on `M_tv`.
-- `lindblad`: builders (`hamiltonian_superop`, `dissipator`, `generator`),
-  `channel`, `process_fidelity`, `average_gate_fidelity`,
-  `frechet_derivative` (block method), `diamond_norm` (Watrous SDP;
-  requires `qrobustness[open]`, i.e. cvxpy), `diamond_norm_free`
-  (no solver), `common_rate_local_dnorm` (the exact `2n` of the local
-  dephasing and amplitude-damping families, so those need no SDP),
-  `choi_matrix` / `superop_from_choi` / `choi_roundtrip_exact` (exact
-  reindexing, checked bit for bit), `open_structure_constants`,
-  `open_margin`, and the coherence-time conversion
-  (`dephasing_time` -> `T_phi`, `relaxation_time` -> `T_1`,
-  `coherence_time` -> total `T_2` from both rates, `rates_from_times`
-  for the inverse on `T_2 <= 2 T_1`). A diamond norm whose feasibility
-  cannot be verified raises `VerificationFailure` rather than returning
-  a number. Column-stacking convention throughout.
-
-See `docs/theory.md` section 7 for accuracy classification and
-the `paper-xQRM` repository (sibling checkout) for the mathematics.
-
+The peer covers `core`, `multiparam`, `lengthspace`, `timevarying`,
+`lindblad` (diamond norm solver-free under the plain name `diamond_norm`;
+Python's SDP `diamond_norm` has no peer), `states`, `openstates`, `kosut`,
+`berberich`, `optimize` and `plotting`. Python-only: `synthesis` (GRAPE),
+`verify`, and the adversarial search in `timevarying`. Peers are struct
+based rather than `classdef`, so they run unchanged under both engines.

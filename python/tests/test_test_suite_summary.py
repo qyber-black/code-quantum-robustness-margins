@@ -7,7 +7,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The test summary must count what the runners actually printed.
 
-A tally that silently reads zero from output it does not recognise is worse than no tally: it converts a stage nobody ran into a stage that passed. We pin the parsing against the real output of each runner in the tree."""
+A tally that silently reads zero from output it does not recognise is worse than no tally: it converts a stage nobody ran into a stage that passed. The parsing is pinned against the real output of each runner in the tree."""
 
 from __future__ import annotations
 

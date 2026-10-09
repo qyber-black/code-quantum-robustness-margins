@@ -6,19 +6,19 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Gate-duration sweep: how every certificate scales with t_f.
+"""Sweep the certificates on the CNOT model over gate duration.
 
-We synthesise CNOT controllers (five per duration, deterministic seeds)
-at t_f in {2, 4, 8, 16, 32} with proportional interval counts, and
-report the certified margins.  The honest expectation is that the uniform
-trajectory radii r_0 and r_FS and both universal-bound margins all
-shrink roughly as 1/t_f at fixed structures (their integrated
-constants grow with t_f), while the iterated constant margin M tracks
-the actual landscape; any advantage between families lies in
-structure-dependent constants, not in the absence of duration
-dependence.
+Synthesises up to five CNOT controllers per duration t_f in {2, 4, 8, 16, 32}
+(deterministic seeds, tau = max(10, 5 t_f) intervals) and computes, for the
+X1 control structure, M, r_0, r_FS, M^K and M^{K,tri}_tv (the xQRM paper,
+Numerical evaluation, transfer and scaling). A duration at which no
+controller reaches the error threshold within the attempt budget has no rows.
+Options: --FT, --out.
 
-Writes results/cnot-python/duration_sweep_<FT>.csv."""
+Writes results/cnot-python/duration_sweep_<FT>.csv:
+    tf, tau, seed, fid: duration, interval count, seed, nominal fidelity.
+    M, r0, rfs, KM, KMtv: M, r_0, r_FS, M^K, M^{K,tri}_tv.
+"""
 
 from __future__ import annotations
 
@@ -41,9 +41,9 @@ from qrobustness.synthesis import grape
 from qrobustness.timevarying import fs_margin, uniform_margin
 
 ROOT = Path(__file__).resolve().parents[1]
-#: Bracket refinement, matched to those of the other drivers.
+#: Relative bracket tolerance, as in the other drivers.
 MARGIN_TOL = 1e-8
-#: Safe-radius continuation step, matched to those of the other drivers.
+#: Continuation hand-over surplus eta, as in the other drivers.
 ETA = DEFAULT_ETA
 
 OUT_DIR = ROOT / "results/cnot-python"
@@ -55,13 +55,11 @@ SEED0 = 20260820
 N_PER_TF = 5
 DURATIONS = (2.0, 4.0, 8.0, 16.0, 32.0)
 
-#: Interval count per duration: proportional to t_f so that the step size stays
-#: comparable across the sweep, with a floor applied for the shortest gates.
+#: Interval count per duration: proportional to t_f, with a floor.
 INTERVALS_PER_UNIT_TIME = 5
 MIN_INTERVALS = 10
 
-#: Synthesis attempts allowed per duration before we give up on filling the
-#: quota; GRAPE does not converge from every seed.
+#: Synthesis attempts per kept controller allowed at each duration.
 ATTEMPTS_PER_KEPT = 4
 
 
@@ -125,10 +123,8 @@ def main() -> None:
             )
 
         if kept == 0:
-            # Said out loud rather than left as a gap in the table: for short
-            # durations the synthesis may never attain the error threshold
-            # within the attempt budget, and a duration that is missing in silence
-            # reads as an oversight.
+            # Report a duration with no controllers rather than omit it silently.
+
             print(
                 f"tf={tf:5.1f}: no controller reached max_error within "
                 f"{ATTEMPTS_PER_KEPT * N_PER_TF} attempts; no rows",

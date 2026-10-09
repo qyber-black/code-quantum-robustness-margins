@@ -7,7 +7,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Rank statistics for the case study.
 
-We report Table I *descriptively* (Pearson r and Spearman rho), so the paper makes no inferential claim.  The toolbox also emits a cross-check -- Kendall tau_b with Holm-corrected two-sided p-values for the three margin-versus-sensitivity comparisons -- to confirm that the descriptive reading does not depend on the choice of rank statistic.  The MATLAB peer must match the Python reference exactly, hence the shared closed-form asymptotic p-value rather than each engine's own library routine."""
+Table I is reported descriptively (Pearson r and Spearman rho), so the paper makes no inferential claim. The toolbox also emits a cross-check, Kendall tau_b with Holm-corrected two-sided p-values for the three margin-versus-sensitivity comparisons, to confirm that the descriptive reading does not depend on the choice of rank statistic. The MATLAB peer must match the Python reference exactly, hence the shared closed-form asymptotic p-value rather than each engine's own library routine."""
 
 import csv
 import importlib.util
@@ -75,7 +75,7 @@ def _require(path):
     These artefacts live in the repository, so a missing one means a broken checkout. Skipping on absence would report that tree as green, which is the one outcome a reproduction check must never produce."""
     assert path.is_file(), (
         f"{path} is missing from the repository; regenerate it with "
-        "make paper-QRM-margins ENGINE=python"
+        "make run-QRM-margins ENGINE=python"
     )
     return path
 

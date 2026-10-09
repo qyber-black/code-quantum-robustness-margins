@@ -6,9 +6,11 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function r = path_gauge_inradius(g, budget)
-%PATH_GAUGE_INRADIUS Certified Euclidean inradius budget divided by alpha_cs.
+%PATH_GAUGE_INRADIUS Certified Euclidean inradius budget/alpha_cs.
+%   g      - from qrobustness.lengthspace.path_gauge
+%   budget - angle or fidelity budget
 %
-%   Peer of PathGauge.inradius.
+%   Peer of python/src/qrobustness/lengthspace.py:PathGauge.inradius.
 
     r = qrobustness.lengthspace.margin_from(budget, ...
         qrobustness.lengthspace.path_gauge_alpha_cs(g));

@@ -5,57 +5,15 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Implied margins come from the algorithm-level worst-case fidelity bound of
-Berberich, Fellner, Kosut and Holm, arXiv:2509.08481 (Theorem 2.1).
+"""Margins from the bound of Berberich et al., arXiv:2509.08481, Theorem 2.1.
 
-They work with an ideal circuit ``Ubar = Ubar_N ... Ubar_1`` together with per-gate
-coherent error unitaries ``U_{e,j} = exp(-i H_{e,j})``, interaction
-Hamiltonians ``G_j = Vbar_j^dag H_{e,j} Vbar_j`` (``Vbar_j`` the partial
-ideal products) and average ``G = (1/N) sum_j G_j``.  Under
-``||H_{e,j}||_2 <= delta`` and ``||G||_2 <= gamma delta``, Theorem 2.1
-supplies the worst-case bound (their Eq. 14; ``F_B = |tr(Ubar^dag U)|^2/d^2``
-is the SQUARE of the trace fidelity used in this package)
-
-    F_B >= 1 - X^2,   X = delta N ((N-1)/2 delta + gamma).
-
-Specialisation to a piecewise-constant controller treats each control interval
-as one "gate" ``Ubar_k = exp(-i Delta H^(k))`` (N = tau gates), and a
-structured perturbation ``delta(t) Hhat^(k)`` on interval ``k`` yields
-the error unitary ``W_k = Ubar_k^dag U_k`` whose principal-log generator
-obeys the path-length bound
-
-    ||H_{e,k}||_2 <= int_k |delta(t)| ||Hhat^(k)||_2 dt
-                  <= Delta m ||Hhat^(k)||_2
-
-for ANY measurable trajectory with ``||delta||_inf <= m`` (the geodesic
-distance on the unitary group in the bi-invariant spectral metric is
-bounded by the path length).  Their per-gate set-membership model therefore
-covers the same sup-norm trajectory class as the trajectory certificates
-of this package, and the comparison is like for like.
-
-Two uncertainty classes mirror the Kosut comparison:
-
-* ``independent`` (trajectory class): only the per-gate norm bounds are
-  used; ``||G|| <= (1/tau) sum_k ||H_{e,k}|| <= Delta m wbar`` with
-  ``wbar = mean_k ||Hhat^(k)||_2`` (triangle inequality; unitary
-  conjugation is norm-preserving), i.e. ``gamma = wbar/wmax``.
-* ``systematic`` (constant class, ``delta(t) = mu``, ``|mu| <= m``):
-  the first-order interaction average is exact and coherent,
-  ``||G|| <= (1/tau)(m T w_avg + m^2 Delta^2 sum_k ||Hhat^(k)||_2^2 / 2)``,
-  where ``w_avg`` is the Kosut interaction-picture average measure
-  (closed form, ``kosut.uncertainty_rates``) and the quadratic term is
-  the Magnus remainder ``||log W_k + i mu int_k Htil_I|| <=
-  (1/2) mu^2 Delta^2 ||Hhat^(k)||_2^2`` (valid whenever
-  ``m Delta ||Hhat^(k)||_2 < pi``, checked).
-
-The nominal deficit is absorbed exactly as for the Kosut margin: their
-bound controls the angle to the NOMINAL product,
-``theta(Ubar, U) <= arcsin X``, and the Fubini--Study triangle
-inequality requires ``arcsin X <= arccos FT - arccos F0``, i.e.
-``X(m) <= sin(arccos FT - theta_0) =: s_T``.  In both classes ``X`` is
-a quadratic ``a m^2 + b m``, solved by the cancellation-free root
-
-    m = 2 s_T / (b + sqrt(b^2 + 4 a s_T))."""
+Each control interval is one gate. The per-interval error generator is
+bounded by the spectral-norm path length Delta m ||Hhat^(k)||_2.
+``uncertainty='independent'`` returns the trajectory margin M^B_tv.
+``uncertainty='systematic'`` returns the constant-perturbation margin M^B.
+The nominal error is absorbed angularly, as for the Kosut margin M^K.
+Their F_B is the square of the trace fidelity used in this package.
+"""
 
 from __future__ import annotations
 
@@ -76,7 +34,7 @@ __all__ = ["BerberichMargin", "margin", "UNCERTAINTIES"]
 
 @dataclass
 class BerberichMargin:
-    """Implied margin from arXiv:2509.08481 Theorem 2.1 (Eq. 14)."""
+    """Margin implied by the Berberich et al. bound, with the bound's coefficients."""
 
     m: float  #: certified sup-norm (or constant) budget
     uncertainty: str  #: 'independent' (trajectory) or 'systematic'
@@ -99,12 +57,32 @@ def margin(
     uncertainty: str = "independent",
     rates: Optional[UncertaintyRates] = None,
 ) -> BerberichMargin:
-    """Largest budget certified by their Theorem 2.1 for this controller.
+    """Largest budget m certified by the Berberich et al. bound for one controller.
 
-    ``H_list``/``dH_list`` are the per-interval nominal Hamiltonians and
-    perturbation structures, ``dt`` the interval length.  For
-    ``uncertainty='systematic'`` the Kosut interaction-picture measures
-    are required; pass precomputed ``rates`` to avoid recomputation.
+    Parameters
+    ----------
+    H_list : sequence of (N, N) arrays
+        Nominal Hamiltonians H^(k), one per control interval.
+    dH_list : sequence of (N, N) arrays
+        Perturbation structures Hhat^(k), one per interval.
+    dt : float
+        Interval length Delta.
+    FT : float
+        Fidelity threshold F_T, 0 < F_T < 1.
+    nominal_error : float
+        Nominal error 1 - F_0, in [0, 1].
+    uncertainty : str
+        ``'independent'`` (trajectory class, M^B_tv) or ``'systematic'``
+        (constant class, M^B).
+    rates : UncertaintyRates, optional
+        Precomputed Kosut measures; used only for ``'systematic'``.
+
+    Returns
+    -------
+    BerberichMargin
+        ``m`` is the margin; ``vacuous`` is True (and ``m = 0``) when the
+        nominal angle theta_0 exhausts arccos F_T. For ``'systematic'`` the
+        result is valid only if ``magnus_ok``.
     """
     if uncertainty not in UNCERTAINTIES:
         raise ValueError(
@@ -117,10 +95,7 @@ def margin(
     w_max = float(np.max(w))
     w_mean = float(np.mean(w))
 
-    # Reject instead of clamping, matching kosut.effective_threshold. Without
-    # this, nominal_error > 2 causes arccos to return nan, budget nan, the
-    # `budget <= 0` test False (NaN compares false), and the routine returns
-    # a nan margin with vacuous=False -- an answer that is silently wrong.
+    # Reject rather than clamp: an out-of-range value would give a NaN margin.
     if not 0.0 <= nominal_error <= 1.0:
         raise ValueError("nominal_error must satisfy 0 <= nominal_error <= 1")
     theta_0 = float(np.arccos(min(1.0, 1.0 - nominal_error)))
@@ -140,8 +115,7 @@ def margin(
         )
     s_T = float(np.sin(budget))
 
-    # X(m) = tau * ((tau-1)/2 * delta(m)^2 + Gbar(m)),
-    # delta(m) = dt * m * w_max.
+    # X(m) = tau ((tau-1)/2 delta(m)^2 + ||G||(m)), delta(m) = dt m w_max.
     a_depth = tau * (tau - 1) / 2.0 * (dt * w_max) ** 2
     if uncertainty == "independent":
         a = a_depth
@@ -155,6 +129,9 @@ def margin(
     m = 2.0 * s_T / (b + np.sqrt(b * b + 4.0 * a * s_T))
     delta = dt * m * w_max
     gamma = (b * m + (a - a_depth) * m * m) / (tau * delta) if delta > 0 else np.nan
+    magnus_ok = bool(m * dt * w_max < np.pi)
+    if uncertainty == "systematic" and not magnus_ok:
+        raise ValueError("Magnus condition failed for systematic uncertainty")
     return BerberichMargin(
         m=float(m),
         uncertainty=uncertainty,
@@ -164,6 +141,6 @@ def margin(
         w_max=w_max,
         w_mean=w_mean,
         gamma=float(gamma),
-        magnus_ok=bool(m * dt * w_max < np.pi),
+        magnus_ok=magnus_ok,
         vacuous=False,
     )

@@ -6,16 +6,22 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Adversarial min-fidelity as a function of the sup-norm budget.
+"""The adversarial minimum fidelity against the sup-norm budget.
 
-For one (controller, structure) -- default: controller 16, H1, the
-case whose x4-refined trajectory violates the constant-class margin
-M^K -- we run the multi-start gradient adversary at a sweep of budgets
-on the control grid and on x4/x16 refinements.  The resulting curves,
-with the certificates r_0, M^K_tv, r_FS and M^K marked, form the
-validity figure of the paper.
+For one controller and structure of the main ensemble, computes the least
+fidelity the multi-start gradient adversary finds over trajectories with
+||delta||_inf <= m, for a geometric sweep of budgets m from r_0/2 to 1.4 M^K,
+on the control grid and its x4 and x16 refinements (the xQRM paper,
+Numerical evaluation, time variation).
 
-Writes results/time-bandwidth-bound-python/budget_sweep_ctrl<i>_<tag>.csv."""
+Options: --FT, --out, --controller (1-based, default 16), --structure
+(H0, H1, H2; default H1), --n-budgets, --n-starts, --maxiter, --seed.
+
+Writes results/time-bandwidth-bound-python/budget_sweep_ctrl<i>_<tag>.csv:
+    m: the budget.
+    Fmin_x1, Fmin_x4, Fmin_x16: adversarial minimum fidelity per refinement.
+    A trailing comment line records r_0, r_FS, M^K_tv, M^K and FT.
+"""
 
 from __future__ import annotations
 
@@ -89,7 +95,7 @@ def main() -> None:
         row = {"m": float(m)}
         for g, q in enumerate(REFINEMENTS):
             Hr, dHr = refine_lists(H_list, dH, q)
-            Fmin, _ = adversarial_fidelity(
+            Fmin, _, _nfev = adversarial_fidelity(
                 Hr,
                 dHr,
                 dt / q,

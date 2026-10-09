@@ -6,17 +6,12 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Run every test stage for one engine and report a single tally.
+"""Run every test stage for one engine and print one tally.
 
-Each stage is a Make target, called here rather than duplicated, so
-there is still one definition of what a stage does. They all run, whatever
-the preceding stages did: stopping at the first failure hides how many
-other stages would also have failed, which is the number that tells one
-broken thing from everything being broken.
-
-Output is streamed as it arrives, so a long stage still shows progress,
-and the summary comes at the end with the counts each stage reported.
-The exit code is nonzero if any stage failed."""
+Each stage is a Make target (test-lint, test-unit, test-synth,
+test-parity), run with ENGINE set, whatever the earlier stages did. Output
+is streamed; a summary of each stage's status, time and test counts
+follows. The exit code is nonzero if any stage failed."""
 
 from __future__ import annotations
 
@@ -29,9 +24,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-#: The stages, in sequence. A stage that is not meaningful for an engine is
-#: still run: the target itself states so and exits cleanly, which is more
-#: honest than silently skipping it here.
+#: The stages, in order. A stage with nothing to do for an engine says so
+#: itself and exits cleanly.
 STAGES = ("test-lint", "test-unit", "test-synth", "test-parity")
 
 #: pytest summary line, e.g. "2 failed, 241 passed, 1 skipped in 12.3s".
@@ -51,9 +45,8 @@ def counts_from(text: str) -> dict:
     counts at all, which differs from reporting zero.
     """
     out: dict[str, int] = {}
-    # The MATLAB tally is read first and then stripped: its wording ("17
-    # passed, 2 failed of 19 tests") also matches the pytest pattern, so
-    # scanning both on the same line counted every test twice.
+    # The MATLAB tally also matches the pytest pattern, so it is read
+    # first and stripped before the pytest scan.
     for m in MATLAB_COUNT.finditer(text):
         out["passed"] = out.get("passed", 0) + int(m.group(1))
         out["failed"] = out.get("failed", 0) + int(m.group(2))

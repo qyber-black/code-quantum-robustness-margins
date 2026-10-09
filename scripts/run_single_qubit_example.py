@@ -6,28 +6,25 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Single-qubit pi-pulse: certified margins compared with analytic truth.
+"""Single-qubit pi-pulse: certified margins checked against the analytic result.
 
-A resonant pi-pulse (X gate) of duration T = 1 with constant Rabi rate
-Omega = pi, tau = 8 intervals, under two structures:
+A resonant pi-pulse (X gate), T = 1, Omega = pi, tau = 8, under two
+structures: amplitude error Omega sigma_x / 2 (analytic F = cos(delta pi/2))
+and detuning sigma_z / 2 (generalised Rabi formula). For each, computes M
+with M_upper, the analytic constant crossing delta*, r_0, r_FS, the
+adversarial upper witness m_adv on the time-varying margin, and M^K and
+M^{K,tri}_tv (the xQRM paper, Numerical evaluation, a single qubit against
+analytic truth). Exits with an error if the nominal fidelity or the
+numerical fidelity at fractions of delta* differs from the analytic value by
+EXACT_TOL or more. Options: --FT, --out.
 
-* amplitude error, Hhat = Omega sigma_x / 2 (multiplicative; commutes
-  with the nominal evolution): the fidelity equals F(delta) =
-  cos(delta pi / 2) exactly, so the true crossing is
-  delta* = (2/pi) arccos F_T, for constant AND time-varying
-  perturbations alike (a sign-varying delta only helps).  The
-  Fubini-Study certificate is exact here: the perturbed path is a
-  geodesic, r_FS = delta*.
-* detuning error, Hhat = sigma_z / 2 (additive; transverse): the
-  generalised Rabi formula yields F(delta) =
-  (Omega/Omega_g) |sin(Omega_g T / 2)|, Omega_g = sqrt(Omega^2 +
-  delta^2), flat to first order at delta = 0, so certificates built
-  from worst-case slopes are conservative and iteration recovers.
-
-Prints, then writes results/single-qubit-python/single_qubit_<FT>.csv
-with, per structure: certified M (with bracket), analytic constant
-crossing delta*, r_0, r_FS, adversarial upper bound m_adv on the
-time-varying margin, and the Kosut margins (both classes)."""
+Writes results/single-qubit-python/single_qubit_<FT>.csv, one row per
+structure:
+    structure: amplitude or detuning.
+    M, M_upper, delta_star: iterated bracket and analytic crossing.
+    r0, r_fs, m_adv: r_0, r_FS and m_adv.
+    KM, KM_tv: M^K and M^{K,tri}_tv.
+"""
 
 from __future__ import annotations
 
@@ -58,17 +55,15 @@ OMEGA = np.pi
 DT = T / TAU
 DIM = 2
 ETA = DEFAULT_ETA
-#: Bracket refinement for the certified margin, aligned with the other drivers.
+#: Relative bracket tolerance, as in the other drivers.
 MARGIN_TOL = 1e-8
 
-#: The claim of the script is that the numerics equal the analytic fidelity, so
-#: the agreement it requires is exactness to rounding, not a tolerance.
+#: Required agreement of numerical and analytic fidelity (rounding level).
 EXACT_TOL = 1e-12
 #: Fractions of the analytic crossing at which that agreement is tested.
 CHECK_FRACTIONS = (0.25, 0.5, 1.0)
 
-#: Adversarial bracket: search as far as a little past the certified radius
-#: when the iterated margin does not already exceed it, using a fixed seed.
+#: Adversarial search up to max(M, ADVERSARY_SPAN r_FS), fixed seed.
 ADVERSARY_SPAN = 1.05
 ADVERSARY_SEED = 1
 
@@ -83,8 +78,7 @@ def main() -> None:
     H_list = [H] * TAU
     Uf = expm(-1j * T * H)  # the exact pi-pulse gate (= -i sigma_x)
     F0 = gate_fidelity(propagator(H_list, DT), Uf)
-    # Explicit, not assert: python -O strips assertions, and the script's
-    # whole claim is that the numerics agree with analytic truth.
+    # Explicit check, not assert, so it survives python -O.
     if abs(F0 - 1.0) >= EXACT_TOL:
         raise SystemExit(f"ERROR: nominal fidelity {F0!r} is not 1 to {EXACT_TOL:g}")
 
@@ -102,9 +96,7 @@ def main() -> None:
 
     rows = []
     for tag, dH in structures.items():
-        # Certified constant margin through the generic API: the structure is
-        # constant in time, namely the 'control with unit amplitude'
-        # special case of the structure constant.
+        # Time-constant structure: 'control' with unit amplitude.
         C = structure_constant("control", dH[0], DT, TAU, np.ones(TAU))
         L = lipschitz_constant(ft, DIM, C)
 
@@ -119,7 +111,7 @@ def main() -> None:
         # Analytic constant crossing.
         d_star = brentq(lambda d, t=tag: analytic_F(t, d) - ft, 0.0, 1.0)
 
-        # Uniform time-varying certificates together with the adversarial bracket.
+        # Uniform time-varying certificates and the adversarial witness.
         r0 = uniform_margin(L, F0, ft)
         fs = fs_margin(dH, DT, F0, ft, r0=r0)
         br = adversarial_upper_bound(
@@ -131,6 +123,9 @@ def main() -> None:
             fs.r,
             max(M, ADVERSARY_SPAN * fs.r),
             seed=ADVERSARY_SEED,
+            n_starts=4,
+            starts="legacy",
+            maxiter=200,
         )
 
         # Kosut margins, both classes (eps_0 = 0 here).
@@ -138,8 +133,8 @@ def main() -> None:
         KM = kosut.margin(rates, ft)
         KMtv = kosut.margin(rates, ft, uncertainty="trajectory")
 
-        # Consistency of the analytic formula with the numerics. That is
-        # the point of the script, and therefore it must survive python -O.
+        # Numerics against the analytic fidelity (explicit, survives python -O).
+
         for d in (f * d_star for f in CHECK_FRACTIONS):
             gap = abs(fid_fn(d) - analytic_F(tag, d))
             if gap >= EXACT_TOL:

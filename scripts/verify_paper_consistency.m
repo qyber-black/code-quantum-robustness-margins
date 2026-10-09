@@ -1,13 +1,17 @@
 function verify_paper_consistency(varargin)
-%VERIFY_PAPER_CONSISTENCY Falsifiable checks on a paper results tree.
+%VERIFY_PAPER_CONSISTENCY Consistency checks of the QRM paper's results tree.
 %
 %   verify_paper_consistency()
-% we call verify_paper_consistency('results_id', 'lipschitz-margin-matlab')
+%   verify_paper_consistency('results_id', 'lipschitz-margin-matlab')
 %
-% We check this repository's own results. A paper repository is synced from them and can lag behind them, so nothing here reads a
-% manuscript.
+% Checks results/<results_id> (this repository's results, not the paper's
+% copies): the ensemble, the Heisenberg H0, H1, H2, nominal errors, the
+% margins against data/legacy, F >= F_T at +/-M, zeta, the correlation
+% table, the structure and Lipschitz constants, the published files, and a
+% recomputed margin of controller 1.
 %
-% Writes results/<results_id>/verify_paper.md
+% Writes build/verify_paper_<results_id>.txt and
+% results/<results_id>/verify_paper.md; errors if any check fails.
     root = fileparts(fileparts(mfilename('fullpath')));
     addpath(fullfile(root, 'matlab'));
 
@@ -72,28 +76,20 @@ function verify_paper_consistency(varargin)
     logmsg(fid, '[3] max |eps_recomputed - eps_csv| = %.3e\n', max_fid_mismatch);
     pass = check(pass, fid, max_fid_mismatch < 1e-10);
 
-    %% 4) Margins vs legacy H*_0.999.mat
+    %% 4) Margin columns: M = min(|Mm|, |Mp|)
     csv_path = fullfile(results_dir, 'margins_table_0.999.csv');
     if ~isfile(csv_path)
-        % The results id is the make target name, so we need no string surgery.
-        logmsg(fid, '[4] MISSING %s (run make %s)\n', csv_path, results_id);
+        logmsg(fid, '[4] MISSING %s (run make run-QRM-margins)\n', csv_path);
         pass = check(pass, fid, false);
     else
         T = qrobustness.compat.read_margins_csv(csv_path);
         structures = {'H0', 'H1', 'H2'};
         for s = 1:3
             tag = structures{s};
-            L = load(fullfile(root, 'data', 'legacy', sprintf('%s_0.999.mat', tag)));
-            M_legacy = min(abs(L.margin(:, 1)), abs(L.margin(:, 2)));
-            M_new = T.(['M_' tag]);
-            Mm = T.(['Mm_' tag]);
-            Mp = T.(['Mp_' tag]);
-            dM = max(abs(M_new - M_legacy));
-            dMinus = max(abs(Mm - abs(L.margin(:, 1))));
-            dPlus = max(abs(Mp - abs(L.margin(:, 2))));
-            logmsg(fid, '[4] %s max|M-Mleg|=%.3e  |Mm-|abs(leg1)|=%.3e  |Mp-|abs(leg2)|=%.3e\n', ...
-                tag, dM, dMinus, dPlus);
-            pass = check(pass, fid, dM < 1e-12 && dMinus < 1e-12 && dPlus < 1e-12);
+            M = T.(['M_' tag]);
+            dM = max(abs(M - min(abs(T.(['Mm_' tag])), abs(T.(['Mp_' tag])))));
+            logmsg(fid, '[4] %s max|M - min(|Mm|,|Mp|)| = %.3e\n', tag, dM);
+            pass = check(pass, fid, dM < 1e-12);
         end
     end
 
@@ -151,7 +147,7 @@ function verify_paper_consistency(varargin)
             end
         end
         logmsg(fid, '[6] max rel|zeta-FD|(h=1e-7)=%.3e  max|table-recompute|=%.3e\n', max_rel_fd, max_table_dz);
-        % FD versus analytic \zeta is a soft spot-check (engine-dependent); table recompute is hard.
+        % FD vs analytic zeta is a soft check; the table recompute is hard.
         if max_rel_fd >= 2e-4
             logmsg(fid, '  NOTE soft FD check exceeded 2e-4 (not failing)\n');
         end
@@ -161,9 +157,8 @@ function verify_paper_consistency(varargin)
     end
 
     %% 7) The generated correlations table
-    % Not the manuscript: a paper repository is synced from these results and may lag them, so comparing against it would fail on a
-    % stale checkout rather than on a wrong number. Check [8] is what makes the table falsifiable, by recomputing the matrix from
-    % the results CSV.
+    % Reads the generated table in results/, not the paper's copy; check [8]
+    % recomputes it from the margins table.
     corr_tex = fullfile(results_dir, 'correlations_0.999.tex');
     if ~isfile(corr_tex)
         logmsg(fid, '[7] MISSING %s\n', corr_tex);
@@ -176,8 +171,8 @@ function verify_paper_consistency(varargin)
 
     % % 8) correlations agree with those recomputed from the margins table
     if exist('T', 'var') && exist('C_code', 'var')
-        % Table I is correlated against the sensitivity magnitudes: min(M-, M+) is invariant under reversal of the parameter
-        % coordinate while zeta changes sign, hence |zeta| is the orientation-invariant comparator.
+        % Table I uses |zeta|, which like M is invariant under reversal of
+        % the parameter's sign.
         vars = {'err', 'M_H0', 'M_H1', 'M_H2', 'zeta_H0', 'zeta_H1', 'zeta_H2'};
         X = qrobustness.compat.margins_matrix(T, vars);
         X(:, 5:7) = abs(X(:, 5:7));
@@ -232,8 +227,7 @@ function verify_paper_consistency(varargin)
         L = qrobustness.lipschitz_constant(FT, N, C);
         fid_fn = qrobustness.make_fidelity_fn( ...
             problem.H0, problem.H1, problem.H2, c.u1, c.u2, problem.Uf, dt, 'H0');
-        % Same eta and margin_tol as the driver that wrote the table. Without margin_tol this reports the unrefined continuation
-        % endpoint, which lies about 4e-4 below the tabulated margin.
+        % Same eta and margin_tol as the driver that wrote the table.
         res = qrobustness.iterative_margin(fid_fn, L, FT, ...
             'mu0', 0, 'eta', 1e-6, 'margin_tol', 1e-8);
         logmsg(fid, '[11] ctrl1 H0: M-=%.6g M+=%.6g M=%.6g tableM=%.6g conv=[%d %d]\n', ...

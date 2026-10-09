@@ -7,8 +7,9 @@
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function S = dissipator(V)
 %DISSIPATOR Lindblad dissipator D[V] at unit rate, column-stacked.
+%   V - jump operator
 %
-% Counterpart of python/src/qrobustness/lindblad.py:dissipator.
+%   Peer of python/src/qrobustness/lindblad.py:dissipator.
 
     N = size(V, 1);
     I = eye(N);

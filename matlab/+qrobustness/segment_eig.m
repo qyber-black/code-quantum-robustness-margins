@@ -1,12 +1,13 @@
 function [V, lam] = segment_eig(H)
-%SEGMENT_EIG Hermitian eigendecomposition of the segment Hamiltonian. [V, lam] = SEGMENT_EIG(H) yields a unitary V and real
-% eigenvalues lam
-%   with H = V*diag(lam)*V'.
+%SEGMENT_EIG Hermitian eigendecomposition of an interval Hamiltonian.
+%   [V, lam] = qrobustness.segment_eig(H)
 %
-% H is symmetrised first. eig dispatches to the Hermitian LAPACK path -- and only then guarantees a unitary V -- solely for exactly
-% Hermitian input, so the symmetrisation is required, not cosmetic.
+%   H   - interval Hamiltonian; symmetrised as (H + H')/2 first, so that eig
+%         returns a unitary V
+%   V   - unitary eigenvectors, H = V*diag(lam)*V'
+%   lam - real eigenvalues
 %
-% Counterpart of python/src/qrobustness/core.py (segment_eig).
+%   Peer of python/src/qrobustness/core.py:segment_eig.
 
     Hs = (H + H') / 2;
     [V, D] = eig(Hs);

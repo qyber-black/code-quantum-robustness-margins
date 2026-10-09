@@ -1,7 +1,9 @@
 function convert_log_axis_to_log10_data(fig, which)
-%CONVERT_LOG_AXIS_TO_LOG10_DATA Recast log-scale axes as log10 data + linear.
+%CONVERT_LOG_AXIS_TO_LOG10_DATA Recast log-scale axes as log10 data on linear axes.
+%   fig   - figure handle; every log-scale axes in it is converted
+%   which - 'x' or 'y' (default 'y')
 %
-% For each axes with WhichScale='log', replace child YData/XData by log10(data) and set decade tick labels on a linear axis.
+%   Child XData/YData are replaced by log10(data) and decade tick labels set.
 
     if nargin < 2
         which = 'y';

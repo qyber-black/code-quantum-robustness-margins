@@ -6,9 +6,10 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Comparison logic shared by the cross-engine table checks.
+"""Shared comparison logic for the cross-engine table checks.
 
-compare_margins_full.py and compare_time_bandwidth_bound.py differed only in which columns they read and what they printed above the results; the tolerances, the mixed absolute/relative test, the zero-guarded denominator and the failure listing were copied between them. Two copies of a tolerance is how a peer check comes to pass on one table and not another, so they live here once."""
+Used by compare_margins_full.py and compare_time_bandwidth_bound.py: the
+tolerances, the mixed absolute/relative test per column, and the report."""
 
 from __future__ import annotations
 
@@ -16,24 +17,22 @@ from pathlib import Path
 
 import numpy as np
 
-# Peer engines run the same algorithm in a different language, and therefore the
-# disagreement to allow for is accumulated rounding rather than method error.
+# Engines run the same algorithm, so the tolerance covers rounding only.
 ATOL = 1e-10
 RTOL = 1e-8
 
-# Floor on the relative denominator: below this a column is treated as numerically
-# zero and the relative test would divide by rounding noise alone.
+# Floor on the relative-error denominator (values below it count as zero).
 DENOM_FLOOR = 1e-15
 
-# A failing column lists offenders rather than every row, because a genuine
-# divergence usually shows in the first few.
+# Offending rows listed per failing column.
 MAX_LISTED = 5
 
 
 def load_pair(path_a: Path, path_b: Path, label_a: str, label_b: str):
     """Read two named-column CSVs, or report why they cannot be compared.
 
-    The function returns ``(A, B, None)`` on success and ``(None, None, message)`` when the row counts differ, so the caller decides the exit code."""
+    Returns ``(A, B, None)`` on success and ``(None, None, message)`` when
+    the row counts differ."""
     A = np.genfromtxt(path_a, delimiter=",", names=True)
     B = np.genfromtxt(path_b, delimiter=",", names=True)
     if A.shape[0] != B.shape[0]:
@@ -48,7 +47,8 @@ def load_pair(path_a: Path, path_b: Path, label_a: str, label_b: str):
 def compare_fields(A, B, fields, label_a: str, label_b: str):
     """Compare the named columns of two tables.
 
-    The function returns ``(ok, lines)``: one summary line per field, followed by up to ``MAX_LISTED`` offending rows for each field that failed."""
+    Returns ``(ok, lines)``: one summary line per field, followed by up to
+    ``MAX_LISTED`` offending rows for each field that failed."""
     ok = True
     lines = []
     for f in fields:
@@ -71,7 +71,7 @@ def compare_fields(A, B, fields, label_a: str, label_b: str):
 
 
 def write_report(out: Path, lines, ok: bool) -> int:
-    """Write the report, echo it, and return the process exit code to the caller."""
+    """Write the report to ``out``, echo it, and return the exit code."""
     lines = list(lines) + [f"overall={'PASS' if ok else 'FAIL'}"]
     text = "\n".join(lines) + "\n"
     out.parent.mkdir(parents=True, exist_ok=True)

@@ -6,21 +6,27 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Joint two-rate margins and amplitude damping on the paper ensemble.
+"""Amplitude-damping margins and joint two-rate margins on the main ensemble.
 
-We extend the local-dephasing study to the second canonical dissipative
-channel and to joint dissipative uncertainty:
+For each controller, with common-rate local amplitude damping
+V_q = sigma_-^(q) (rate gamma_-) and local dephasing (rate gamma_z), computes
+the certified margin on gamma_- and its bisected true crossing, and on the
+equal-rate diagonal gamma_z = gamma_- = g the free certified radius of the
+simplex L_z gamma_z + L_- gamma_- <= F^pro_0 - FT^2, the iterated margin and
+the true crossing (the xQRM paper, Numerical evaluation, beyond dephasing).
+Both diamond norms are the closed form 2n. Controllers with F^pro_0 <= FT^2
+are skipped. Options: --FT, --out, --controllers N (first N; 0 = all).
 
-* common-rate local amplitude damping, V_q = sigma_-^(q): the certified
-  margin M_amp on gamma_- compared with the bisected true crossing
-  gamma_-^*;
-* the joint two-rate certified cross-polytope
-  L_z gamma_z + L_amp gamma_- <= F_pro(0) - F_T^2 (rates are
-  nonnegative, so the certified region is a simplex in the positive
-  quadrant), which we check along the equal-rate diagonal against the true
-  crossing g^* of gamma_z = gamma_- = g.
-
-Writes results/lindblad-margin-python/open_amp_<FT>.csv."""
+Writes results/lindblad-margin-python/open_amp_<FT>.csv:
+    controller, fid, err, F_pro_0: instance, nominal fidelity / error, F^pro_0.
+    L_z, L_amp: rate Lipschitz constants L_z, L_-.
+    M_amp, r0_amp, amp_star, conservatism_amp: margin on gamma_-, one-step
+        radius, true crossing, crossing / margin.
+    g_cert_diag, M_diag, g_star_diag: free radius, iterated margin and true
+        crossing on the diagonal.
+    conservatism_diag, conservatism_diag_iter: g_star_diag over g_cert_diag
+        and over M_diag.
+"""
 
 from __future__ import annotations
 
@@ -36,16 +42,16 @@ from _drivers import PAULI_Z, base_parser, load_ensemble, true_crossing
 ROOT = Path(__file__).resolve().parents[1]
 OUT_DIR = ROOT / "results/lindblad-margin-python"
 
-#: Bracket refinement on the open-system margins: every probe is a
-#: Liouville-space propagation, and therefore this is looser than the closed-system
-#: 1e-8 the coherent drivers use.
+#: Relative bracket tolerance for the open-system margins, coarser than the
+#: closed-system 1e-8 because each probe is a Liouville-space propagation.
 MARGIN_TOL = 1e-6
 
 SM = np.array([[0.0, 0.0], [1.0, 0.0]], dtype=complex)  # sigma_-
 
 
 def main() -> None:
-    """Certified amplitude-damping margins and joint two-rate margins for each controller."""
+    """Amplitude-damping and joint two-rate margins for each controller."""
+
     ap = base_parser(OUT_DIR, description=__doc__)
     ap.add_argument("--controllers", type=int, default=0)
     args = ap.parse_args()
@@ -58,9 +64,8 @@ def main() -> None:
 
     G_z = sum(lb.dissipator(V) for V in lb.local_ops(PAULI_Z, nq))
     G_amp = sum(lb.dissipator(V) for V in lb.local_ops(SM, nq))
-    # Both families are common-rate local jumps, and the diamond norm is
-    # the exactly proved 2n; an SDP would only recover that value to solver
-    # accuracy (we cross-check this in run_dnorm_certificates.py).
+    # Closed-form diamond norm 2n for both families (checked against the SDP
+    # in run_dnorm_certificates.py).
     dn_z = lb.common_rate_local_dnorm(nq)
     dn_amp = lb.common_rate_local_dnorm(nq)
     print(
@@ -96,8 +101,8 @@ def main() -> None:
         M_amp = float(om.M_plus)
         amp_star = true_crossing(lambda g: F_pro(0.0, g), ft_pro, M_amp)
 
-        # Joint simplex: the free certified equal-rate radius, and its iterated
-        # (directional) refinement, and the true crossing.
+        # Equal-rate diagonal: free radius, iterated margin, true crossing.
+
         g_cert = surplus / (L_z + L_amp)
         om_d = lb.open_margin(
             lambda g: F_pro(g, g), L_z + L_amp, ft_pro, margin_tol=MARGIN_TOL

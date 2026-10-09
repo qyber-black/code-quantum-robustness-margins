@@ -1,20 +1,13 @@
 function F_eff = effective_threshold(FT, nominal_error, absorption)
-%EFFECTIVE_THRESHOLD Achieved-gate fidelity threshold that FT on the target implies. Theorem 1 of the reference bounds the fidelity
-% to the ACHIEVED nominal gate, |Tr(U_S' * U)|/N, whereas the certificate is stated against the TARGET. Since arccos of the gate
-% fidelity is the angle between the corresponding Choi states, it satisfies the triangle inequality, and the sufficient condition on
-% the achieved-gate fidelity is
+%EFFECTIVE_THRESHOLD Achieved-gate fidelity threshold implied by F_T on the target.
+%   FT            - fidelity threshold F_T on the target gate
+%   nominal_error - nominal error eps_0 = 1 - F(mu0), 0 <= eps_0 <= 1 (default 0)
+%   absorption    - 'angular' (default): cos(arccos F_T - arccos(1 - eps_0)),
+%                   or 1 if the nominal angle exhausts the budget;
+%                   'additive': F_T + eps_0, which is not sufficient
+%   F_eff         - threshold on the fidelity to the achieved nominal gate
 %
-%     F_achieved >= cos( arccos(FT) - arccos(1 - nominal_error) )
-%
-% (absorption = 'angular', the default). If the nominal angle exhausts the budget, arccos(1-eps0) >= arccos(FT), no perturbation is
-% certifiable
-%   and 1 is returned so the margin is zero.
-%
-% absorption = 'additive' returns FT + nominal_error. It is NOT sufficient for the target-gate threshold (looser than the angular
-% value whenever nominal_error > 0) and is kept only to reproduce previously
-%   published numbers.
-%
-%   Peer of python/src/qrobustness/kosut.py.
+%   Peer of python/src/qrobustness/kosut.py:effective_threshold.
 
     if nargin < 2 || isempty(nominal_error); nominal_error = 0; end
     if nargin < 3 || isempty(absorption); absorption = 'angular'; end
@@ -22,8 +15,7 @@ function F_eff = effective_threshold(FT, nominal_error, absorption)
         error('qrobustness:kosut:BadFT', 'FT must satisfy 0 < FT < 1.');
     end
     if ~(nominal_error >= 0 && nominal_error <= 1)
-        % 1 - eps_0 is a fidelity, so eps_0 > 1 is not a physical input;
-        % reject it rather than clamp it silently.
+        % Reject eps_0 > 1 rather than clamp it.
         error('qrobustness:kosut:BadEps', ...
               'nominal_error must satisfy 0 <= nominal_error <= 1.');
     end

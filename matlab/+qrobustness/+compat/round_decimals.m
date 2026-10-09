@@ -1,5 +1,7 @@
 function Y = round_decimals(X, n)
-%ROUND_DECIMALS Round to n decimal places (safe under Octave).
+%ROUND_DECIMALS Round to n decimal places.
+%   X - values
+%   n - decimal places (default 0)
     if nargin < 2
         n = 0;
     end

@@ -1,5 +1,5 @@
 function test_margin_solvers_selectable()
-%TEST_MARGIN_SOLVERS_SELECTABLE Selectable methods against Algorithm 1 on synthetic F.
+%TEST_MARGIN_SOLVERS_SELECTABLE Selectable iterative_margin methods against 'algorithm1' on a synthetic F.
 
     FT = 0.99;
     mu0 = 0;

@@ -6,18 +6,26 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Implied margins of the Berberich et al. algorithm-level bound
-(arXiv:2509.08481 Thm 2.1) over the shipped ensemble, both uncertainty
-classes, for the like-for-like comparison with the structured
-certificates and the Kosut universal bound.
+"""Margins M^B implied by the Berberich et al. bound (arXiv:2509.08481, Thm 2.1).
 
-Writes results/time-bandwidth-bound-python/berberich_comparison_<FT>.csv
-with columns: controller, structure, fid, err, MB_ind (sup-norm
-trajectory class), MB_sys (constant class), gamma_ind, gamma_sys,
-magnus_ok.  With --attack N, also attacks MB_ind for the first
-N controllers (all structures) with the standard adversary as a safety
-spot check (their theorem proves the certificate; this guards the
-specialisation)."""
+Computes, per controller of the main ensemble and per structure H0, H1, H2,
+the margins implied by the Berberich et al. algorithm-level bound in both
+uncertainty classes, for comparison with the structured certificates and the
+Kosut bound M^K (the xQRM paper, Numerical evaluation, time variation).
+
+Options: --FT, --out, --controller-dir, --max-error; --attack N attacks
+MB_ind with the standard adversary for the first N controllers as a spot
+check (exit status 1 on a violation); --n-starts, --maxiter, --seed set that
+search.
+
+Writes results/time-bandwidth-bound-python/berberich_comparison_<FT>.csv:
+    controller, structure, fid, err: instance and nominal fidelity / error.
+    MB_ind, MB_sys: M^B for sup-norm trajectories and constant perturbations.
+    gamma_ind, gamma_sys: the corresponding gamma rates.
+    magnus_ok: 1 if m Delta w_max < pi, required for MB_sys to be valid.
+
+    Fmin_attack: least fidelity the adversary found at MB_ind (NaN if not run).
+"""
 
 from __future__ import annotations
 
@@ -134,7 +142,7 @@ def main() -> None:
                     fmin = np.inf
                     for g, q in enumerate(REFINEMENTS):
                         Hg, Hhatg = refine_lists(H_list, dH, q)
-                        Fq, _ = adversarial_fidelity(
+                        Fq, _, _nfev = adversarial_fidelity(
                             Hg,
                             Hhatg,
                             dt / q,

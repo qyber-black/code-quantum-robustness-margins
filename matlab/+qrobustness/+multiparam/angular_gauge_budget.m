@@ -6,9 +6,11 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function b = angular_gauge_budget(F_nu, FT)
-%ANGULAR_GAUGE_BUDGET Angle budget acos(FT) - acos(F_nu).
+%ANGULAR_GAUGE_BUDGET Angle budget arccos F_T - arccos F_nu.
+%   F_nu - fidelity F_nu at the centre
+%   FT   - fidelity threshold F_T
 %
-%   Peer of AngularGauge.budget.
+%   Peer of python/src/qrobustness/multiparam.py:AngularGauge.budget.
 
     b = qrobustness.lengthspace.angle_budget(F_nu, FT);
 end

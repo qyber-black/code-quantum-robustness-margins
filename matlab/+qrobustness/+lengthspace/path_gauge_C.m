@@ -6,9 +6,11 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function v = path_gauge_C(g, x)
-%PATH_GAUGE_C Gauge value; positively homogeneous of degree one.
+%PATH_GAUGE_C Gauge value C(x) = dt sum_k sqrt(x' G^(k) x).
+%   g - from qrobustness.lengthspace.path_gauge
+%   x - parameter vector
 %
-%   Peer of PathGauge.C.
+%   Peer of python/src/qrobustness/lengthspace.py:PathGauge.C.
 
     x = x(:);
     v = 0;

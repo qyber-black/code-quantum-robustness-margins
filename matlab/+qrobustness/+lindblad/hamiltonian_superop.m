@@ -7,8 +7,9 @@
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function S = hamiltonian_superop(H)
 %HAMILTONIAN_SUPEROP Superoperator of -1i*[H, .], column-stacked.
+%   H - Hamiltonian
 %
-% Counterpart of python/src/qrobustness/lindblad.py:hamiltonian_superop.
+%   Peer of python/src/qrobustness/lindblad.py:hamiltonian_superop.
 
     N = size(H, 1);
     I = eye(N);

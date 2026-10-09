@@ -6,11 +6,11 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function v = path_gauge_C_box(g, m)
-%PATH_GAUGE_C_BOX Worst case of C over the box |x_j| <= m_j.
-% A convex function attains its maximum over a box at a sign vertex; the 2^p
-%   vertices are enumerated exactly.
+%PATH_GAUGE_C_BOX Maximum of C over the box |x_j| <= m_j.
+%   g - from qrobustness.lengthspace.path_gauge
+%   m - box half-widths m_j; the 2^p sign vertices are enumerated
 %
-%   Peer of PathGauge.C_box.
+%   Peer of python/src/qrobustness/lengthspace.py:PathGauge.C_box.
 
     m = m(:);
     p = numel(m);

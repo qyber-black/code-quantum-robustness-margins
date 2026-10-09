@@ -6,9 +6,12 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function ray = make_ray_fn(fidelity_fn, mu0, d)
-%MAKE_RAY_FN Restrict a multi-parameter fidelity map to mu0 + s d.
+%MAKE_RAY_FN Restrict a multi-parameter fidelity map to s -> F(mu0 + s d).
+%   fidelity_fn - handle mu -> F
+%   mu0         - ray origin
+%   d           - direction
 %
-% Counterpart of python/src/qrobustness/multiparam.py:make_ray_fn.
+%   Peer of python/src/qrobustness/multiparam.py:make_ray_fn.
 
     mu0 = mu0(:);
     d = d(:);

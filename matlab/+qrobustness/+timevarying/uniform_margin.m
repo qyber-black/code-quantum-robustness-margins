@@ -6,15 +6,14 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function r0 = uniform_margin(L, F, FT)
-%UNIFORM_MARGIN Certified uniform margin for time-varying uncertainty.
-%   Every measurable trajectory delta_j(t) with
-% sum_j L_j ||delta_j||_inf <= F - FT keeps fidelity at or above FT.
+%UNIFORM_MARGIN Lipschitz radius r_0 = (F - F_T)/sum_j L_j for time-varying perturbations.
+%   L  - per-parameter constants L_j
+%   F  - nominal fidelity
+%   FT - fidelity threshold F_T
 %
-% Numerically this is the first Lipschitz step of the scalar iteration, but it is exposed separately because its CERTIFICATE
-% SEMANTICS differ: it holds for all measurable trajectories in sup-norm, whereas the iterated margin certifies constant
-% perturbations only.
+%   Every trajectory with sum_j L_j ||delta_j||_inf <= F - F_T keeps F >= F_T.
 %
-% Counterpart of python/src/qrobustness/timevarying.py:uniform_margin.
+%   Peer of python/src/qrobustness/timevarying.py:uniform_margin.
 
     if ~(F > FT)
         error('qrobustness:timevarying:surplus', 'Require F > FT');

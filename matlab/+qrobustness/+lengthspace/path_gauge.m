@@ -6,15 +6,14 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function g = path_gauge(grams, dt)
-%PATH_GAUGE Quadratic path gauge C(x) = dt sum_k sqrt(x' G^(k) x). Returns a struct with fields grams (cell) and dt; act on it with
-% path_gauge_C, path_gauge_C_box, path_gauge_radius, path_gauge_alpha_cs
-%   and path_gauge_inradius.
+%PATH_GAUGE Quadratic path gauge C(x) = dt sum_k sqrt(x' G^(k) x).
+%   grams - cell{tau} of Gram matrices G^(k)
+%   dt    - interval length
+%   g     - struct with fields grams and dt, used by path_gauge_C,
+%           path_gauge_C_box, path_gauge_radius, path_gauge_alpha_cs and
+%           path_gauge_inradius
 %
-% A struct rather than a classdef: the .m sources run under both MATLAB and Octave, and classdef support in Octave is not complete
-% enough to
-%   rely on here.
-%
-% Counterpart of python/src/qrobustness/lengthspace.py:PathGauge.
+%   Peer of python/src/qrobustness/lengthspace.py:PathGauge.
 
     g = struct('grams', {grams}, 'dt', dt);
 end

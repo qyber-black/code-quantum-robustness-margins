@@ -1,8 +1,13 @@
 function fig = plot_margins_vs_sensitivity(abs_z0, abs_z1, abs_z2, M0, M1, M2, varargin)
-%PLOT_MARGINS_VS_SENSITIVITY Two-panel M against |zeta| (manuscript layout).
+%PLOT_MARGINS_VS_SENSITIVITY Two-panel plot of margin M against |zeta|.
+%   abs_z0, abs_z1, abs_z2 - |zeta| for the H0, H1 and H2 structures
+%   M0, M1, M2             - corresponding margins
+%   fig                    - figure handle
 %
-% X coordinates use log10(|zeta|) on a linear axis (not XScale=log).
-%   Y remains linear in the margin M.
+%   Name-value options:
+%     'Visible' - figure visibility (default 'off')
+%
+%   |zeta| is drawn as log10 data on a linear axis; M is linear.
 
     p = inputParser;
     addParameter(p, 'Visible', 'off');

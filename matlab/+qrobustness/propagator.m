@@ -1,11 +1,12 @@
 function U = propagator(H_list, dt)
-%PROPAGATOR Ordered product of the piecewise-constant unitaries.
+%PROPAGATOR Ordered product of the interval unitaries.
 %   U = qrobustness.propagator(H_list, dt)
-% H_list : cell array of Hermitian Hamiltonians H{k} on interval k
-%   dt     : pulse duration Delta
-%   U      : U(tf) = U{tau} * ... * U{1}
 %
-%   Peer of python/src/qrobustness/core.py.
+%   H_list - cell array of interval Hamiltonians H^(k)
+%   dt     - interval length
+%   U      - expm(-1i*dt*H^(tau)) * ... * expm(-1i*dt*H^(1))
+%
+%   Peer of python/src/qrobustness/core.py:propagator.
 
     if isempty(H_list)
         error('qrobustness:propagator:Empty', 'H_list must be non-empty.');

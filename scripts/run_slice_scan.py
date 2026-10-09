@@ -6,16 +6,24 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Fidelity scan on the (mu_1, mu_2) control-structure plane.
+"""A fidelity scan of the (mu_1, mu_2) control-structure plane.
 
-For one controller of the shipped ensemble (default: controller 1),
-we scan the gate fidelity over a grid in the (H1, H2) perturbation plane
-(mu_0 = 0), for the true-safe-region figure of the paper: the F = F_T
-contour is the ground truth against which the certified cross-polytope
-slice and the in-plane directional margins are drawn.
+For one controller of the main ensemble, computes the gate fidelity on a grid
+in the (H1, H2) perturbation plane (mu_0 = 0) and, on N_THETA in-plane
+directions, the boundary radii of the C_joint gauge region and of the
+C^stat_FS angular region (the xQRM paper, Numerical evaluation, joint
+coherent margins). The grid half-width is --span times the larger of the H1
+and H2 axis margins read from multiparam_<FT>.csv in --out, so
+run_multiparameter_case_study.py must run first.
+Options: --FT, --out, --controller (1-based), --n (grid points per axis),
+--span.
 
-Writes results/multiparameter-margin-python/slice_ctrl<i>_<FT>.npz
-(grid axes, fidelity matrix, Lipschitz constants)."""
+Writes results/multiparameter-margin-python/slice_ctrl<i>_<FT>.npz:
+    mu1, mu2, F: grid axes and fidelity on the grid.
+    L, fid, FT: L_j, nominal fidelity, threshold.
+    theta, r_joint, r_angular: direction angles and the gauge and angular
+        boundary radii.
+"""
 
 from __future__ import annotations
 
@@ -32,9 +40,7 @@ from _drivers import base_parser, load_ensemble, three_structure_specs
 ROOT = Path(__file__).resolve().parents[1]
 OUT_DIR = ROOT / "results/multiparameter-margin-python"
 
-#: Angles at which the two radial free-region boundaries are computed:
-#: 256 intervals around the circle plus the closing point, so the curve
-#: joins up when plotted.
+#: Angles for the two radial boundaries: 256 intervals plus the closing point.
 N_THETA = 257
 
 
@@ -66,9 +72,7 @@ def main() -> None:
         for k in range(tau)
     ]
 
-    # Scale from the certified single-axis margins (mp CSV is not required).
-    # The filename must follow --FT: loading the 0.999 table while computing
-    # every constant at another threshold silently mixed those two.
+    # Grid scale from the axis margins of multiparam_<FT>.csv at this --FT.
     mp_path = args.out / f"multiparam_{args.FT:g}.csv"
     if not mp_path.exists():
         raise SystemExit(
@@ -90,9 +94,8 @@ def main() -> None:
             F[i, j] = gate_fidelity(propagator(Hp, dt), problem["Uf"])
         print(f"row {i + 1}/{args.n}", flush=True)
 
-    # In-plane free-region boundaries of the joint Frobenius gauge plus
-    # the static Choi-angular gauge (radial closed forms; those three
-    # nested free regions of the paper's slice figure).
+    # In-plane boundary radii of the joint gauge and the angular gauge.
+
     dHs = [[problem["H0"]] * tau, dH1, dH2]
     G = mp.joint_gauge(dHs, dt)
     AG = mp.angular_gauge(dHs, dt)

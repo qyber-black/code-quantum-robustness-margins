@@ -5,27 +5,14 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Numerical harness for verifying the theorems and certificates.
+"""Numerical checks of the certificates against independent computations.
 
-Each theorem shipped with the package can be re-checked numerically
-against independent computations.  Two principles govern the harness.
-
-*Robust numerics.*  Certified inequalities are tested against slacks,
-never equalities, and the allowance is taken from the computation
-rather than assumed: fidelities are evaluated through two independent
-propagator routes (eigendecomposition and ``scipy.linalg.expm``), the
-observed cross-route discrepancy and the unitarity defect of the
-product set the tolerance, and a check counts as a violation only when
-the slack is negative beyond that allowance.
-
-*Adversarial defaults.*  Certificates are probed where failure is most
-likely: at the certified boundary, with sign-modulated
-sub-interval trajectories (the failure mode of weaker readings), and
-with multi-start gradient adversaries, not only with random samples.
-
-Fast, seeded instances of every check run in the test suite
-(``tests/test_theorems.py``); ``scripts/run_theorem_verification.py``
-sweeps the shipped ensembles."""
+Each ``check_*`` function probes one certified inequality: at the boundary,
+on sign-modulated sub-interval trajectories, and against gradient
+adversaries. It returns a :class:`CheckReport`. The check fails only when
+the slack is negative by more than its tolerance. Two propagator routes can
+cross-check the fidelities and set that tolerance.
+"""
 
 from __future__ import annotations
 
@@ -47,17 +34,11 @@ from .core import (
 from .lengthspace import refine as _refine
 from .timevarying import adversarial_fidelity
 
-#: Acceptance tolerances, arranged in three tiers, named so the harness policy is
-#: visible in a single place rather than spread across the call sites. The values are
-#: unchanged; only their names are new.
-#:
-#: Identities that hold to roundoff: absorption, the Lipschitz pair bound, plus
-#: the trajectory slope.
+#: Tolerance for identities that hold to roundoff.
 TOL_EXACT = 1e-12
-#: Angle and Choi-geometry checks, which accumulate along a propagated path.
+#: Tolerance for angle checks, which accumulate along a propagated path.
 TOL_ANGLE = 1e-9
-#: Metric triangle inequality, sampled over triples: the loosest, since
-#: it compounds three angles that were computed separately.
+#: Tolerance for the sampled triangle inequality (three separately computed angles).
 TOL_TRIANGLE = 1e-7
 
 __all__ = [
@@ -77,13 +58,25 @@ __all__ = [
 
 @dataclass
 class CheckReport:
-    """Result of a single certificate check.
+    """Result of one certificate check.
 
-    ``passed`` is ``min_slack >= -tol``: the certified inequality held
-    on every probe, up to the derived numerical allowance ``tol``.
-    ``min_slack`` is the smallest observed slack (certificate quantity
-    minus its bound, oriented so that nonnegative means satisfied) and
-    ``argmin`` identifies the probe that attained it.
+    Attributes
+    ----------
+    name :
+        Check identifier.
+    n_checks :
+        Number of probes evaluated.
+    min_slack :
+        Smallest slack (certified quantity minus bound; nonnegative means
+        satisfied).
+    tol :
+        Numerical allowance on the slack.
+    argmin :
+        Identifier of the probe attaining ``min_slack``.
+    details :
+        Check-specific extra values.
+    passed :
+        ``n_checks > 0 and min_slack >= -tol``; a run with no probes fails.
     """
 
     name: str
@@ -95,33 +88,45 @@ class CheckReport:
 
     @property
     def passed(self) -> bool:
-        # A check that executed no probe has established nothing, so it must not
-        # report success. Absent the n_checks guard an all-skipped run
-        # leaves min_slack at +inf and succeeds vacuously -- the failure mode
-        # in which a green report rests on no evidence at all.
+        # No probe means no evidence, so an all-skipped run does not pass.
         return self.n_checks > 0 and self.min_slack >= -self.tol
 
 
 def unitarity_defect(U: Array) -> float:
-    """``|| U'U - I ||_2``: roundoff accumulated through a propagator product."""
+    """Unitarity defect ``||U^dag U - I||_2`` of a computed propagator.
+
+    Parameters
+    ----------
+    U :
+        ``(N, N)`` matrix.
+
+    Returns
+    -------
+    float
+        Spectral norm of ``U^dag U - I``.
+    """
     N = U.shape[0]
     return float(np.linalg.norm(U.conj().T @ U - np.eye(N), 2))
 
 
 def fidelity_cross_check(H_list: HList, dt: float, Uf: Array) -> tuple:
-    """Fidelity through two independent propagator routes plus an allowance.
+    """Gate fidelity with a numerical allowance from two propagator routes.
 
-    Returns ``(F, tol)`` where ``F`` is the ``expm``-route fidelity and
-    ``tol`` bounds its numerical uncertainty: the observed discrepancy
-    against the eigendecomposition route plus the unitarity defect,
-    floored at ``100 * eps``.
+    Parameters
+    ----------
+    H_list :
+        Per-interval Hamiltonians, each ``(N, N)``.
+    dt :
+        Interval length ``Delta``.
+    Uf :
+        Target gate.
 
-    The second route must not be another ``expm`` loop. ``propagator``
-    already is one, so building ``U2`` the same way made the discrepancy
-    identically zero and the allowance the unitarity defect alone --
-    while the docstring, and the paper, claimed a cross-route check.
-    The eigendecomposition route below is the route ``differential_sensitivity``
-    uses, and is genuinely independent of ``scipy.linalg.expm``.
+    Returns
+    -------
+    F : float
+        Fidelity through the ``expm`` route.
+    tol : float
+        ``|F_expm - F_eig|`` plus the unitarity defect plus ``100 eps``.
     """
     U1 = propagator(H_list, dt)
     U2 = np.eye(U1.shape[0], dtype=complex)
@@ -135,8 +140,7 @@ def fidelity_cross_check(H_list: HList, dt: float, Uf: Array) -> tuple:
 
 
 def _rand_traj(rng, tau: int, m: float) -> Array:
-    """Random trajectory shaped adversarially: mixture of uniform, extreme
-    (sign-modulated at full budget) and sparse profiles."""
+    """Random trajectory, ``|delta_k| <= m``: uniform, sign-modulated or sparse."""
     kind = rng.integers(3)
     if kind == 0:
         return rng.uniform(-m, m, tau)
@@ -149,7 +153,21 @@ def _rand_traj(rng, tau: int, m: float) -> Array:
 
 
 def check_metric_triangle(N: int, n_triples: int = 200, seed: int = 0) -> CheckReport:
-    """Lemma (gate-fidelity angle): the triangle inequality on random triples."""
+    """Triangle inequality of the gate-fidelity angle on random unitary triples.
+
+    Parameters
+    ----------
+    N :
+        Dimension.
+    n_triples :
+        Number of Haar-random triples.
+    seed :
+        Random seed.
+
+    Returns
+    -------
+    CheckReport
+    """
     rng = np.random.default_rng(seed)
 
     def theta(U, V):
@@ -168,8 +186,23 @@ def check_metric_triangle(N: int, n_triples: int = 200, seed: int = 0) -> CheckR
 
 
 def check_absorption(FT: float, N: int, n: int = 200, seed: int = 0) -> CheckReport:
-    """Lemma (nominal-error absorption): when achieved-gate fidelity
-    meets the angular threshold, target fidelity meets ``FT``."""
+    """Angular absorption: achieved-gate fidelity ``>= F_eff`` implies ``F >= F_T``.
+
+    Parameters
+    ----------
+    FT :
+        Threshold ``F_T``.
+    N :
+        Dimension.
+    n :
+        Number of random target/nominal/perturbed triples.
+    seed :
+        Random seed.
+
+    Returns
+    -------
+    CheckReport
+    """
     from .kosut import effective_threshold
 
     rng = np.random.default_rng(seed)
@@ -210,8 +243,25 @@ def check_constant_margin(
     n: int = 201,
     tol: float = 1e-12,
 ) -> CheckReport:
-    """A certified constant margin: ``F(mu) >= FT`` on a dense grid over
-    ``[-M, M]`` (both signs; endpoints included)."""
+    """Constant margin: ``F(mu) >= F_T`` on a uniform grid over ``[-M, M]``.
+
+    Parameters
+    ----------
+    fid_fn :
+        Fidelity as a function of the scalar perturbation ``mu``.
+    M :
+        Margin under test.
+    FT :
+        Threshold ``F_T``.
+    n :
+        Grid points (endpoints included).
+    tol :
+        Allowance on the slack.
+
+    Returns
+    -------
+    CheckReport
+    """
     grid = np.linspace(-M, M, n)
     vals = np.array([fid_fn(float(m)) for m in grid])
     i = int(np.argmin(vals))
@@ -229,8 +279,30 @@ def check_polytope(
     seed: int = 0,
     tol: float = 1e-12,
 ) -> CheckReport:
-    """Certified safe polytope: ``F(mu) >= FT`` at random boundary and
-    interior points of ``sum_j L_j |mu_j| <= F0 - FT``."""
+    """Safe polytope: ``F(mu) >= F_T`` on ``sum_j L_j |mu_j| <= F_0 - F_T``.
+
+    Parameters
+    ----------
+    fn :
+        Fidelity as a function of the parameter vector ``mu`` (length ``p``).
+    L :
+        Lipschitz constants ``L_j``, shape ``(p,)``.
+    F0 :
+        Nominal fidelity ``F_0``.
+    FT :
+        Threshold ``F_T``.
+    n :
+        Number of random points (alternately on the boundary and inside).
+    seed :
+        Random seed.
+
+    tol :
+        Allowance on the slack.
+
+    Returns
+    -------
+    CheckReport
+    """
     rng = np.random.default_rng(seed)
     L = np.asarray(L, dtype=float)
     surplus = F0 - FT
@@ -258,12 +330,32 @@ def check_lipschitz_pairs(
     n: int = 100,
     seed: int = 0,
 ) -> CheckReport:
-    """Trajectory Lipschitz lemma: ``|F[a] - F[b]| <= sum_j L_j
-    ||a_j - b_j||_inf`` for random trajectory pairs inside the safe set.
+    """Trajectory Lipschitz bound ``|F[a] - F[b]| <= sum_j L_j ||a_j - b_j||_inf``.
 
-    Each structure list must match ``H_list`` interval for interval; without
-    the check a short list failed later with a bare IndexError naming no
-    argument.
+    Parameters
+    ----------
+    H_list :
+        Nominal per-interval Hamiltonians, each ``(N, N)``.
+    Hhat_lists :
+        One per-interval structure list ``Hhat_j^(k)`` per parameter.
+    dt :
+        Interval length ``Delta``.
+    Uf :
+        Target gate.
+    L :
+        Trajectory Lipschitz constants ``L_j``, shape ``(p,)``.
+    FT :
+        Threshold ``F_T``; only probes in the safe set count.
+    m :
+        Sup-norm budget of the random trajectories.
+    n :
+        Number of random trajectory pairs.
+    seed :
+        Random seed.
+
+    Returns
+    -------
+    CheckReport
     """
     tau = len(H_list)
     for j, Hh in enumerate(Hhat_lists):
@@ -295,7 +387,7 @@ def check_lipschitz_pairs(
         b = [_rand_traj(rng, tau, m) for _ in range(p)]
         Fa, Fb = F(a), F(b)
         if min(Fa, Fb) <= FT:
-            continue  # lemma hypothesis requires the safe set
+            continue  # the bound holds on the safe set only
         bound = sum(L[j] * np.max(np.abs(a[j] - b[j])) for j in range(p))
         slack = bound - abs(Fa - Fb)
         n_done += 1
@@ -318,18 +410,38 @@ def check_tv_slope(
     n_homotopy: int = 3,
     seed: int = 0,
 ) -> CheckReport:
-    """Trajectory Lipschitz lemma, slope form: the realised directional
-    derivative never exceeds the certified bound.
+    """Slope form of the trajectory Lipschitz bound, by central differences.
 
-    The lemma bounds ``|dF/ds|`` along ``s -> delta + s d`` by
-    ``sum_j L_j ||d_j||_inf``.  We probe that bound directly, with a
-    central difference at several homotopy points along each random
-    direction, and report both the worst slack and -- in ``details`` --
-    the largest realised fraction of the bound, which is what says how
-    much room the bound leaves in practice.
+    ``|dF/ds|`` along ``delta = s d`` must not exceed ``sum_j L_j ||d_j||_inf``.
 
-    ``n_checks`` counts direction-by-homotopy-point probes, so the
-    reported count is ``n * n_homotopy``.
+    Parameters
+    ----------
+    H_list :
+        Nominal per-interval Hamiltonians, each ``(N, N)``.
+    Hhat_lists :
+        One per-interval structure list ``Hhat_j^(k)`` per parameter.
+    dt :
+        Interval length ``Delta``.
+    Uf :
+        Target gate.
+    L :
+        Trajectory Lipschitz constants ``L_j``, shape ``(p,)``.
+    FT :
+        Threshold ``F_T``; only probes in the safe set count.
+    m :
+        Sup-norm budget of the random trajectories.
+    n :
+        Number of random directions.
+    n_homotopy :
+        Probe points ``s`` per direction in ``(0, m]``.
+    seed :
+        Random seed.
+
+    Returns
+    -------
+    CheckReport
+        ``n_checks`` counts direction-point probes; ``details`` holds
+        ``max_fraction_of_bound``.
     """
     rng = np.random.default_rng(seed)
     tau = len(H_list)
@@ -343,8 +455,7 @@ def check_tv_slope(
         ]
         return gate_fidelity(propagator(Hp, dt), Uf)
 
-    # Step used for the central difference: small against the budget, large
-    # against the fidelity's own evaluation noise.
+    # Small against the budget, large against fidelity evaluation noise.
     h = max(m * 1e-4, 1e-9)
     worst = np.inf
     max_frac = 0.0
@@ -362,7 +473,7 @@ def check_tv_slope(
             hi = [base[j] + (s0 + h) * d[j] for j in range(p)]
             Flo, Fhi = F(lo), F(hi)
             if min(Flo, Fhi) <= FT:
-                continue  # the lemma is a statement on the safe set
+                continue  # the bound holds on the safe set only
             realised = abs(Fhi - Flo) / (2.0 * h)
             n_done += 1
             frac = realised / bound
@@ -393,9 +504,33 @@ def check_fs_angle(
     refine: int = 8,
     seed: int = 0,
 ) -> CheckReport:
-    """Theorem (FS certificate), inner inequality: the angle between the
-    nominal and perturbed propagators stays at most ``m * s`` for random
-    sub-interval-refined trajectories with ``||delta||_inf <= m``."""
+    """Angle between nominal and perturbed propagators stays at most ``m * s``.
+
+    Probes random sub-interval-refined trajectories with ``||delta||_inf <= m``.
+
+    Parameters
+    ----------
+    H_list :
+        Nominal per-interval Hamiltonians, each ``(N, N)``.
+    Hhat_list :
+        Per-interval structures ``Hhat^(k)``.
+    dt :
+        Interval length ``Delta``.
+    m :
+        Sup-norm budget.
+    s :
+        Angular rate under test (e.g. the Choi path-length constant ``s_j``).
+    n :
+        Number of random trajectories.
+    refine :
+        Sub-intervals per control interval.
+    seed :
+        Random seed.
+
+    Returns
+    -------
+    CheckReport
+    """
     rng = np.random.default_rng(seed)
     tau = len(H_list)
     N = H_list[0].shape[0]
@@ -427,9 +562,39 @@ def check_trajectory_certificate(
     n_random: int = 50,
     seed: int = 0,
 ) -> CheckReport:
-    """A certified uniform trajectory margin (``r_0``, ``r_FS`` or
-    ``M^K_tv``): gradient adversaries plus random adversarially-shaped
-    trajectories at budget ``m`` must not violate ``F >= FT``."""
+    """Trajectory certificate (``r_0``, ``r_FS``, ``M^K_tv``): ``F >= F_T`` at ``m``.
+
+    Probes with gradient adversaries and random trajectories on each grid
+    refinement; failure to find a violation is evidence only within this search.
+
+    Parameters
+    ----------
+    H_list :
+        Nominal per-interval Hamiltonians, each ``(N, N)``.
+    Hhat_list :
+        Per-interval structures ``Hhat^(k)``.
+    dt :
+        Interval length ``Delta``.
+    Uf :
+        Target gate.
+    FT :
+        Threshold ``F_T``.
+    m :
+        Sup-norm budget (the certificate under test).
+    refinements :
+        Sub-interval refinement factors to attack on.
+    n_starts, maxiter :
+        Passed to :func:`timevarying.adversarial_fidelity`.
+    n_random :
+        Random trajectories per refinement.
+    seed :
+        Random seed.
+
+    Returns
+    -------
+    CheckReport
+        ``tol`` from :func:`fidelity_cross_check` at the nominal controller.
+    """
     rng = np.random.default_rng(seed)
     worst = np.inf
     arg = None
@@ -437,7 +602,7 @@ def check_trajectory_certificate(
     for q in refinements:
         Hr, dHr = _refine(H_list, Hhat_list, q)
         dtr = dt / q
-        Fmin, _ = adversarial_fidelity(
+        Fmin, _, _nfev = adversarial_fidelity(
             Hr,
             dHr,
             dtr,
@@ -458,7 +623,10 @@ def check_trajectory_certificate(
             n_total += 1
             if F - FT < worst:
                 worst, arg = F - FT, f"random_x{q}_{i}"
-    _, tol = fidelity_cross_check(H_list, dt, Uf)
+    _, tol_nom = fidelity_cross_check(H_list, dt, Uf)
+    perturbed = [H_list[k] + m * Hhat_list[k] for k in range(len(H_list))]
+    _, tol_pert = fidelity_cross_check(perturbed, dt, Uf)
+    tol = max(tol_nom, tol_pert)
     return CheckReport(
         "trajectory_certificate", n_total, float(worst), tol=tol, argmin=arg
     )

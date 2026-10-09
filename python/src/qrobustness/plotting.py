@@ -5,9 +5,12 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Manuscript-style plotting helpers mirroring MATLAB +qrobustness plot_* functions.
+"""Plotting helpers for margin figures. They match the MATLAB plot_* functions.
 
-Decade axes use log10-transformed values on linear axes (not matplotlib log scales)."""
+A decade axis plots log10-transformed values on a linear axis. It does not
+use a matplotlib log scale. Figures are saved without the matplotlib version
+stamp, so the bytes can be reproduced.
+"""
 
 from __future__ import annotations
 
@@ -18,13 +21,13 @@ import numpy as np
 
 PathLike = Union[str, Path]
 
-# Match MATLAB manuscript marker colors
+# Marker colours matching the MATLAB figures
 COLOR_ERR = (0.066, 0.443, 0.745)
 COLOR_H0 = (0.0, 0.0, 1.0)
 COLOR_H1 = (0.0, 1.0, 0.0)
 COLOR_H2 = (1.0, 0.0, 0.0)
 
-# ColorOrder taken from the manuscript H*_all.fig exports
+# Line colour order matching the MATLAB figures
 MATLAB_COLOR_ORDER = [
     (0.0660, 0.4430, 0.7450),
     (0.8660, 0.3290, 0.0000),
@@ -48,15 +51,12 @@ def _require_matplotlib():
     return plt, FixedLocator, FuncFormatter
 
 
-# Matplotlib records its own version inside a PNG tEXt chunk, so upgrading it
-# rewrites every figure -- identical pixels, five distinct bytes -- which
-# churns the repository and conceals any genuine change. Suppressing the field
-# keeps the figures reproducible from one version to the next.
+# Omit the matplotlib version from PNG metadata so figures are byte-reproducible.
 PNG_METADATA = {"Software": None}
 
 
 def apply_plot_style(fig) -> None:
-    """Impose a light theme suited to manuscript figures."""
+    """Apply a white background, black axes and a light grid to every axis of ``fig``."""
     fig.patch.set_facecolor("white")
     for ax in fig.axes:
         ax.set_facecolor("white")
@@ -71,7 +71,19 @@ def apply_plot_style(fig) -> None:
 
 
 def log10_axis(ax, which: str, raw_lim: Sequence[float], *, minor: bool = True) -> None:
-    """Set up a linear axis on data that have already been log10-transformed."""
+    """Label a linear axis holding log10-transformed data with decade ticks.
+
+    Parameters
+    ----------
+    ax : matplotlib Axes
+        Axes to modify.
+    which : str
+        ``'x'`` or ``'y'``.
+    raw_lim : (float, float)
+        Axis limits in untransformed (positive) units.
+    minor : bool
+        If True, add minor ticks at 2..9 times each decade.
+    """
     _, FixedLocator, FuncFormatter = _require_matplotlib()
     which = which.lower()
     lo = int(np.floor(np.log10(raw_lim[0])))
@@ -108,6 +120,20 @@ def log10_axis(ax, which: str, raw_lim: Sequence[float], *, minor: bool = True) 
         raise ValueError("which must be 'x' or 'y'")
 
 
+def _span_limits(values: Sequence[float], default: Tuple[float, float]) -> list:
+    """Keep ``default`` when every positive value lies inside it; widen otherwise."""
+    lo, hi = default
+    arr = np.asarray(list(values), dtype=float).ravel()
+    arr = arr[np.isfinite(arr) & (arr > 0)]
+    if arr.size == 0:
+        return [lo, hi]
+    vmin = float(np.min(arr))
+    vmax = float(np.max(arr))
+    if vmin >= lo and vmax <= hi:
+        return [lo, hi]
+    return [min(lo, vmin), max(hi, vmax)]
+
+
 def plot_margins_vs_index(
     err: Sequence[float],
     M0: Sequence[float],
@@ -116,12 +142,32 @@ def plot_margins_vs_index(
     *,
     out_path: Optional[PathLike] = None,
     dpi: int = 300,
+    ylim: Optional[Tuple[float, float]] = None,
 ):
-    """Manuscript-style margins plotted against controller index (ordered by epsilon_0)."""
+    """Plot margins for three structures and the nominal error against controller index.
+
+    Parameters
+    ----------
+    err : (n,) array
+        Nominal errors eps_0 = 1 - F_0; controllers are sorted by it.
+    M0, M1, M2 : (n,) arrays
+        Margins M for the three structures.
+    out_path : path, optional
+        If given, the figure is saved there.
+    dpi : int
+        Resolution for saving.
+    ylim : (float, float), optional
+        y limits. The default [1e-7, 1e-1] is kept when the data fits, and
+        widened when a point falls outside.
+
+    Returns
+    -------
+    matplotlib Figure
+    """
     plt, _, _ = _require_matplotlib()
     err = np.asarray(err, dtype=float).ravel()
     ord_ = np.argsort(err)
-    # Clamp for log10: near-perfect fidelity can produce eps<=0 from roundoff.
+    # Clamp for log10: roundoff can give eps_0 <= 0.
     floor_pos = np.finfo(float).tiny
     err_s = np.maximum(err[ord_], floor_pos)
     m0 = np.maximum(np.asarray(M0, dtype=float).ravel()[ord_], floor_pos)
@@ -168,7 +214,13 @@ def plot_margins_vs_index(
         linestyle="none",
         label=r"$H_2$ robustness margins",
     )
-    log10_axis(ax, "y", [1e-7, 1e-1])
+    log10_axis(
+        ax,
+        "y",
+        list(ylim)
+        if ylim is not None
+        else _span_limits([err_s, m0, m1, m2], (1e-7, 1e-1)),
+    )
     ax.set_xlim(1, err_s.size)
     ax.set_xlabel("controller index")
     ax.set_ylabel("")
@@ -204,7 +256,24 @@ def plot_margins_vs_sensitivity(
     out_path: Optional[PathLike] = None,
     dpi: int = 300,
 ):
-    """Two-panel M vs |zeta|; x is log10(|zeta|) on a linear axis."""
+    """Plot margins M against differential sensitivity |zeta| in two panels.
+
+    Parameters
+    ----------
+    abs_z0, abs_z1, abs_z2 : (n,) arrays
+        |zeta| for the three structures.
+    M0, M1, M2 : (n,) arrays
+        Margins M for the three structures.
+    out_path : path, optional
+        If given, the figure is saved there.
+    dpi : int
+        Resolution for saving.
+
+    Returns
+    -------
+    matplotlib Figure
+        Top panel: structure 0; bottom panel: structures 1 and 2.
+    """
     plt, _, _ = _require_matplotlib()
     z0 = np.maximum(np.asarray(abs_z0, dtype=float).ravel(), np.finfo(float).tiny)
     z1 = np.maximum(np.asarray(abs_z1, dtype=float).ravel(), np.finfo(float).tiny)
@@ -230,7 +299,6 @@ def plot_margins_vs_sensitivity(
     ax1.legend(loc="upper left")
     log10_axis(ax1, "x", [float(z0.min()) * 0.8, float(z0.max()) * 1.2])
     ax1.tick_params(labelsize=12)
-    # Reproduce the MATLAB-style scientific offset on the H0 panel
     ax1.ticklabel_format(axis="y", style="sci", scilimits=(-3, -3))
 
     ax2.plot(
@@ -284,13 +352,38 @@ def plot_fidelity_error_sweeps(
     num_xticks: int = 5,
     out_path: Optional[PathLike] = None,
     dpi: int = 300,
+    ylim: Optional[Tuple[float, float]] = None,
 ):
-    """Spaghetti plot of fidelity error against delta (log10(error) along linear y)."""
+    """Plot fidelity-error curves against perturbation strength with the 1 - F_T line.
+
+    Parameters
+    ----------
+    X_list, Y_list : sequences of arrays
+        Per-controller perturbation values and fidelity errors; equal lengths.
+    FT : float
+        Fidelity threshold F_T.
+    xlabel : str
+        x-axis label.
+    xlim : (float, float), optional
+        x limits; default symmetric about 0 over the data.
+    font_size, num_xticks : int
+        Label font size and number of x ticks.
+    out_path : path, optional
+        If given, the figure is saved there.
+    dpi : int
+        Resolution for saving.
+
+    ylim : (float, float), optional
+        y limits. The default [1e-7, 1.2e-3] is kept when the data and the
+        threshold line fit, and widened when a point falls outside.
+
+    Returns
+    -------
+    matplotlib Figure
+    """
     plt, _, _ = _require_matplotlib()
     fig, ax = plt.subplots(figsize=(6.5, 4.8), dpi=96)
     xmax = 0.0
-    # strict: mismatched lengths silently omitted curves from a
-    # published figure.
     for i, (x, y) in enumerate(zip(X_list, Y_list, strict=True)):
         x = np.asarray(x, dtype=float).ravel()
         y = np.maximum(np.asarray(y, dtype=float).ravel(), np.finfo(float).tiny)
@@ -306,7 +399,14 @@ def plot_fidelity_error_sweeps(
         ax.set_xlim(xlim)
     xlo, xhi = ax.get_xlim()
     ax.set_xticks(np.linspace(xlo, xhi, num_xticks))
-    log10_axis(ax, "y", [1e-7, 1.2e-3])
+    ys = [thr]
+    for y in Y_list:
+        ys.extend(np.asarray(y, dtype=float).ravel().tolist())
+    log10_axis(
+        ax,
+        "y",
+        list(ylim) if ylim is not None else _span_limits(ys, (1e-7, 1.2e-3)),
+    )
     ax.set_xlabel(xlabel)
     ax.set_ylabel("fidelity error")
     ax.tick_params(labelsize=font_size)
@@ -326,11 +426,16 @@ def plot_fidelity_error_sweeps(
 
 
 def save_fig(fig, path: PathLike, *, dpi: int = 300) -> None:
-    """Emit a figure in a reproducible way.
+    """Save a figure with a white background and no version stamp, creating parent dirs.
 
-    ``PNG_METADATA`` suppresses the matplotlib version stamp, so the same
-    figure regenerates as the same bytes; the white face colour keeps a
-    dark-themed environment from bleeding into a manuscript figure.
+    Parameters
+    ----------
+    fig : matplotlib Figure
+        Figure to save.
+    path : path
+        Output file.
+    dpi : int
+        Resolution.
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)

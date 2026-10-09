@@ -1,20 +1,22 @@
 function run_lipschitz_margin_case_study(varargin)
-%RUN_LIPSCHITZ_MARGIN_CASE_STUDY Reproduce the robustness-margin case study on three qubits.
+%RUN_LIPSCHITZ_MARGIN_CASE_STUDY Margins M, sensitivities zeta and figures for the three-qubit case study.
 %
 %   Name-value options:
-% 'max_controllers' [] = every accepted controller (61); set small for smoke runs
-%     'FT'               0.999
-%     'max_error'        1e-4
-%     'eta'              1e-6
-%     'do_sweep'         true  (fidelity-vs-delta overlays)
-%     'root'             auto-detect repo root
-% 'controller_set' 'problem9_tf15_K32_quasi-newton' (beneath data/controllers/) 'controller_dir' '' ->
-% data/controllers/<controller_set>; or an absolute path (e.g. results/synth-matlab) holding problem9.mat + controllers.csv
-%     'results_id'       'lipschitz-margin-matlab'  -> results/<id>/
-%     'build_dir'        build/ (regenerable intermediates)
-% 'publish_dir' results/<results_id>/ (manuscript deliverables)
+%     'max_controllers' - number of controllers ([] = all accepted)
+%     'FT'              - fidelity threshold F_T (default 0.999)
+%     'max_error'       - nominal error filter (default 1e-4)
+%     'eta'             - fidelity stopping band (default 1e-6)
+%     'do_sweep'        - fidelity-against-delta figures (default true)
+%     'root'            - repository root (default: detected)
+%     'controller_set'  - directory under data/controllers/ (default
+%                         'problem9_tf15_K32_quasi-newton')
+%     'controller_dir'  - directory with problem9.mat and controllers.csv
+%                         (default '' = data/controllers/<controller_set>)
+%     'results_id'      - results/<id>/ (default 'lipschitz-margin-matlab')
+%     'build_dir'       - intermediates (default build/)
+%     'publish_dir'     - published outputs (default results/<results_id>/)
 %
-% Counterpart of scripts/run_lipschitz_margin_case_study.py.
+%   Peer of scripts/run_lipschitz_margin_case_study.py.
 
     % Select the graphics toolkit before any figure exists.
     qrobustness.compat.setup_graphics();
@@ -46,9 +48,7 @@ function run_lipschitz_margin_case_study(varargin)
         ctrl_dir = opt.controller_dir;
     end
     mat_path = fullfile(ctrl_dir, 'problem9.mat');
-    % Bracket refinement for the certified margin, named to match the Python reference MARGIN_TOL rather than sitting as a literal
-    % at
-    % the call site; the value is the reference's.
+    % Bracket refinement; same value as MARGIN_TOL in the Python driver.
     margin_tol = 1e-8;
     csv_path = fullfile(ctrl_dir, 'controllers.csv');
 
@@ -109,8 +109,7 @@ function run_lipschitz_margin_case_study(varargin)
             fid_fn = qrobustness.make_fidelity_fn( ...
                 problem.H0, problem.H1, problem.H2, c.u1, c.u2, problem.Uf, dt, tag);
 
-            % margin_tol is aligned with the Python reference; see the note in
-            % run_time_bandwidth_bound_comparison.m.
+            % margin_tol as in the Python driver.
             margin = qrobustness.iterative_margin(fid_fn, L, FT, ...
                 'mu0', 0, 'eta', opt.eta, 'margin_tol', margin_tol);
 
@@ -201,9 +200,7 @@ function run_lipschitz_margin_case_study(varargin)
 end
 
 function write_focal_tests(T, path)
-    % Cross-check, not a paper claim: Table I is given descriptively. Kendall's tau_b confirms the reading does not depend on which
-    % rank statistic is chosen, with a Holm correction across the family of three so
-    % the multiplicity is fixed in advance.
+    % Kendall's tau_b of M_j against |zeta_j|, with a Holm correction across the three structures.
     n = numel(T.M_H0);
     taus = zeros(1, 3);
     pvals = zeros(1, 3);
@@ -236,9 +233,7 @@ function adj = holm(pvals)
 end
 
 function write_correlations(T, path)
-    % Sensitivities enter as |zeta|: min(M-, M+) remains invariant under reversal of the parameter coordinate while zeta changes
-    % sign (see
-    % write_correlation_tex).
+    % Sensitivities enter as |zeta|; see write_correlation_tex.
     vars = {'err', 'M_H0', 'M_H1', 'M_H2', 'zeta_H0', 'zeta_H1', 'zeta_H2'};
     names = {'err', 'M_H0', 'M_H1', 'M_H2', 'abs_zeta_H0', 'abs_zeta_H1', 'abs_zeta_H2'};
     X = qrobustness.compat.margins_matrix(T, vars);
@@ -264,9 +259,7 @@ function write_correlations(T, path)
 end
 
 function write_correlation_tex(T, path)
-    % M_j = min(M_j-, M_j+) remains invariant under reversal of the parameter coordinate while zeta_j changes sign, so |zeta_j| is
-    % the orientation-invariant local comparator; correlating against signed zeta can hide a relationship by mixing the two signs.
-    % Matches Fig. 3.
+    % M_j is invariant under reversal of the parameter coordinate while zeta_j changes sign, so |zeta_j| is used.
     vars = {'err', 'M_H0', 'M_H1', 'M_H2', 'zeta_H0', 'zeta_H1', 'zeta_H2'};
     labels = {'$\varepsilon_0$', '$M_0$', '$M_1$', '$M_2$', '$|\zeta_0|$', '$|\zeta_1|$', '$|\zeta_2|$'};
     X = qrobustness.compat.margins_matrix(T, vars);

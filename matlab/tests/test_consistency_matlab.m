@@ -1,10 +1,6 @@
 function test_consistency_matlab()
-%TEST_CONSISTENCY_MATLAB Compare live MATLAB values against Python's committed table.
-%
-% The reference is results/lipschitz-margin-python/margins_table_<FT>.csv, not a recorded fixture. A fixture asserts that some
-% previous answer was correct, which it never established; agreement of two independent implementations is evidence, and if they
-% move together the committed tree shows it in git. make test-parity does the full 61-controller comparison; this
-%   is the subset that runs inside the MATLAB suite.
+%TEST_CONSISTENCY_MATLAB Compare live MATLAB margins with results/lipschitz-margin-python/margins_table_<FT>.csv.
+%   Checks a subset of controllers; make test-parity compares all of them.
 
     this_dir = fileparts(mfilename('fullpath'));
     root = fileparts(fileparts(this_dir));
@@ -22,10 +18,8 @@ function test_consistency_matlab()
     table_path = fullfile(root, 'results', 'lipschitz-margin-python', ...
         sprintf('margins_table_%g.csv', FT));
     if ~isfile(table_path)
-        % A skip rather than a failure: make maintainer-clean removes every generated result on purpose, and running the tests
-        % before
-        % rebuilding them is a legitimate order.
-        fprintf('SKIP  test_consistency_matlab (no %s; run make paper-QRM-margins)\n', ...
+        % Skip if the results have not been generated (e.g. after make maintainer-clean).
+        fprintf('SKIP  test_consistency_matlab (no %s; run make run-QRM-margins)\n', ...
             'results/lipschitz-margin-python/margins_table_0.999.csv');
         return
     end
@@ -82,9 +76,7 @@ function test_consistency_matlab()
 end
 
 function t = read_margins_table(path)
-%READ_MARGINS_TABLE Numeric CSV with a header, returned as a struct of columns. A struct rather than a table: `table` lives in an
-% Octave Forge package
-%   and this suite runs on core Octave.
+%READ_MARGINS_TABLE Numeric CSV with a header, as a struct of columns (core Octave has no table).
     fid = fopen(path, 'r');
     header = strsplit(strtrim(fgetl(fid)), ',');
     data = textscan(fid, repmat('%f', 1, numel(header)), 'Delimiter', ',');

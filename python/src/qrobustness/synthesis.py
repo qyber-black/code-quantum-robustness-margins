@@ -5,22 +5,13 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Controller synthesis by GRAPE using exact gradients.
+"""GRAPE controller synthesis with exact interval derivatives.
 
-We construct piecewise-constant controllers for the gate-fidelity
-objective of this package, so that margin case studies on systems other
-than the shipped controller set can be reproduced from the repository
-alone.  The gradient of the fidelity with respect to each control
-amplitude is evaluated with the same closed-form interval derivative
-used throughout the package (one Hermitian eigendecomposition per
-interval; see ``core.dU_dmu_exact``), so synthesis introduces no new
-numerics.
-
-The optimiser is L-BFGS-B on ``1 - F`` from independent standard-normal
-initialisations with deterministic seeds; ensembles are therefore
-byte-reproducible.  This mirrors the protocol used to produce the
-shipped controller set (500 iterations, fidelity tolerance ``1e-12``,
-keep controllers with nominal error ``eps_0 <= 1e-4``)."""
+The module returns the gate fidelity and its exact control gradient for any
+number of controls. Single-controller and ensemble synthesis are seeded
+L-BFGS-B minimisations of 1 - F. Ensemble-robust synthesis samples
+multiplicative perturbations. The seeds reproduce the results.
+"""
 
 from __future__ import annotations
 
@@ -38,10 +29,7 @@ from .core import (
     gate_fidelity,
 )
 
-#: Gradient tolerance of the L-BFGS-B stopping rule. Not a parameter, unlike
-#: maxiter and ftol, because synthesised ensembles have to be reproducible
-#: from the seed alone; we name it here so the stopping rule remains visible
-#: rather than appearing twice as a literal inside an options dict.
+#: Gradient tolerance of the L-BFGS-B stopping rule (fixed for reproducibility).
 GTOL = 1e-12
 
 __all__ = [
@@ -60,11 +48,27 @@ def fidelity_and_control_gradient(
     dt: float,
     Uf: Array,
 ) -> Tuple[float, Array]:
-    """Gate fidelity together with its exact gradient in the controls.
+    """Gate fidelity and its exact gradient in the controls.
 
-    ``u`` has shape ``(n_ctrl, tau)``; interval ``k`` evolves under
-    ``H0 + sum_j u[j, k] H_ctrls[j]`` for time ``dt``.  Returns
-    ``(F, dF/du)`` with ``dF/du`` of the same shape as ``u``.
+    Parameters
+    ----------
+    H0 : (N, N) array
+        Drift Hamiltonian.
+    H_ctrls : sequence of (N, N) arrays
+        Control Hamiltonians, one per control j.
+    u : (n_ctrl, tau) array
+        Controls; interval k evolves under H0 + sum_j u[j, k] H_ctrls[j].
+    dt : float
+        Interval length.
+    Uf : (N, N) array
+        Target gate.
+
+    Returns
+    -------
+    F : float
+        Gate fidelity |tr(Uf^dag U)|/N.
+    dF_du : (n_ctrl, tau) array
+        Gradient; zero where tr(Uf^dag U) = 0 (gradient undefined).
     """
     u = np.asarray(u, dtype=float)
     n_ctrl, tau = u.shape
@@ -83,8 +87,7 @@ def fidelity_and_control_gradient(
     F = gate_fidelity(Utot, Uf)
     z = np.trace(Uf.conj().T @ Utot)
     if np.abs(z) == 0.0:
-        # The gradient of |z| is undefined at z = 0; emit a zero gradient
-        # (a measure-zero event under a random initialisation).
+        # |z| is not differentiable at z = 0.
         return F, np.zeros_like(u)
     e_minus_i_phi = np.conj(z / np.abs(z))
 
@@ -105,7 +108,21 @@ def fidelity_and_control_gradient(
 
 @dataclass
 class GrapeResult:
-    """Synthesised controller: the controls ``u``, fidelity and metadata."""
+    """Synthesised controller.
+
+    Attributes
+    ----------
+    u : (n_ctrl, tau) array
+        Controls.
+    fidelity, error : float
+        Nominal gate fidelity F_0 and eps_0 = 1 - F_0.
+    n_iter : int
+        Optimiser iterations.
+    seed : int
+        Seed of the random initialisation.
+    converged : bool
+        The optimiser's success flag.
+    """
 
     u: Array
     fidelity: float
@@ -126,7 +143,31 @@ def grape(
     ftol: float = 1e-12,
     u0_scale: float = 1.0,
 ) -> GrapeResult:
-    """Synthesise a single controller from a seeded random initialisation."""
+    """Synthesise one controller by L-BFGS-B from a seeded random start.
+
+    Parameters
+    ----------
+    H0 : (N, N) array
+        Drift Hamiltonian.
+    H_ctrls : sequence of (N, N) arrays
+        Control Hamiltonians.
+    Uf : (N, N) array
+        Target gate.
+    tf : float
+        Gate time T; the interval length is tf/tau.
+    tau : int
+        Number of intervals.
+    seed : int
+        Seed for the standard-normal initial controls.
+    maxiter, ftol :
+        L-BFGS-B options.
+    u0_scale : float
+        Scale of the initial controls.
+
+    Returns
+    -------
+    GrapeResult
+    """
     rng = np.random.default_rng(seed)
     dt = tf / tau
     n_ctrl = len(H_ctrls)
@@ -169,10 +210,25 @@ def grape_ensemble(
     maxiter: int = 500,
     verbose: bool = False,
 ) -> List[GrapeResult]:
-    """Synthesise an ensemble; retain controllers with ``eps_0 <= max_error``.
+    """Synthesise an ensemble, keeping controllers with eps_0 <= max_error.
 
-    Attempt ``i`` uses seed ``seed0 + i``, so the ensemble is
-    reproducible from ``(seed0, n_attempts)`` alone.
+    Parameters
+    ----------
+    H0, H_ctrls, Uf, tf, tau, maxiter :
+        As for ``grape``.
+    n_attempts : int
+        Number of runs; run i uses seed seed0 + i.
+    max_error : float
+        Largest nominal error eps_0 kept.
+    seed0 : int
+        First seed.
+    verbose : bool
+        Print one line per attempt.
+
+    Returns
+    -------
+    list of GrapeResult
+        Kept controllers in seed order.
     """
     kept: List[GrapeResult] = []
     for i in range(n_attempts):
@@ -200,16 +256,20 @@ def grape_robust(
     ftol: float = 1e-12,
     u0_scale: float = 1.0,
 ) -> GrapeResult:
-    """Ensemble-robust GRAPE: raise the mean fidelity over sampled
-    structured perturbations.
+    """Synthesise one controller maximising the mean fidelity over perturbation samples.
 
-    ``sample_deltas`` is a list of perturbation samples; each sample is a
-    vector ``(d_0, d_1, ..., d_nc)`` of multiplicative perturbations
-    applied as ``H0 (1 + d_0)`` and control amplitudes ``u_j (1 + d_j)``
-    (the structures of the margin analysis). The objective is
-    ``1 - mean_s F_s``; gradients are averaged sample gradients, exact.
-    Reported ``fidelity``/``error`` refer to the NOMINAL (unperturbed)
-    controller, so the results stay directly comparable to :func:`grape`.
+    Parameters
+    ----------
+    H0, H_ctrls, Uf, tf, tau, seed, maxiter, ftol, u0_scale :
+        As for ``grape``.
+    sample_deltas : sequence of (1 + n_ctrl,) arrays
+        Samples (d_0, d_1, ..., d_nc) applied as H0 (1 + d_0) and
+        H_ctrls[j] (1 + d_j).
+
+    Returns
+    -------
+    GrapeResult
+        ``fidelity`` and ``error`` are for the nominal (unperturbed) system.
     """
     rng = np.random.default_rng(seed)
     dt = tf / tau

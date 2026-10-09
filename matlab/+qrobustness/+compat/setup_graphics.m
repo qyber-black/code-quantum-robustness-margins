@@ -1,14 +1,10 @@
 function toolkit = setup_graphics()
-%SETUP_GRAPHICS Choose the graphics toolkit used for figure export. toolkit = SETUP_GRAPHICS() returns the name of the toolkit in
-% use, or ''
-%   under MATLAB, where the choice does not arise.
+%SETUP_GRAPHICS Choose the graphics toolkit used for figure export.
+%   toolkit = qrobustness.compat.setup_graphics()
 %
-% Octave recommends the qt toolkit and warns that gnuplot is unmaintained, so we select qt whenever it is available. Octave disables
-% GUI features when no display is present, and qt is then unavailable however it is requested; gnuplot is the only remaining option
-% in that case, so its advisory is suppressed rather than repeated for every figure.
-%
-% The selection is made once per session. It affects only rendering, not any computed value, but PNG output differs between
-% toolkits, so figures produced with and without a display are not byte-identical.
+%   Under Octave selects qt when usable, otherwise gnuplot with its
+%   advisory suppressed, once per session; returns the toolkit name. Returns
+%   '' under MATLAB. PNG output differs between toolkits.
 
     persistent chosen
     if ~isempty(chosen)

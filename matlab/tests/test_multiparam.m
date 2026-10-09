@@ -50,9 +50,7 @@ function test_multiparam()
     for i = 1:8
         assert(abs(norm(D(i, :), 2) - 1) < 1e-14);
     end
-    % ORDER, not merely membership. Python builds these with itertools.product((-1, 1), repeat=p), which varies the last coordinate
-    % fastest. Checking only that each row is a unit vector is order-blind and passes against a permutation, which is exactly how a
-    % column-order divergence reached a written CSV unnoticed.
+    % Row order, not only membership: itertools.product((-1, 1), repeat=p) order, last coordinate fastest.
     expected = [-1 -1 -1; -1 -1 1; -1 1 -1; -1 1 1
                  1 -1 -1;  1 -1 1;  1 1 -1;  1 1 1] / sqrt(3);
     assert(norm(D - expected, 'fro') < 1e-14);
@@ -67,9 +65,7 @@ function test_multiparam()
     Cj = qrobustness.lengthspace.path_gauge_C(gj, x);
     Ca = qrobustness.lengthspace.path_gauge_C(ga, x);
 
-    % Full-gauge dominance: C_FS(x) <= C_joint(x)/sqrt(N). Both structures in this case are traceless, so the traceless projection
-    % changes nothing and
-    % the normalisation is exactly the 1/sqrt(N).
+    % C^stat_FS(x) <= C_joint(x)/sqrt(N); equality here, since both structures are traceless.
     assert(Ca <= Cj / sqrt(N) + 1e-12);
     assert(abs(Ca - Cj / sqrt(N)) < 1e-12);
 

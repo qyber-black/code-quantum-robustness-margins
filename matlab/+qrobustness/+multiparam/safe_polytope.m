@@ -6,11 +6,15 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function P = safe_polytope(centre, L, F, FT)
-%SAFE_POLYTOPE Certified cross-polytope sum_j L_j |mu_j - centre_j| <= surplus. Each point of the polytope satisfies F >= FT.
-% Returns a struct with fields centre, L, surplus, and the derived axis_radii,
-%   inradius_linf, inradius_l2.
+%SAFE_POLYTOPE Certified cross-polytope sum_j L_j |mu_j - centre_j| <= F - F_T.
+%   centre - centre nu
+%   L      - per-parameter constants L_j
+%   F      - fidelity F_nu at the centre, F > F_T
+%   FT     - fidelity threshold F_T
+%   P      - struct with fields centre, L, surplus, axis_radii,
+%            inradius_linf, inradius_l2
 %
-% Counterpart of python/src/qrobustness/multiparam.py:safe_polytope.
+%   Peer of python/src/qrobustness/multiparam.py:safe_polytope.
 
     if ~(F > FT)
         error('qrobustness:multiparam:surplus', 'Require F > FT at the centre');

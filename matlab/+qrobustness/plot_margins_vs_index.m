@@ -1,11 +1,18 @@
 function fig = plot_margins_vs_index(err, M0, M1, M2, varargin)
-%PLOT_MARGINS_VS_INDEX Manuscript-style margins against controller index.
+%PLOT_MARGINS_VS_INDEX Plot margins against controller index.
+%   err        - nominal fidelity errors; controllers are sorted by them
+%   M0, M1, M2 - margins for the H0, H1 and H2 structures
+%   fig        - figure handle
 %
-% Controllers are ordered by rising nominal fidelity error. The vertical axis plots log10(values) on a linear scale (not
-% YScale=log).
+%   Name-value options:
+%     'Visible' - figure visibility (default 'off')
+%     'ylim'    - y limits; default [1e-7, 1e-1], widened if data falls outside
+%
+%   Values are drawn as log10 data on a linear axis.
 
     p = inputParser;
     addParameter(p, 'Visible', 'off');
+    addParameter(p, 'ylim', []);
     parse(p, varargin{:});
 
     [err_s, ord] = sort(err(:));
@@ -24,10 +31,7 @@ function fig = plot_margins_vs_index(err, M0, M1, M2, varargin)
     ax = axes('Parent', fig);
     hold(ax, 'on');
 
-    % Manuscript marker colours, named so they match the Python reference's COLOR_ERR / COLOR_H0 / COLOR_H1 / COLOR_H2. They were
-    % four inline literals here while the reference named them, so a change on one side would have shifted that engine's figures
-    % away from the published ones
-    % without anything saying so.
+    % Marker colours; keep in step with COLOR_ERR / COLOR_H0 / COLOR_H1 / COLOR_H2 in plotting.py.
     color_err = [0.066 0.443 0.745];
     color_H0 = [0 0 1];
     color_H1 = [0 1 0];
@@ -43,7 +47,12 @@ function fig = plot_margins_vs_index(err, M0, M1, M2, varargin)
     plot(ax, idx, log10(M2), '<', 'Color', color_H2, 'MarkerFaceColor', color_H2, ...
         'MarkerSize', 6, 'LineStyle', 'none', 'DisplayName', 'H_2 robustness margins');
 
-    qrobustness.log10_axis(ax, 'y', [1e-7, 1e-1]);
+    if isempty(p.Results.ylim)
+        yspan = span_limits([err_s(:); M0(:); M1(:); M2(:)], [1e-7, 1e-1]);
+    else
+        yspan = p.Results.ylim;
+    end
+    qrobustness.log10_axis(ax, 'y', yspan);
     set(ax, 'XLim', [1, numel(idx)], 'XScale', 'linear');
     grid(ax, 'on');
     set(ax, 'XMinorGrid', 'off');
@@ -52,6 +61,22 @@ function fig = plot_margins_vs_index(err, M0, M1, M2, varargin)
     legend(ax, 'Location', 'southeast');
     set(ax, 'FontName', 'Arial', 'FontSize', 14);
     qrobustness.apply_plot_style(fig);
+end
+
+function lim = span_limits(values, default_lim)
+    lim = default_lim;
+    values = values(isfinite(values) & values > 0);
+    if isempty(values)
+        return
+    end
+    vmin = min(values);
+    vmax = max(values);
+    if vmin < lim(1)
+        lim(1) = vmin;
+    end
+    if vmax > lim(2)
+        lim(2) = vmax;
+    end
 end
 
 % SPDX-FileCopyrightText: (C) 2026 F. C. Langbein <frank@langbein.org>

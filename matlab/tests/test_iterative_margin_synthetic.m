@@ -1,6 +1,5 @@
 function test_iterative_margin_synthetic()
-    % Synthetic landscape F(mu) = 1 - a*(mu-mu_star)^2 near the peak, then clipped. Use a monotone-decreasing-from-nominal model for
-    % Algorithm 1.
+    % Synthetic fidelity, monotone decreasing away from the nominal point.
     FT = 0.99;
     mu0 = 0;
     % F(mu) = 1 - 0.05*|mu|  => crosses FT=0.99 at |mu|=0.2

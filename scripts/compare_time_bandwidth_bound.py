@@ -6,11 +6,14 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Compare MATLAB and Python Kosut-comparison tables.
+"""Compare the time-bandwidth (Kosut et al.) tables of two engines.
 
-Counterpart of compare_margins_full.py for the supplementary Kosut et al. bound
-(arXiv:2507.01215). Defaults to the MATLAB and Python trees; supply explicit
-paths to compare any other pair (e.g. an Octave run)."""
+Reads kosut_comparison_<FT>.csv from the MATLAB and Python trees, or the
+files given by --a/--b, and compares fid, err and, per structure H0, H1, H2,
+the columns M, KM, ratio, KTOb, Kflb, wunc, wavg, wdev within _compare's
+tolerances. Writes the report to --out (default
+build/matlab_python_kosut_compare.txt) ending in overall=PASS|FAIL; exit
+code 0 on pass, 1 on a mismatch, 2 on a missing table."""
 
 from __future__ import annotations
 
@@ -48,11 +51,10 @@ def main() -> int:
     path_b = args.b or ROOT / "results/time-bandwidth-bound-python" / name
     for p in (path_a, path_b):
         if not p.exists():
-            # Identify the engine whose file is missing and a target that
-            # exists, so the hint can be followed as printed.
+            # Name the engine whose file is missing in the hint.
             engine = p.parent.name.rsplit("-", 1)[-1]
             print(
-                f"Missing {p}; run make paper-QRM-time-bandwidth ENGINE={engine}",
+                f"Missing {p}; run make run-QRM-time-bandwidth ENGINE={engine}",
                 file=sys.stderr,
             )
             return 2

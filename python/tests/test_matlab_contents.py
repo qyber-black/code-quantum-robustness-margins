@@ -7,7 +7,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Every MATLAB package documents exactly the functions it contains.
 
-``Contents.m`` is what ``help qrobustness`` prints, so it is the first thing a reader of the peer meets. It is also hand-written and therefore drifts: a function added without a line here is invisible, and a line left behind after a rename points at nothing. Neither shows up in any other check -- the package still loads, the tests still pass -- so we assert the agreement here.
+``Contents.m`` is what ``help qrobustness`` prints, so it is the first thing a reader of the peer meets. It is also hand-written and therefore drifts: a function added without a line here is invisible, and a line left behind after a rename points at nothing. Neither shows up in any other check. The package still loads and the tests still pass, so the agreement is asserted here.
 
 The test lives on the Python side because that is the only suite CI runs."""
 

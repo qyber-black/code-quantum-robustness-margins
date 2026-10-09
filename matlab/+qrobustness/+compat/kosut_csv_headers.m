@@ -1,6 +1,6 @@
 function headers = kosut_csv_headers()
-%KOSUT_CSV_HEADERS Column names for kosut_comparison_*.csv (MATLAB and Python). Keep aligned with
-% scripts/run_time_bandwidth_bound_comparison.py (CSV_HEADERS).
+%KOSUT_CSV_HEADERS Column names of kosut_comparison_*.csv.
+%   Keep in step with CSV_HEADERS in scripts/run_time_bandwidth_bound_comparison.py.
     headers = {'controller', 'fid', 'err'};
     tags = {'H0', 'H1', 'H2'};
     per = {'M', 'KM', 'ratio', 'KTOb', 'Kflb', 'wunc', 'wavg', 'wdev'};

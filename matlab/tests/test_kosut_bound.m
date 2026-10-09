@@ -1,5 +1,6 @@
 function test_kosut_bound()
-%TEST_KOSUT_BOUND Unit tests for +qrobustness/+kosut (counterpart of test_kosut.py).
+%TEST_KOSUT_BOUND Unit tests for +qrobustness/+kosut.
+%   Peer of python/tests/test_kosut.py.
 
     this_dir = fileparts(mfilename('fullpath'));
     root = fileparts(fileparts(this_dir));
@@ -59,9 +60,7 @@ function test_kosut_bound()
                 'effective_threshold closed form at FT=%g eps0=%g', FT, eps0);
         end
     end
-    % Equality case: for collinear single-qubit Z rotations the angles add exactly, so an achieved-gate fidelity of F_eff places the
-    % TARGET
-    % fidelity exactly on FT.
+    % Equality case: collinear single-qubit Z rotations, where the angles add exactly, put the target fidelity on FT.
     Uf = eye(2);
     for FT = [0.9 0.99 0.999]
         for eps0 = [1e-6 1e-4 1e-3]
@@ -188,11 +187,19 @@ function test_kosut_bound()
     assert_error(@() qrobustness.kosut.fidelity_bound(-0.1), ...
         'qrobustness:kosut:NegTOb', 'negative T*Omega_bnd');
 
+    % Peer of test_kosut.py:test_samples_follow_the_capped_grid.
+    % Eigenvalue range 1, so one cycle is 2*pi. n_dev_max = 4 leaves 3 steps.
+    Hcap = {0.5 * [1 0; 0 -1]};
+    capped = qrobustness.kosut.uncertainty_rates(Hcap, {eye(2)}, 1, [], 3, [], 4, false, 50);
+    assert(capped.n_dev_used == 4, 'capped grid size');
+    assert(abs(capped.dev_samples_per_cycle - 6 * pi) < 1e-12, ...
+        'samples/cycle %g, expected 6*pi', capped.dev_samples_per_cycle);
+    assert(~capped.dev_resolved, 'a capped grid is not resolved');
+
 end
 
 function [H_list, dt] = deterministic_pwc(seed, tau, dt, SX, SY, SZ)
-%DETERMINISTIC_PWC PWC single-qubit Hamiltonians from a fixed closed form. Free of RNG so that MATLAB and Octave agree exactly; the
-% Python peer tests use their own draws, since only the committed tables are cross-language.
+%DETERMINISTIC_PWC Piecewise-constant single-qubit Hamiltonians from a fixed closed form (no RNG).
     H_list = cell(1, tau);
     for k = 1:tau
         f1 = sin(1.7 * (k + seed));

@@ -269,7 +269,7 @@ def test_certificate_holds_against_adversary(case):
     )
     r0 = tv.uniform_margin(L1, scalar_fn(0.0), FT)
 
-    F_min, _ = tv.adversarial_fidelity(
+    F_min, _, _nfev = tv.adversarial_fidelity(
         H_list, Hhat, dt, problem["Uf"], 0.98 * r0, n_starts=3, seed=5
     )
     assert F_min >= FT - 1e-12, "adversary violated the certified radius"

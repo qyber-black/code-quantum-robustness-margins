@@ -5,7 +5,7 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""We require reachability for every document and resolution for every link.
+"""Require reachability for every document and resolution for every link.
 
 An unlinked file in `docs/` is documentation nobody finds. A link to a missing file is worse: the reader concludes the answer was never written."""
 

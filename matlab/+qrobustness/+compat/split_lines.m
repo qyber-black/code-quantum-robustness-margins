@@ -1,5 +1,6 @@
 function lines = split_lines(txt)
-%SPLIT_LINES Divide text into lines (Octave-safe alternative to splitlines).
+%SPLIT_LINES Split text into a cell array of lines.
+%   txt - char vector; LF, CRLF and CR all end a line
     if exist('splitlines', 'builtin') || (exist('splitlines', 'file') == 2 && ~qrobustness.compat.is_octave())
         lines = splitlines(txt);
         return

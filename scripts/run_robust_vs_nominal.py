@@ -6,18 +6,28 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Certified margins as a controller-selection tool: robust vs nominal.
+"""Certified margins of robustified CNOT controllers and nominal ones.
 
-On the CNOT model of run_cnot_case_study.py, synthesises an ensemble
-of ensemble-robustified controllers (average fidelity over the nine
-sign-pattern samples of the three multiplicative structures at
-delta_0 = 0.01, plus the nominal) alongside the plain nominal-GRAPE
-ensemble, and compares the certified margins: iterated M per
-structure, joint gauge inradius, and r_FS.  If the certified margins
-separate the two families, the margin is demonstrably useful for
-controller selection, not only post-hoc analysis.
+On the CNOT model of _drivers.cnot_model, synthesises N_EACH plain GRAPE
+controllers and N_EACH ensemble-robustified ones (average fidelity over the
+nominal and the eight sign patterns of the three multiplicative structures
+at delta_0 = 0.01), and computes per controller, for the structures H0, X1,
+X2, M with its witness M_upper, r_FS, the toggling-frame cancellation and the
+sampled C_joint gauge inradius; with --adversary also the adversarial
+witness m_adv on the time-varying margin for X1 and X2 (the xQRM paper,
+Numerical evaluation, robustness is uncertainty-class dependent).
+Options: --FT, --out, --adversary.
 
-Writes results/cnot-python/robust_vs_nominal_<FT>.csv.
+Writes results/cnot-python/robust_vs_nominal_<FT>.csv:
+    kind, seed, err, fid: family (nominal or robust), seed, nominal error and
+        fidelity.
+    budget, area_X1, area_X2: arccos FT - theta_0 and the pulse areas
+        sum_k |u_j(k)| (r_FS factors into these).
+    M_<s>, Mupper_<s>, rfs_<s>: M, M_upper on the side that sets M, r_FS.
+    madv_<s>, madvF_<s> (X1, X2, --adversary only): m_adv and the fidelity of
+        the witness re-evaluated with the expm propagator (NaN if none).
+    cancel_<s>: Frobenius norm of the toggling-frame integral of the structure.
+    inradius_gauge: sampled inradius of the C_joint gauge region.
 """
 
 from __future__ import annotations
@@ -47,11 +57,9 @@ from qrobustness.timevarying import (
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT_DIR = ROOT / "results/cnot-python"
-#: Safe-radius continuation step, matched to the other drivers.
+#: Continuation hand-over surplus eta, as in the other drivers.
 ETA = DEFAULT_ETA
-#: Bracket refinement, 1e-8 as in every other closed-system driver. This
-#: was 1e-6 -- the open-system value -- so the margins here were certified
-#: to a looser bracket than the ones they are compared against.
+#: Relative bracket tolerance, 1e-8 as in every closed-system driver.
 MARGIN_TOL = 1e-8
 
 H0, X1, X2, CNOT = cnot_model()
@@ -68,9 +76,7 @@ N_PARAMS = len(STRUCTURES)
 #: Synthesis attempts allowed per family before giving up on the quota.
 ATTEMPTS_PER_KEPT = 3
 
-#: Sampled inradius of the joint gauge region. Fewer directions than the
-#: dedicated joint-gauge driver uses: here the inradius is one column
-#: among many, not the result being reported.
+#: Directions for the sampled joint-gauge inradius.
 N_SPHERE = 100
 SPHERE_SEED = 0
 
@@ -98,7 +104,14 @@ def margins_for(u, ft, adversary=False, seed=0):
         "X2": structure_constant("control", X2, DT, TAU, u[1]),
     }
     L = np.array([lipschitz_constant(ft, DIM, C[t]) for t in STRUCTURES])
-    out = {"fid": F0}
+    # r_FS = (arccos FT - theta_0) / s_j with s_j proportional to the pulse
+    # area, so both factors are recorded per controller.
+    out = {
+        "fid": F0,
+        "budget": float(np.arccos(ft) - np.arccos(min(F0, 1.0))),
+        "area_X1": float(np.sum(np.abs(u[0]))),
+        "area_X2": float(np.sum(np.abs(u[1]))),
+    }
     for j, tag in enumerate(STRUCTURES):
         dH = dHs[tag]
 
@@ -107,18 +120,17 @@ def margins_for(u, ft, adversary=False, seed=0):
                 propagator([H_list[k] + mu * dH[k] for k in range(TAU)], DT), CNOT
             )
 
-        out[f"M_{tag}"] = float(
-            iterative_margin(
-                fid_fn, L[j], ft, mu0=0.0, eta=ETA, margin_tol=MARGIN_TOL
-            ).M
+        res = iterative_margin(
+            fid_fn, L[j], ft, mu0=0.0, eta=ETA, margin_tol=MARGIN_TOL
         )
+        out[f"M_{tag}"] = float(res.M)
+        # Unsafe witness M_upper on the side that sets M.
+        side = "minus" if res.M_minus <= res.M_plus else "plus"
+        out[f"Mupper_{tag}"] = float(getattr(res, f"M_upper_{side}"))
         out[f"rfs_{tag}"] = fs_margin(dH, DT, F0, ft).r_fs
         if adversary and tag != "H0":
-            # Numerical upper witness on the true trajectory margin
-            # M_tv: a sup-norm budget at which the standard adversary
-            # exhibits a violating trajectory -- found, not least, since
-            # the search is a heuristic local one (evidence layer for the
-            # family comparison, not a certificate).
+            # Adversarial upper witness m_adv on M_tv: a budget at which a
+            # violating trajectory was found (not necessarily the least).
             br = adversarial_upper_bound(
                 H_list,
                 dH,
@@ -129,13 +141,13 @@ def margins_for(u, ft, adversary=False, seed=0):
                 ADVERSARY_SPAN * out[f"M_{tag}"],
                 rel_tol=ADVERSARY_RTOL,
                 seed=seed + ADVERSARY_SEED_STRIDE * STRUCTURES.index(tag),
+                n_starts=4,
+                starts="legacy",
+                maxiter=200,
             )
             out[f"madv_{tag}"] = br.m_adv
-            # Re-evaluate the witness through the independent propagator
-            # route. The adversary works in the eigenbasis; this rebuilds
-            # the same trajectory with expm, so a violation that survives
-            # is not an artefact of one route's arithmetic. Recorded, not
-            # asserted: the appendix quotes these controllers.
+            # Re-evaluate the witness with the expm propagator (the adversary
+            # works in the eigenbasis).
             if br.delta_adv is None:
                 out[f"madvF_{tag}"] = float("nan")
             else:
@@ -151,10 +163,8 @@ def margins_for(u, ft, adversary=False, seed=0):
                         CNOT,
                     )
                 )
-    # What static robustification is implicitly minimising: the coherent
-    # sum over the gate in the toggling frame. The free certificates
-    # charge the pulse area instead, so recording both separates
-    # "arranged cancellation" from "spent amplitude".
+    # Frobenius norm of the toggling-frame integral of each structure.
+
     for tag in STRUCTURES:
         out[f"cancel_{tag}"] = float(
             np.linalg.norm(toggling_frame_integral(H_list, dHs[tag], DT), "fro")

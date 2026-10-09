@@ -6,14 +6,11 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function S = superop_from_choi(J, N)
-%SUPEROP_FROM_CHOI Inverse of choi_matrix, again only reindexing.
+%SUPEROP_FROM_CHOI Superoperator from its Choi matrix; exact inverse of choi_matrix.
+%   J - Choi matrix (output kron input)
+%   N - Hilbert-space dimension (default sqrt(size(J, 1)))
 %
-% S = qrobustness.lindblad.superop_from_choi(J) recovers the superoperator whose Choi matrix is J. Every entry is moved, none is
-% computed, so choi_matrix followed by this returns the stored bits of the original and not merely a close value. That round trip is
-% what the verified diamond-norm bound depends on when it claims to speak
-%   about the represented superoperator.
-%
-% MATLAB counterpart of python/src/qrobustness/lindblad.py:superop_from_choi.
+%   Peer of python/src/qrobustness/lindblad.py:superop_from_choi.
 
     if nargin < 2
         N = round(sqrt(size(J, 1)));

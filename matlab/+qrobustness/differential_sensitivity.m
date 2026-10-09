@@ -1,19 +1,18 @@
 function zeta = differential_sensitivity(H_list, dH_list, dt, Uf, varargin)
-%DIFFERENTIAL_SENSITIVITY Sensitivity zeta of the gate fidelity at the given point.
-%   Uses the product-derivative form:
-%     zeta = (1/N) sum_k Re Tr( Uf' * D^{(k)} * exp(-i*phi) )
-% where D^{(k)} inserts dU^{(k)}/dmu into that ordered product.
+%DIFFERENTIAL_SENSITIVITY Differential sensitivity zeta = dF/dmu of the gate fidelity.
+%   H_list  - cell array of interval Hamiltonians H^(k)
+%   dH_list - cell array of dH^(k)/dmu
+%   dt      - interval length
+%   Uf      - target gate
+%   zeta    - (1/N) sum_k Re Tr(Uf' D^(k) exp(-i phi)), D^(k) the propagator
+%             with dU^(k)/dmu in place of U^(k)
 %
-%   Name-value:
-% 'method' 'exact' (default) evaluates dU^{(k)}/dmu in closed form in the eigenbasis of H^{(k)}, exact for the piecewise-constant
-% controls assumed throughout; 'quadrature' uses Gauss-Legendre. 'n_quad' quadrature nodes, used only by 'quadrature' (default 32)
+%   Name-value options:
+%     'method' - 'exact' (default, eigenbasis closed form) or 'quadrature'
+%     'n_quad' - Gauss-Legendre nodes for 'quadrature' (default 32); a bare
+%                numeric fifth argument is read as n_quad
 %
-% A positional n_quad of the form differential_sensitivity(..., Uf, 32), is accepted;
-%   it applies only to the 'quadrature' method.
-%
-% See also QROBUSTNESS.DU_DMU_EXACT and QROBUSTNESS.DU_DMU_INTEGRAL.
-%
-%   Peer of python/src/qrobustness/core.py.
+%   Peer of python/src/qrobustness/core.py:differential_sensitivity.
 
     opts = qrobustness.parse_dU_options(varargin{:});
     use_exact = strcmp(opts.method, 'exact');
@@ -41,13 +40,13 @@ function zeta = differential_sensitivity(H_list, dH_list, dt, Uf, varargin)
     end
     Utot = Pref{tau + 1};
 
-    F = qrobustness.gate_fidelity(Utot, Uf);
+    Ufd = Uf';
+    z = trace(Ufd * Utot);
+    F = abs(z) / N;
     if F <= 0
         error('qrobustness:zeta:ZeroFid', 'Fidelity must be positive for phase.');
     end
-    z = trace(Uf' * Utot);
-    e_i_phi = z / abs(z);
-    e_minus_i_phi = conj(e_i_phi);
+    e_minus_i_phi = conj(z / abs(z));
 
     % Suff{k} = U{tau}*...*U{k}, Suff{tau+1}=I
     Suff = cell(1, tau + 1);
@@ -68,7 +67,7 @@ function zeta = differential_sensitivity(H_list, dH_list, dt, Uf, varargin)
             dUk = qrobustness.dU_dmu_integral(H_list{k}, dH_list{k}, dt, nodes, weights);
         end
         Dk = Suff{k + 1} * dUk * Pref{k};
-        zeta = zeta + real(trace(Uf' * Dk * e_minus_i_phi));
+        zeta = zeta + real(trace(Ufd * Dk * e_minus_i_phi));
     end
     zeta = zeta / N;
 end

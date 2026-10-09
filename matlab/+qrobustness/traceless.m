@@ -1,23 +1,15 @@
 function Hc = traceless(Hhat)
-%TRACELESS Remove the trace part: Hbar = H - (Tr H / N) I.
-% Trace-amplitude fidelity does not change under a global phase, and the trace part of a perturbation structure contributes only
-% such a phase to the propagator. Centring therefore leaves the fidelity -- and hence the margin -- unchanged while making
-% ||Hbar||_F <= ||H||_F, so it can only tighten the
-%   Lipschitz constant (paper, Sec. IV).
+%TRACELESS Traceless part H - (Tr H / N) I of a Hermitian structure matrix.
+%   Hhat - square Hermitian matrix; errors otherwise
 %
-% Counterpart of python/src/qrobustness/core.py. Both sides now have one definition, validating and shared; the reference briefly
-% carried a second, unvalidated copy in lengthspace.py, which this file never did.
+%   Peer of python/src/qrobustness/core.py:traceless.
 
     [n, m] = size(Hhat);
     if n ~= m
         error('qrobustness:traceless:Square', ...
             'structure matrix must be square.');
     end
-    % Elementwise, matching numpy.allclose in the reference core.traceless:
-    % |H - H'| <= atol + rtol*|H'|, with the same HERMITIAN_RTOL and
-    % HERMITIAN_ATOL. We previously used a Frobenius-norm ratio here, which is a different test: it accepted a large-norm matrix
-    % carrying a small absolute asymmetry that the reference rejects, so the two engines
-    % disagreed on which structures were valid.
+    % Elementwise |H - H'| <= atol + rtol*|H'|, as numpy.allclose in core.traceless.
     hermitian_rtol = 1e-10;
     hermitian_atol = 1e-12;
     if any(any(abs(Hhat - Hhat') > hermitian_atol + hermitian_rtol * abs(Hhat')))

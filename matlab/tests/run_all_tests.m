@@ -1,10 +1,7 @@
 function results = run_all_tests()
-%RUN_ALL_TESTS Execute MATLAB unit tests for +qrobustness. Every test runs, whatever the ones before it did: stopping at the first
-% failure hides how many others would also have failed, which is the number needed when deciding whether a change broke one thing or
-% everything. The failures are reported together at the end and then
-%   raised, so the exit code still fails the build.
-%
-% Returns a struct whose fields are passed, failed and total.
+%RUN_ALL_TESTS Run every MATLAB unit test for +qrobustness.
+%   All tests run; failures are reported together at the end and then raised.
+%   Returns a struct with fields passed, failed and total.
 
     this_dir = fileparts(mfilename('fullpath'));
     root_dir = fileparts(fileparts(this_dir));
@@ -25,11 +22,16 @@ function results = run_all_tests()
         @test_dU_dmu_exact
         @test_error_control
         @test_kosut_bound
+        @test_berberich
         @test_traceless_and_status
         @test_lengthspace
         @test_lindblad
         @test_multiparam
         @test_timevarying
+        @test_states
+        @test_openstates
+        @test_evaluation_band
+        @test_plot_ranges
     };
 
     n = numel(tests);

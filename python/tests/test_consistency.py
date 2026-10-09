@@ -123,14 +123,14 @@ def matlab_table():
     if not MATLAB_TABLE.is_file():
         pytest.skip(
             f"{MATLAB_TABLE.relative_to(ROOT)} not present; "
-            "run make paper-QRM-margins ENGINE=matlab"
+            "run make run-QRM-margins ENGINE=matlab"
         )
     with MATLAB_TABLE.open(newline="") as f:
         return {int(r["controller"]) - 1: r for r in csv.DictReader(f)}
 
 
 def test_python_matches_matlab(matlab_table):
-    """We compare live Python output with MATLAB's committed table, per controller and structure: this is the cross-language check the peer implementations exist to pass. Nothing here records a previous Python answer -- if the two implementations drift apart, one of them is wrong, and if they move together the committed tree shows it in git."""
+    """Compare live Python output with MATLAB's committed table, per controller and structure. This is the cross-language check the peer implementations exist to pass. Nothing here records a previous Python answer. If the two implementations drift apart, one of them is wrong, and if they move together the committed tree shows it in git."""
     problem = load_problem(CTRL / "problem9.mat")
     controllers = load_controllers(CTRL / "controllers.csv", 1e-4)
     for idx in INDICES:

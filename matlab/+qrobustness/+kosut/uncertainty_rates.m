@@ -1,56 +1,36 @@
 function rates = uncertainty_rates(H_list, dH_list, dt, n_quad, n_dev, dev_tol, n_dev_max, adaptive_dev, dev_samples_per_cycle)
-%UNCERTAINTY_RATES Uncertainty measures of their Eq. 28, per unit delta. rates = UNCERTAINTY_RATES(H_list, dH_list, dt) returns a
-% structure with fields w_unc, w_avg, w_dev (their Omega_unc, Omega_avg, Omega_avg^dev at delta = 1) and T (the gate duration
-% tau*dt), plus the error-control
-%   fields listed below.
+%UNCERTAINTY_RATES Per-unit uncertainty rates of the Kosut-Lidar-Rabitz bound.
+%   rates = qrobustness.kosut.uncertainty_rates(H_list, dH_list, dt, n_quad, n_dev,
+%           dev_tol, n_dev_max, adaptive_dev, dev_samples_per_cycle)
 %
-% H_list : cell array of the nominal per-interval Hamiltonians H^(k)
-%                 (e.g. qrobustness.perturbed_hamiltonians(..., 0))
-% dH_list : cell array of the per-interval structures Hhat^(k)
-%                 (e.g. qrobustness.dH_structure(...)), H_unc^(k)=delta*Hhat^(k)
-% n_quad : accepted and unused; <Htil> is obtained in closed form so
-%                 there is no quadrature to tune
-% n_dev : MINIMUM grid points per interval for the Omega_avg^dev supremum; the seed grid actually used is derived from the
-%                 interval bandwidth (see below)               (default 17)
-% dev_tol : relative tolerance for adaptive refinement (default 1e-9) n_dev_max : cap on the refined grid size per interval (default
-% 4097) adaptive_dev: false samples once without refining dev_samples_per_cycle : samples per Bohr cycle used as the seed (default
-% 16)
+%   H_list                - nominal interval Hamiltonians H^(k)
+%   dH_list               - structures \hat H^(k), H_unc^(k) = delta \hat H^(k)
+%   dt                    - interval length
+%   n_quad                - accepted and unused
+%   n_dev                 - minimum grid points per interval for the w_dev
+%                           supremum (default 17)
+%   dev_tol               - relative tolerance of grid refinement (default 1e-9)
+%   n_dev_max             - maximum grid points per interval (default 4097)
+%   adaptive_dev          - refine the grid (default true)
+%   dev_samples_per_cycle - seed samples per Bohr cycle (default 16)
 %
-%   Within interval k the nominal propagator is
-%   U_S(t_{k-1}+s) = expm(-1i*H^(k)*s) * P_{k-1}, so
-%   Htil = P_{k-1}' * expm(1i*H^(k)*s) * Hhat^(k) * expm(-1i*H^(k)*s) * P_{k-1}.
-% Each H^(k) is diagonalised once and the conjugations are built from its eigenbasis, avoiding repeated matrix exponentials.
+%   rates fields:
+%     w_unc, w_avg, w_dev   - Omega_unc, Omega_avg, Omega_avg^dev at delta = 1
+%     T                     - gate time tau*dt
+%     w_avg_traj, w_dev_traj - trajectory rates
+%     w_dev_certified       - rigorous upper bound on w_dev
+%     w_dev_bracket_lo, w_dev_bracket_hi - rigorous bracket on w_dev
+%     w_dev_refinement      - relative gain of polishing over plain sampling
+%     n_dev_used            - grid size at which refinement stopped
+%     dev_converged         - successive sweeps agreed to dev_tol
+%     dev_cycles_max        - most Bohr cycles in one interval
+%     dev_samples_per_cycle - samples per cycle achieved
+%     dev_resolved          - false when n_dev_max caps the grid that was
+%                             actually used; w_dev may then be under-estimated
 %
-%   ERROR CONTROL
-% w_unc is exact: H_unc is piecewise constant, so the supremum in t is a
-%     maximum over intervals.
+%   w_dev is sampled, so it can only under-estimate the supremum.
 %
-% w_avg is exact to roundoff: the time average is a closed-form divided difference (see TIME_AVERAGE_HTIL below), rather than a
-% quadrature.
-%
-% w_dev is a supremum of a smooth function of s and is the sole approximated quantity. Sampling can only under-estimate a supremum,
-% and a smaller w_dev yields a larger margin, so the residual error is biased in the optimistic direction. Htil(k,.) is a
-% trigonometric polynomial whose frequencies are the Bohr frequencies lam_m - lam_n, so its bandwidth is known in closed form and
-% the sampling density is derived from it; candidate maxima are then polished with fminbnd and the grid refined until two successive
-% sweeps agree to dev_tol.
-%
-%     Returned diagnostics:
-% w_dev_certified a rigorous upper bound from d(Htil)/ds = 1i*[H,Htil]
-%       w_dev_bracket_lo, w_dev_bracket_hi
-% a rigorous bracket from isospectrality of unitary
-%                         conjugation, ||Htil(t)|| = ||Hhat^(k)||
-% w_dev_refinement relative gain of the polish versus plain sampling n_dev_used grid size at which refinement stopped dev_converged
-% whether successive sweeps agreed to dev_tol dev_cycles_max Bohr cycles completed over one interval
-%       dev_samples_per_cycle
-%                         samples per cycle achieved
-% dev_resolved whether the requested samples-per-cycle was attained on every interval; false means n_dev_max capped the grid before
-% the bandwidth was resolved, and the supremum
-%                         may then be under-estimated
-%
-% docs/time-bandwidth-bound.md states the derivation and the measured
-%     accuracy.
-%
-% Related: QROBUSTNESS.KOSUT.MARGIN, QROBUSTNESS.KOSUT.TIME_BANDWIDTH.
+%   Peer of python/src/qrobustness/kosut.py:uncertainty_rates.
 
     if nargin < 4; n_quad = []; end  %#ok<NASGU> % accepted, unused
     if nargin < 5 || isempty(n_dev);        n_dev = 17;         end
@@ -104,28 +84,15 @@ function rates = uncertainty_rates(H_list, dH_list, dt, n_quad, n_dev, dev_tol, 
     Havg = acc / T;
     w_avg = norm(Havg, 2);
 
-    % Omega_avg^dev = sup_t ||Htil(t) - <Htil>||: find candidate maxima on a coarse grid, then polish each with fminbnd. f is smooth
-    % in s, so the polished value is accurate to ~eps rather than to the grid spacing.
-    % Htil(k,s) = P' * expm(1i*H*s) * Hhat * expm(-1i*H*s) * P is a
-    % trigonometric polynomial in s whose frequencies are exactly the Bohr frequencies lam_m - lam_n of H^(k). Its bandwidth is
-    % therefore known in closed form, and the sampling density needed to resolve it can be DERIVED rather than assumed: over an
-    % interval of length dt the fastest component completes cycles_k = range(lam_k)*dt/(2*pi) cycles. Seeding each interval with
-    % dev_samples_per_cycle samples per cycle keeps the supremum search resolved for controllers with long intervals or wide
-    % spectra, for which a fixed grid would under-resolve without indication.
+    % Omega_avg^dev = sup_t ||Htil(t) - <Htil>||: candidate maxima on a grid, polished with fminbnd. The grid is seeded with
+    % dev_samples_per_cycle samples per Bohr cycle, cycles_k = range(lam_k)*dt/(2*pi).
     cycles = zeros(1, tau);
     n_seed = zeros(1, tau);
-    achieved = inf(1, tau);
     for k = 1:tau
         cycles(k) = (max(lams{k}) - min(lams{k})) * dt / (2 * pi);
         % fix, not round: the Python peer applies int(n_dev), which truncates.
         n_seed(k) = min(max([fix(n_dev), 3, ceil(dev_samples_per_cycle * cycles(k)) + 1]), n_dev_max);
-        if cycles(k) > 0
-            achieved(k) = (n_seed(k) - 1) / cycles(k);
-        end
     end
-    min_spc = min(achieved);
-    dev_resolved = (min_spc >= dev_samples_per_cycle);
-
     [w_dev_sampled, lipschitz_gap] = sweep(1, false, Vs, lams, dH_list, Pref, H_list, Havg, dt, tau, n_seed, n_dev_max);
 
     if ~adaptive_dev
@@ -154,6 +121,15 @@ function rates = uncertainty_rates(H_list, dH_list, dt, n_quad, n_dev, dev_tol, 
         end
     end
     n_used = min(scale * (max(n_seed) - 1) + 1, n_dev_max);
+    % Samples per cycle on the grid actually used, after n_dev_max.
+    samples_used = inf;
+    for k = 1:tau
+        n_final = min(scale * (n_seed(k) - 1) + 1, n_dev_max);
+        if cycles(k) > 0
+            samples_used = min(samples_used, (n_final - 1) / cycles(k));
+        end
+    end
+    dev_resolved = (samples_used >= dev_samples_per_cycle);
 
     % Independent rigorous bracket from isospectrality of unitary conjugation: ||Htil(t)|| = ||Hhat^(k)|| exactly, so the deviation
     % norm remains bracketed.
@@ -164,10 +140,7 @@ function rates = uncertainty_rates(H_list, dH_list, dt, n_quad, n_dev, dev_tol, 
     bracket_lo = max(0, bracket_lo);
     bracket_hi = w_unc + w_avg;
 
-    % Trajectory-worst-case measures: for |delta(t)| <= 1,
-    % ||<delta Htil>|| <= (1/T) int ||Htil|| dt = mean_k ||Hhat^(k)|| (exact
-    % by isospectrality) and the deviation is bounded by w_unc + that mean. Counterpart of the w_avg_traj / w_dev_traj fields in the
-    % Python reference.
+    % Trajectory rates for |delta(t)| <= 1: w_avg_traj = mean_k ||Hhat^(k)||, w_dev_traj = w_unc + w_avg_traj.
     norms_dH = zeros(1, tau);
     for k = 1:tau
         norms_dH(k) = norm(dH_list{k}, 2);
@@ -183,13 +156,13 @@ function rates = uncertainty_rates(H_list, dH_list, dt, n_quad, n_dev, dev_tol, 
         'n_dev_used', n_used, ...
         'dev_converged', dev_converged, ...
         'dev_cycles_max', max(cycles), ...
-        'dev_samples_per_cycle', min_spc * scale, ...
+        'dev_samples_per_cycle', samples_used, ...
         'dev_resolved', dev_resolved);
 end
 
 function [best, gap] = sweep(scale, polish, Vs, lams, dH_list, Pref, H_list, Havg, dt, tau, n_seed, n_dev_max)
-%SWEEP Best of grid (and optional Brent polish), together with the Lipschitz shortfall. scale multiplies each interval's
-% bandwidth-derived seed grid.
+%SWEEP Grid maximum of the deviation (optionally polished) and its Lipschitz shortfall gap.
+%   scale multiplies each interval's seed grid.
     best = 0;
     gap = 0;
     for k = 1:tau
@@ -235,12 +208,7 @@ function v = fdev(s, V, lam, dH, P, Havg)
 end
 
 function M = time_average_htil(V, lam, dH, dt)
-%TIME_AVERAGE_HTIL Exact int_0^dt expm(+1i*H*s) dH expm(-1i*H*s) ds. H is constant on the interval, so the integral in its
-% eigenbasis is a
-%   divided difference: the (m,n) entry picks up
-%   int_0^dt exp(1i*s*(lam_m-lam_n)) ds = dt*exp(1i*Y)*sin(Y)/Y with
-% Y = dt*(lam_m-lam_n)/2. The exponent is purely imaginary, so there is no cancellation and no threshold to tune; we mask only Y ==
-% 0.
+%TIME_AVERAGE_HTIL int_0^dt expm(1i*H*s) dH expm(-1i*H*s) ds, as a divided difference in the eigenbasis of H.
     lam = lam(:);
     Y = 0.5 * dt * (lam - lam.');
     S = ones(size(Y));

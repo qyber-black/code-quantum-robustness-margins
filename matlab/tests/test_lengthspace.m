@@ -6,9 +6,8 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function test_lengthspace()
-%TEST_LENGTHSPACE Counterpart of python/tests/test_lengthspace.py. Properties are checked here rather than values copied from
-% Python; the value-level agreement between the engines is what test_consistency
-%   and make test-parity are for.
+%TEST_LENGTHSPACE Properties of +qrobustness/+lengthspace.
+%   Peer of python/tests/test_lengthspace.py.
 
     ls = @(f) str2func(['qrobustness.lengthspace.' f]);
 

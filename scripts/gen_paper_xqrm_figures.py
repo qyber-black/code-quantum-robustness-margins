@@ -6,27 +6,38 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Generate the figures of the paper from the toolbox results.
+"""Build the figures of the xQRM paper from the driver results.
 
-Reads the CSVs written by the drivers into results/ and writes
-results/paper-xqrm/figures/*.pdf, which "make sync-xQRM" copies into
-the paper repository.
+Writes results/paper-xqrm/figures/*.pdf (copied into the paper repository
+by "make sync-xQRM"):
 
-Figure 1 (fig_margins): per-controller comparison of the certified
-uniform time-varying radii r_0 (Lipschitz) and r_FS (geometric), the
-iterated constant margin M and the corrected universal-bound margins
-M^K / M^K_tv (structure H_1), with the adversarial brackets
-[r_0, m_adv] on M_tv for the probed controllers.
+  fig_margins       per controller: r_0, r_FS, M, M^K and M^K_tv (structure
+                    H_1), with brackets [r_0, m_adv] for the probed controllers
+                    (multiparam_0.999, kosut_comparison_0.999_angular[_tv],
+                    fs_validity, tv_bracket)
+  fig_directions    free-polytope radius against M(d) and its upper bracket
+                    along each probed direction, one controller (multiparam_0.999)
+  fig_single_qubit  analytic fidelity curves of the pi-pulse with every
+                    certificate (single_qubit_0.999)
+  fig_ratios        M/M^K and r_FS/M^K_tv over the 3-qubit, CNOT and 4-qubit
+                    ensembles (multiparam, kosut_comparison, fs_validity,
+                    cnot_margins, scaling4q_margins)
+  fig_open          open-system one-step and iterated margins against the
+                    reference crossings (open_margins, open_amp)
+  fig_slice         resolved safe region and nested certified regions in the
+                    (mu_1, mu_2) plane (slice_ctrl<c>_0.999.npz, multiparam angular)
+  fig_validity      adversarial minimum fidelity against budget for the
+                    violating controller (budget_sweep_ctrl16_H1.csv)
+  fig_mixed         mixed coherent-dissipative region in the (mu_1, gamma_z)
+                    plane (mixed_ctrl<c>.npz)
 
-Figure 2 (fig_directions): directional-margin profile for one
-controller: free-polytope radius along each probed direction against
-the iterated directional margin M(d) with its upper bracket.
+Options: --allow-missing skips figures whose inputs are absent; --controller
+selects the controller for fig_directions, fig_slice and fig_mixed.
 
-Colours are an Okabe-Ito CVD-safe subset (validated); series are
-also separated by marker shape, and identity is never carried
-by colour alone.
+Colours are an Okabe-Ito CVD-safe subset; series are also separated by
+marker shape.
 
-Usage: python3 scripts/gen_paper_xqrm_figures.py [--allow-missing]"""
+Usage: python3 scripts/gen_paper_xqrm_figures.py [--allow-missing] [--controller N]"""
 
 from __future__ import annotations
 
@@ -37,9 +48,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 
-# Omitting CreationDate makes the PDFs byte-reproducible; without
-# it two runs of the same code differ, and a byte comparison in the
-# reproduction check would be worthless.
+# No CreationDate, so the PDFs are byte-reproducible.
 PDF_METADATA = {"CreationDate": None}
 # ruff: noqa: E402 -- matplotlib.use('Agg') above must execute before
 # pyplot is imported, so these cannot shift to the top of the file.
@@ -79,11 +88,6 @@ plt.rcParams.update(
         "pdf.fonttype": 42,
     }
 )
-
-
-# Which driver produces which input; see gen_paper_xqrm_tables.py. A missing
-# input is an error, not a skip that would leave the previous generated PDF in
-# place.
 
 
 def fig_margins(res: Path, out: Path) -> None:
@@ -243,7 +247,7 @@ def main() -> None:
     fig_slice(res, out, args.controller)
     fig_validity(res, out)
     fig_mixed(res, out, args.controller)
-    print("wrote fig_margins, fig_directions, fig_single_qubit, fig_ratios, fig_open")
+    print("wrote the xQRM figures")
 
 
 def fig_single_qubit(res: Path, out: Path) -> None:
@@ -315,9 +319,8 @@ def fig_single_qubit(res: Path, out: Path) -> None:
 def _direction_label(name: str) -> str:
     """Math label for a probed direction.
 
-    The CSV encodes sign patterns as the letters ``p`` and ``m`` (``diagmpp``),
-    which is unreadable on an axis. Draw them as the signs they stand for,
-    ``d(-,+,+)``, and the coordinate directions as ``+e_j`` / ``-e_j``.
+    Sign patterns encoded as ``p``/``m`` in the CSV (``diagmpp``) become
+    ``d(-,+,+)``; coordinate directions become ``+e_j`` / ``-e_j``.
     """
     if name.startswith("diag"):
         return "d({})".format(",".join("+" if c == "p" else "-" for c in name[4:]))
@@ -379,9 +382,7 @@ def fig_ratios(res: Path, out: Path) -> None:
             )
         ):
             xs = i + (k - 0.5) * 0.36 + rng.uniform(-0.09, 0.09, v.size)
-            # Each panel splits into two clusters: the drift structure lies
-            # apart from the control structures in every ensemble, and thus it is
-            # drawn as an open square rather than left to appear anomalous.
+            # The drift structure is drawn as an open square.
             ax.plot(
                 xs[~drift],
                 v[~drift],
@@ -508,8 +509,7 @@ def fig_open(res: Path, out: Path) -> None:
         label="exact ($y = x$)",
         zorder=1,
     )
-    # Guide through the amplitude-damping one-step cluster, namely the
-    # predicted first-order factor 2 (see Proposition prop:slope).
+    # Guide line y = 2x: the first-order factor 2 for amplitude damping.
     ax.plot(
         [lo, hi],
         [2.0 * lo, 2.0 * hi],

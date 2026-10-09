@@ -1,16 +1,13 @@
 function dU = dU_dmu_integral(H, dH, dt, nodes, weights)
-%DU_DMU_INTEGRAL Gauss-Legendre approximation to the segment derivative. dU = DU_DMU_INTEGRAL(H, dH, dt, nodes, weights)
-% approximates
+%DU_DMU_INTEGRAL Gauss-Legendre approximation of the interval derivative.
+%   dU = qrobustness.dU_dmu_integral(H, dH, dt, nodes, weights)
 %
-%     dU/dmu = -1i*dt * int_0^1 expm(-1i*dt*H*(1-s)) dH expm(-1i*dt*H*s) ds
+%   H, dH          - interval Hamiltonian and dH/dmu
+%   dt             - interval length
+%   nodes, weights - from qrobustness.gauss_legendre_01
+%   dU             - -1i*dt * int_0^1 expm(-1i*dt*H*(1-s)) dH expm(-1i*dt*H*s) ds
 %
-% with nodes/weights from qrobustness.gauss_legendre_01. Kept as an alternative to and cross-check on qrobustness.dU_dmu_exact,
-% which is the default: for piecewise-constant controls the integral is exact in closed
-%   form, so this path is not needed for accuracy.
-%
-% See also QROBUSTNESS.DU_DMU_EXACT and QROBUSTNESS.GAUSS_LEGENDRE_01.
-%
-% Counterpart of python/src/qrobustness/core.py (dU_dmu with method='quadrature').
+%   Peer of python/src/qrobustness/core.py:dU_dmu_integral.
 
     dU = zeros(size(H));
     for j = 1:numel(nodes)

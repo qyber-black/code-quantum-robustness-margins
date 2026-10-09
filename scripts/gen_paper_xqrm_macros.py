@@ -6,26 +6,26 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Emit every number the paper quotes in prose as a LaTeX macro.
+"""Write every number the xQRM paper quotes in prose as a LaTeX macro.
 
-Tables and figures were already generated; the numbers in running text
-were not, and were maintained by hand against a post hoc consistency
-check. This closes that gap: each quantity is computed here from the same
-CSVs the tables come from, and the paper refers to it by name.
+Inputs: the driver CSVs under results/ (multiparameter-margin-python,
+time-bandwidth-bound-python, single-qubit-python, lindblad-margin-python,
+cnot-python, scaling-python, verification-python, state-examples-python,
+algorithm-tests-python, bracket-audit-python incl. environment.json).
 
-Writes results/paper-xqrm/macros.tex. A number whose source disappears
-breaks the build rather than keeping its last value in silence: LaTeX errors
-on an undefined control sequence, so a macro that stops being emitted takes
-the paper down with it. \\xqdef adds the guard LaTeX does not have -- it
-refuses to redefine an existing name, so two generators emitting the same
-macro is an error instead of a silent overwrite. The reverse direction, a
-macro emitted but cited nowhere, is checked by check_reproducible.
+Output: results/paper-xqrm/macros.tex, one \\xqdef{name}{value} per number
+with the unrounded value in a trailing comment. \\xqdef refuses to redefine
+a name, so a duplicated macro is a LaTeX error. Macros emitted but cited
+nowhere are reported by check_reproducible.
 
-Usage: python3 scripts/gen_paper_xqrm_macros.py [--allow-missing]"""
+Options: --allow-missing tolerates absent inputs; --print lists each macro.
+
+Usage: python3 scripts/gen_paper_xqrm_macros.py [--allow-missing] [--print]"""
 
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import re
 from pathlib import Path
@@ -37,29 +37,19 @@ from _paper import col, configure, read
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# Ensemble configuration. These quantities are properties of the shipped problem and
-# the driver invocations, not free text; they are emitted so that the paper
-# cannot drift from the runs.
+# Ensemble configuration, as used by the driver invocations.
 THRESHOLD = 0.999
 
-#: Joint uncertainty dimension of the main ensemble: drift together with two
+#: Joint uncertainty dimension p of the main ensemble: drift and two
 #: multiplicative control errors.
 N_PARAMS = 3
-# The constant-margin counterexample discussed in the paper. Named so a
-# second one appearing does not change, in silence, which is quoted.
+# The constant-margin counterexample the paper discusses (controller, structure).
 WITNESS_CONTROLLER = "16"
 WITNESS_STRUCTURE = "H1"
 BUDGET_FACTOR = 1.05
 
 
-#: Set from --allow-missing. The flag was documented and parsed but was never
-#: read, so a missing input aborted regardless of what the caller requested.
-
-
-# Every reported extreme rounds outward: a quoted range must contain all the
-# data at both ends. Rounding to the nearest reported 5--11 for a spread of
-# 4.81--10.52 and 1.5--2.2 for 1.48--2.21, so the printed interval
-# excluded the very controllers it was meant to summarise.
+# Reported extremes round outward, so a quoted range contains all the data.
 def _floor_to(x: float, places: int = 0) -> float:
     """Round down, so that a quoted lower end never overstates the data."""
     f = 10.0**places
@@ -67,24 +57,13 @@ def _floor_to(x: float, places: int = 0) -> float:
 
 
 def _ceil_to(x: float, places: int = 0) -> float:
-    """Round up, so a quoted bound remains a bound.
-
-    An upper bound printed with ordinary rounding stops being one as soon
-    as the value sits just above the last printed digit: 0.1146 formatted
-    to two places reads 0.11, and "within 0.11%" is then false.
-    """
+    """Round up, so that a quoted upper bound remains a bound."""
     f = 10.0**places
     return math.ceil(x * f) / f
 
 
 def _sci(x: float, places: int = 1, *, up: bool = True) -> str:
-    """``x`` in scientific notation, taking the exponent from ``x``.
-
-    A hard-coded scale is a trap. These quantities are bounds whose
-    magnitude moves with the code: diamond-norm inflation was 5e-5
-    under one SDP solver and 5e-9 under another, and a fixed 1e-6 scale
-    rendered the second as "0.0e-6" -- a bound reported as zero, which is
-    both false and the worst direction in which to be wrong.
+    """``x`` as LaTeX scientific notation, with the exponent taken from ``x``.
 
     The mantissa rounds away from zero by default, so an upper bound remains
     an upper bound at the printed precision; pass ``up=False`` for a lower
@@ -131,10 +110,8 @@ class Macros:
     def add(self, name, value, fmt="{:.2f}", note="", raw=None):
         """Store a macro.
 
-        ``raw`` holds the underlying number when ``value`` is already
-        rendered, so the zero-render guard in write() has something to
-        compare against; without it a macro whose fixed scale has gone
-        stale prints a plausible zero and nothing notices.
+        ``raw`` is the underlying number when ``value`` is an already
+        rendered string; write() uses it for the zero-render check.
         """
         if isinstance(value, str):
             text = value
@@ -149,7 +126,7 @@ class Macros:
             "% Auto-generated by scripts/gen_paper_xqrm_macros.py -- do not edit.",
             "% Every number quoted in the paper's prose is defined here and",
             "% computed from the CSVs in results/. Regenerate with",
-            "%   make paper-xQRM",
+            "%   make sync-xQRM",
             "%",
             "% \\xqdef defines a macro and refuses to redefine one, so a",
             "% duplicated name is an error rather than a silent overwrite.",
@@ -161,14 +138,8 @@ class Macros:
             "",
         ]
         for name, text, raw, note in self.items:
-            # A nonzero quantity must not print as zero. Several macros
-            # are emitted against a fixed power of ten, which is only
-            # valid while the value stays near that scale; when the
-            # diamond-norm inflation dropped four orders under a better SDP
-            # solver, its fixed 1e-6 scale printed "0.0e-6" and the paper
-            # would have claimed that certification adds no inflation at
-            # all. Catch it here, where every macro passes, instead of
-            # relying on a reader spotting a plausible-looking zero.
+            # A nonzero quantity must not print as zero (a fixed power-of-ten
+            # scale that no longer fits the value).
             if _renders_as_zero(text) and _is_nonzero(raw):
                 raise SystemExit(
                     f"ERROR: macro {name} renders as {text!r} but its value "
@@ -218,18 +189,15 @@ def main() -> None:
     m.add("xqBudgetFactor", BUDGET_FACTOR, "{:.2f}")
 
     # -- Scenario J: the gauge regions versus the cross-polytope -------
-    # Certified inradius gain of the joint Frobenius gauge relative to the
-    # separable cross-polytope, and the estimated (nonconvex peak)
-    # gain of which the certified one is a conservative reading.
+    # Inradius gain of the joint gauge (C_joint) over the separable
+    # cross-polytope: certified and estimated (nonconvex peak), medians.
     m.add("xqGaugeInradiusGain", np.median(col(jg, "inradius_gain_cert")))
     m.add("xqGaugeInradiusGainEst", np.median(col(jg, "inradius_gain_est")))
     m.add("xqGaugeDiagGain", np.median(col(jg, "diag_gain_med")))
     m.add("xqGaugeAngDiagGain", np.median(col(jg, "ang_diag_gain")))
     m.add("xqGaugeTrajGain", np.median(col(jg, "traj_gain")))
-    # The gain is an l1-over-l2 ratio of those per-interval weighted
-    # amplitudes, so it cannot exceed sqrt(p) whatever the system. Stating
-    # the ceiling and how much of that ceiling this ensemble reaches turns a median
-    # into a claim about how much headroom the construction has left.
+    # The gain is an l1-over-l2 ratio, so its ceiling is sqrt(p); percentage
+    # of that ceiling reached by the largest diagonal gain.
     m.add("xqGaugeGainCeiling", np.sqrt(N_PARAMS))
     m.add(
         "xqGaugeGainAttainedPct",
@@ -238,10 +206,8 @@ def main() -> None:
     )
 
     # -- Scenario T: cost of uniformity across trajectories --------------
-    # r_0/M, the cost of certifying every bounded trajectory rather than
-    # a constant perturbation, per structure.
-    # Axis plus diagonal directions, and the total rays iterated across the
-    # ensemble; both are taken from the table rather than counted by hand.
+    # Number of directions (axis plus diagonal) and total rays iterated;
+    # median r_0/M per structure.
     n_dirs = len([k for k in mp[0] if re.match(r"^M_[+-]|^M_diag", k)])
     m.add("xqDirectionalDirs", n_dirs, "{:d}")
     m.add("xqDirectionalRays", n_dirs * len(mp), "{:d}")
@@ -252,13 +218,14 @@ def main() -> None:
         )
 
     # -- universal-bound comparison ------------------------------------
-    # The paper prints this as a range, so only its two ends are required.
+    # Median M/M^K (angular absorption) for the two ends of the quoted range.
     for tag, key in (("Drift", "H0"), ("CtrlTwo", "H2")):
         m.add(f"xqKosutRatio{tag}", np.median(col(kos, f"ratio_{key}")))
 
     # -- single qubit against analytic truth ---------------------------
     amp_sq = [r for r in sq if r["structure"] == "amplitude"][0]
-    # Saturation of the path-length bound on the commuting error.
+    # Relative gap |r_FS - delta*|/delta* for the commuting (amplitude) error;
+    # r_FS and the r_FS, r_0 coverage of delta* for detuning.
     _rel = abs(float(amp_sq["r_fs"]) - float(amp_sq["delta_star"])) / float(
         amp_sq["delta_star"]
     )
@@ -271,6 +238,8 @@ def main() -> None:
     m.add("xqSingleQubitRZeroCoverage", 100.0 * float(det["r0"]) / dstar, "{:.0f}")
 
     # -- angular continuation versus the Lipschitz step ---------------
+    # Share of rays where the angular rule needs no more evaluations, and the
+    # median evaluation saving.
     mp_lipschitz = read(res / "multiparameter-margin-python/multiparam_0.999.csv")
     nevs_angular = np.array(
         [float(row[key]) for row in mp for key in row if key.startswith("nev_")]
@@ -303,14 +272,8 @@ def main() -> None:
             "claim that one exists has no evidence behind it. Rerun "
             "run_kosut_validity.py."
         )
-    # The count is emitted, not asserted. A stronger adversary locating a
-    # second counterexample is a result, not a build failure: this paper
-    # cites this macro, so its sentence follows the run instead of the
-    # run being required to match the sentence. Stopping here would
-    # also contradict --allow-violations, which exists exactly so more
-    # counterexamples do not stop the driver.
-    # The witness the paper treats in detail, identified by name rather
-    # than by being the only one present.
+    # The witness the paper treats in detail must be among the violations;
+    # its time-averaged frequency excess is emitted.
     named = [
         r
         for r in violations
@@ -333,20 +296,14 @@ def main() -> None:
     m.add("xqValidityOmegaAvgExcess", float(excess), "{:.1f}")
 
     # -- open system: one-step radius versus the resolved crossing ----
-    # For dephasing, the diamond constant equals the first-order slope, so
-    # the ratio is 1 up to nominal error and curvature; under amplitude
-    # damping the slope is half the diamond rate, so the factor is 2.
+    # Median gamma*/r_0 for amplitude damping.
     m.add(
         "xqAmpConservatism",
         np.median(col(amp, "amp_star") / col(amp, "r0_amp")),
         "{:.4f}",
     )
-    # The one-step radius lies this far below the resolved crossing; the
-    # iterated margin closes essentially all of it.
-    # The prose states this as a bound over every controller, so it is
-    # the maximum and not the median, rounded up: a median would be wrong
-    # for the worst controller, and ordinary rounding would emit a value
-    # the worst controller exceeds.
+    # Dephasing: max over controllers of gamma*/r_0 - 1 in percent, rounded
+    # up (the prose states it as a bound over every controller).
     m.add(
         "xqDephasingOneStepExcessPct",
         _ceil_to(
@@ -354,25 +311,19 @@ def main() -> None:
         ),
         "{:.3f}",
     )
-    # Evaluation cost of the dephasing iteration, so the paper cites a
-    # generated count rather than a remembered one.
+    # Median number of fidelity evaluations of the dephasing iteration.
     m.add(
         "xqDephasingEvals", int(round(float(np.median(col(deph, "n_evals"))))), "{:d}"
     )
 
     # -- coherent perturbation via the open-system functional -------
-    # The open-system constant covers dissipation; applied to a coherent
-    # structure it is much looser than the closed-system constant. The paper
-    # cites the size of that gap as a reason to prefer the closed-system
-    # certificate when the perturbation is known to be a coherent one.
+    # Coherent structures certified through the open-system constant: count,
+    # median diamond norm of the unit generator, and open/closed ratios of
+    # L, r_0 (range) and M.
     coh = read(res / "lindblad-margin-python/open_coherent_0.999.csv")
     m.add("xqOpenCoherentNum", len(coh), "{:d}")
     m.add("xqOpenCoherentDnorm", np.median(col(coh, "dnorm_unit")), "{:.0f}")
-    # Constant across controllers: both constants scale against the same
-    # per-interval control amplitudes, so that only the norms differ.
     m.add("xqOpenCoherentLRatio", np.median(col(coh, "ratio_L")), "{:.0f}")
-    # Outward, so that the printed range contains every controller: rounding
-    # the ends to nearest reported 110--142 for data spanning 109.6--142.2.
     m.add(
         "xqOpenCoherentRZeroRatioMin", _floor_to(col(coh, "ratio_r0").min()), "{:.0f}"
     )
@@ -380,10 +331,8 @@ def main() -> None:
     m.add("xqOpenCoherentIteratedRatio", np.median(col(coh, "ratio_M")), "{:.2f}")
 
     # -- nominal-error absorption: additive vs angular ------------------
-    # The additive allowance uses a threshold that is too low; the angular form
-    # one is the sufficient reading (the triangle inequality on Choi states).
-    # The absorption must cover the worst controller in the ensemble, and thus
-    # the quoted nominal error is the maximum rather than the median.
+    # Largest nominal error eps_0 over the ensemble and the effective
+    # thresholds under additive and angular absorption.
     eps0 = float(col(mp, "err").max())
     m.add("xqEpsZero", f"{eps0 * 1e5:.1f}\\times10^{{-5}}", raw=eps0)
     m.add(
@@ -395,12 +344,9 @@ def main() -> None:
         "xqThresholdAngular", effective_threshold(THRESHOLD, eps0, "angular"), "{:.5f}"
     )
 
-    # -- threshold sweep: conservatism relative to the threshold ------------
     # -- the accuracy cost of certifying a diamond norm --------------
-    # The appendix bounds the inflation added by the upward evaluation and the
-    # deviation of the certified value from the closed forms of that 2n
-    # lemma. Both are recorded per generator, so both are read back here again
-    # rather than typed.
+    # Largest relative inflation of the certified diamond norm, largest
+    # deviation from the closed form, and the largest n_qubits with one.
     dnc = read(res / "lindblad-margin-python/dnorm_certificates.csv")
     m.add("xqDnormInflationMax", _sci(max(float(r["rel_inflation"]) for r in dnc)))
     dev = [float(r["dev_closed_form"]) for r in dnc if r["dev_closed_form"] != ""]
@@ -411,6 +357,7 @@ def main() -> None:
         "{:d}",
     )
 
+    # -- threshold sweep: conservatism at the loose threshold F_T = 0.99 --
     ts = read(res / "lindblad-margin-python/open_threshold_sweep.csv")
     for tag, ch in (("Dephasing", "dephasing"), ("Amp", "amp_damping")):
         sub = [r for r in ts if r["channel"] == ch and float(r["FT"]) == 0.99]
@@ -439,9 +386,8 @@ def main() -> None:
             np.median(col(rob, f"M_{key}")) / np.median(col(nom, f"M_{key}")),
         )
     m.add("xqRobustNum", len(rob), "{:d}")
-    # Adversarial upper witnesses on M_tv: the medians move the opposite direction
-    # to the static margins, which is what makes that reversal a statement
-    # about the true margins rather than about conservatism of the certificate.
+    # Median adversarial witnesses m_adv per family, and the number of robust
+    # controllers whose m_adv lies below the nominal median.
     for tag, key in (("CtrlOne", "X1"), ("CtrlTwo", "X2")):
         wn = col(nom, f"madv_{key}")
         wr = col(rob, f"madv_{key}")
@@ -456,9 +402,8 @@ def main() -> None:
             raw=float(np.median(wr)),
         )
         m.add(f"xqRobustWitnessBelow{tag}", int((wr < np.median(wn)).sum()), "{:d}")
-    # The families share synthesis seeds, therefore the comparison is paired.
-    # A paired sign count is a genuine statistic; the "overlap" measure this
-    # replaced changed definition with the ordering of the medians.
+    # Families share synthesis seeds: paired counts of pairs where the robust
+    # r_FS, m_adv and M are below the nominal ones.
     pairs = {}
     for r in rn:
         pairs.setdefault(r["seed"], {})[r["kind"]] = r
@@ -476,12 +421,7 @@ def main() -> None:
             m.add(f"xqPaired{name}Down{tag}", down, "{:d}")
     m.add("xqPairedNum", len(both), "{:d}")
 
-    # The sharpest instances, and the comparison is paired since the
-    # families share their seeds: a
-    # robustified controller whose upper witness drops below its own
-    # paired nominal controller's certified lower bound. A comparison against
-    # the nominal family's median leaves open which nominal controller it was
-    # beaten; this does not.
+    # Pairs whose robust m_adv lies below the paired nominal r_FS.
     for tag, k in (("CtrlOne", "X1"), ("CtrlTwo", "X2")):
         paired = sum(
             1
@@ -490,13 +430,42 @@ def main() -> None:
         )
         m.add(f"xqRobustWitnessBelowPairedRfs{tag}", paired, "{:d}")
 
-    # The mechanism, measured rather than argued: the coherent sum across
-    # the gate in the toggling frame is what a static objective can push
-    # down, and the free certificates cannot see it. If that robustification
-    # lowers this while raising the pulse area, then "cancellation bought with
-    # trajectory exposure" is demonstrated and is not merely plausible.
-    # Paired, because a median of ratios hides how many pairs moved: here the
-    # drift falls on every pair, the controls on most though not all.
+    # Pairs with robust M above nominal M_upper, and of those the pairs whose
+    # robust m_adv is also below nominal r_FS (the reversals), per structure.
+    for tag, k in (("CtrlOne", "X1"), ("CtrlTwo", "X2")):
+        static = [
+            v
+            for v in both
+            if float(v["robust"][f"M_{k}"]) > float(v["nominal"][f"Mupper_{k}"])
+        ]
+        rev = [
+            v
+            for v in static
+            if float(v["robust"][f"madv_{k}"]) < float(v["nominal"][f"rfs_{k}"])
+        ]
+        m.add(f"xqStaticAboveUpper{tag}", len(static), "{:d}")
+        m.add(f"xqReversalPairs{tag}", len(rev), "{:d}")
+    # Median paired r_FS ratio; asserts r_FS ratio = budget ratio / area
+    # ratio pair by pair.
+    for tag, k in (("CtrlOne", "X1"), ("CtrlTwo", "X2")):
+        prod = np.array(
+            [
+                (float(v["robust"]["budget"]) / float(v["nominal"]["budget"]))
+                / (float(v["robust"][f"area_{k}"]) / float(v["nominal"][f"area_{k}"]))
+                for v in both
+            ]
+        )
+        rfs = np.array(
+            [
+                float(v["robust"][f"rfs_{k}"]) / float(v["nominal"][f"rfs_{k}"])
+                for v in both
+            ]
+        )
+        m.add(f"xqPairedRfsRatio{tag}", np.median(rfs))
+        assert np.max(np.abs(prod - rfs) / rfs) < 1e-12, "paired factorisation"
+
+    # Paired robust/nominal ratio of the toggling-frame coherent sum
+    # (cancel_*): median and number of pairs where it decreases.
     for tag, k in (("Drift", "H0"), ("CtrlOne", "X1"), ("CtrlTwo", "X2")):
         ratio = np.array(
             [
@@ -507,9 +476,8 @@ def main() -> None:
         m.add(f"xqRobustCancelRatio{tag}", np.median(ratio))
         m.add(f"xqRobustCancelDown{tag}", int((ratio < 1.0).sum()), "{:d}")
 
-    # Every recorded witness is re-evaluated through the independent expm
-    # route. A witness that survives only in that search's own arithmetic
-    # would show up here.
+    # Witnesses re-evaluated through the independent expm route: count and
+    # number below F_T.
     recheck = [
         float(r[f"madvF_{k}"])
         for r in rn
@@ -523,23 +491,16 @@ def main() -> None:
         int(sum(1 for f in recheck if f < THRESHOLD)),
         "{:d}",
     )
-    # The margin below the threshold, not the fidelity: the value 0.9989999 printed
-    # to six places reads as 0.999000 and therefore as no violation at all. Floored,
-    # so the quoted slack is one that every witness really has.
+    # Smallest slack F_T - F over the rechecked witnesses, floored.
     m.add(
         "xqWitnessRecheckSlack",
         f"{_floor_to((THRESHOLD - max(recheck)) * 1e8, 1):.1f}\\times10^{{-8}}",
         raw=THRESHOLD - max(recheck),
     )
 
-    # Why r_FS fell. That quantity is budget/speed, the speed of a multiplicative
-    # control structure scales in proportion to the pulse area ||u_j||_1
-    # (Proposition prop:amplitude-only), and that budget depends on the
-    # control only through the nominal error. Recovering those two factors
-    # from the recorded radii separates the reading "robustification spent amplitude"
-    # from "robustification lost fidelity" without any re-synthesising
-    # anything: the controls themselves are not archived, yet the
-    # proposition makes the decomposition exact.
+    # r_FS = angle budget / speed, with speed proportional to the pulse area
+    # ||u_j||_1 for a multiplicative control structure: median robust/nominal
+    # budget ratio, area ratio per structure, and pairs whose area grew.
     def _angle_budget(rows):
         return np.arccos(THRESHOLD) - np.arccos(np.minimum(1.0, 1.0 - col(rows, "err")))
 
@@ -553,14 +514,10 @@ def main() -> None:
     # -- a larger system -------------------------------------------------
     sc = read(res / "scaling-python/scaling4q_margins_0.999.csv")
     m.add("xqScalingNum", len(sc), "{:d}")
-    # Deterministic cost of the iterated margin, so that the prose can compare
-    # certificate classes without quoting a wall-clock that fails to
-    # reproduce between runs, still less between machines.
+    # Median evaluation count of the iterated margin.
     m.add("xqScalingEvals", int(np.median(col(sc, "n_evals_iter"))), "{:d}")
 
-    # Figure fig:ratios accounts for its flat row of drift squares by the
-    # four-qubit gates being numerically exact. Both numbers quoted there for
-    # that come from this file.
+    # Decade of the nominal error 1 - F (must be a single one).
     nom = 1.0 - col(sc, "fid")
     exps = {int(np.floor(np.log10(v))) for v in nom}
     if len(exps) != 1:
@@ -569,8 +526,7 @@ def main() -> None:
             "single order of magnitude would be wrong"
         )
     m.add("xqScalingNomErrExp", exps.pop(), "{:d}")
-    # The trajectory-class drift ratio, whose spread is that flat row. The
-    # constant-class ratio is not flat, so the two must not be treated as one.
+    # Relative spread of the drift ratio r_FS/M^K_tv over the ensemble.
     dr = col(sc, "rfs_H0") / col(sc, "KMtv_H0")
     m.add(
         "xqScalingDriftFlatRel",
@@ -579,8 +535,8 @@ def main() -> None:
     )
 
     # -- comparison against the implied margins of Berberich et al. --------
-    # Joined on (controller, structure): both files span the same
-    # ensemble x structure instances.
+    # r_FS/M^B (median and outward range) and M^K_tv/M^B (outward range),
+    # joined on (controller, structure).
     ber = read(res / "time-bandwidth-bound-python/berberich_comparison_0.999.csv")
     fsv = read(res / "time-bandwidth-bound-python/fs_validity_0.999.csv")
     fs_by = {(r["controller"], r["structure"]): float(r["r_fs"]) for r in fsv}
@@ -605,12 +561,10 @@ def main() -> None:
         m.add("xqBerberichKosutTvMin", _floor_to(kr.min(), 2))
         m.add("xqBerberichKosutTvMax", _ceil_to(kr.max(), 2))
 
-    # -- the effect of the correction on the universal-bound comparison ------
-    # The published (additive) ratios and the corrected (angular) ratios.
+    # -- additive-absorption universal-bound comparison (used further below) --
     kos_add = read(res / "time-bandwidth-bound-python/kosut_comparison_0.999.csv")
 
     # -- the trajectory certificate versus its competitors -------------
-    fsv = read(res / "time-bandwidth-bound-python/fs_validity_0.999.csv")
     fs_by = {(r["controller"], r["structure"]): float(r["r_fs"]) for r in fsv}
     for tag, key in (("Drift", "H0"), ("CtrlOne", "H1"), ("CtrlTwo", "H2")):
         v = [
@@ -619,21 +573,20 @@ def main() -> None:
             if (r["controller"], key) in fs_by
         ]
         m.add(f"xqFsOverKosutTv{tag}", np.median(v))
-    # r_FS/r_0 is structure-independent: both scale at the same speed.
+    # Median r_FS/M^K_tv per structure, and median r_FS/r_0 (structure-independent).
     v = [
         fs_by[(r["controller"], "H0")] / float(r["r0_H0"])
         for r in mp
         if (r["controller"], "H0") in fs_by
     ]
     m.add("xqFsOverRZero", np.median(v))
-    # Corollary: the ratio depends on the two fidelities alone, and
-    # this is its value for a numerically exact gate, which is the figure the
-    # CNOT and four-qubit ensembles are.
+    # Limit of r_FS/r_0 for an exact gate: sqrt(1 - F_T^2) arccos(F_T) / (1 - F_T).
     m.add(
         "xqFsOverRZeroLimit",
         np.sqrt(1.0 - THRESHOLD**2) * np.arccos(THRESHOLD) / (1.0 - THRESHOLD),
     )
 
+    # Median l2 inradius of the certified set, in units of 10^-4.
     m.add("xqInradiusLTwo", np.median(col(mp, "inradius_l2")), "{:.1f}\\times10^{{-4}}")
     m.items[-1] = (
         "xqInradiusLTwo",
@@ -643,17 +596,13 @@ def main() -> None:
     )
 
     # -- ensemble-wide numerical check of every certificate ------
-    # The paper claims a stress-testing harness covers every implemented
-    # certificate; these macros make that claim carry supporting evidence
-    # (breadth, depth, and the failure count) rather than asserting it.
-    # tv_slope is one of the checks counted here.
+    # Number of check kinds, instances, probes and failures.
     ver = read(res / "verification-python/verification_0.999.csv")
     m.add("xqVerifyCheckKinds", len({r["check"] for r in ver}), "{:d}")
     m.add("xqVerifyInstances", len(ver), "{:d}")
     m.add("xqVerifyProbes", sum(int(r["n"]) for r in ver), "{:d}")
     m.add("xqVerifyFailures", sum(1 - int(r["passed"]) for r in ver), "{:d}")
-    # Worst observed slack as a fraction of the certified bound, across the
-    # checks that report one: how close the ensemble came to violating.
+    # Largest observed value as a fraction of its certified bound.
     frac = [
         float(r["max_fraction_of_bound"])
         for r in ver
@@ -662,9 +611,8 @@ def main() -> None:
     if frac:
         m.add("xqVerifyMaxFraction", max(frac))
 
-    # The appendix limits the cross-route fidelity discrepancy and the
-    # unitarity defect. fidelity_cross_check returns that sum as the
-    # trajectory certificate's tol, so this bounds each quantity.
+    # Largest tol of the trajectory-certificate check (cross-route fidelity
+    # discrepancy plus unitarity defect).
     tol_tc = [float(r["tol"]) for r in ver if r["check"] == "trajectory_certificate"]
     m.add(
         "xqVerifyCrossRouteTol",
@@ -673,11 +621,8 @@ def main() -> None:
     )
 
     # -- resolved static margin versus the trajectory lower certificates
-    # These are M/r_0 and M/r_FS: the ratio of one RESOLVED STATIC margin to
-    # an available TRAJECTORY lower certificate. They combine uncertainty-class
-    # separation with certificate slack and are not a gauge of
-    # trajectory-certificate conservatism, which would instead be M_tv/r_FS.
-    fsv = read(res / "time-bandwidth-bound-python/fs_validity_0.999.csv")
+    # Range over structures of median M/r_0 and M/r_FS, and median r_0/M^K_tv
+    # per structure. (Not a measure of trajectory-certificate conservatism.)
     fs_by2 = {(r["controller"], r["structure"]): float(r["r_fs"]) for r in fsv}
     price_r0, price_fs, r0_over_ktv = [], [], []
     tv_by2 = {r["controller"]: r for r in kos_tv}
@@ -698,6 +643,7 @@ def main() -> None:
     m.add("xqRZeroOverKosutTvCtrlTwo", r0_over_ktv[2])
 
     # -- directional anisotropy of the certified set -----------------
+    # max/min of M over directions per controller: median and maximum.
     dirs = [k[2:] for k in mp[0] if k.startswith("M_")]
     Md = np.array([[float(r[f"M_{d}"]) for d in dirs] for r in mp])
     aniso = Md.max(axis=1) / Md.min(axis=1)
@@ -705,6 +651,7 @@ def main() -> None:
     m.add("xqAnisotropyMax", _ceil_to(aniso.max(), 2))
 
     # -- adversarial brackets around the trajectory margin ------------------
+    # Number probed and outward range of m_adv/M.
     tvb = read(res / "multiparameter-margin-python/tv_bracket_0.999.csv")
     frac = col(tvb, "m_adv") / col(tvb, "M_const")
     m.add("xqTvBracketProbed", len(tvb), "{:d}")
@@ -713,67 +660,56 @@ def main() -> None:
 
     # -- the universal-bound violation, located adversarially -------------
     val = read(res / "time-bandwidth-bound-python/validity_0.999.csv")
-    # Three grid levels, so that "reachable only by sub-interval refinement"
-    # is shown rather than asserted: the control grid remains above FT and
-    # only the refinements dip below it.
-    # Attacks behind the r_FS sweep: rows x (grids x budget factors), hence the
-    # count follows the protocol rather than being restated in the prose.
-    fsval = read(res / "time-bandwidth-bound-python/fs_validity_0.999.csv")
-    n_fmin = len([k for k in fsval[0] if k.startswith("Fmin_")])
-    m.add("xqFsAttacks", len(fsval) * n_fmin, "{:d}")
+    # Number of attacks behind the r_FS sweep: rows x (grids x budget factors).
+    n_fmin = len([k for k in fsv[0] if k.startswith("Fmin_")])
+    m.add("xqFsAttacks", len(fsv) * n_fmin, "{:d}")
 
+    # Smallest fidelity found on the control grid and its x4, x16 refinements.
     m.add("xqValidityFminGrid", min(float(r["Fmin_m1_grid"]) for r in val), "{:.6f}")
     m.add("xqValidityFminCoarse", min(float(r["Fmin_m1_x4"]) for r in val), "{:.6f}")
     m.add("xqValidityFminFine", min(float(r["Fmin_m1_x16"]) for r in val), "{:.6f}")
-    # Section sec:cases-tv is built around a single violating
-    # trajectory: "structure H_1", "that trajectory", and "the violating
-    # controller", and a singular noun after this count. A changed count
-    # needs that paragraph rewritten, so halt rather than print a number
-    # the sentences around it contradict.
+    # The prose is written for exactly one violation; any other count stops.
     n_viol = sum(int(r["violated"]) for r in val)
     if n_viol != 1:
         raise SystemExit(
             f"ERROR: the constant-class attack found {n_viol} violations, not 1. "
-            "The sec:cases-tv paragraph is written for exactly one (singular "
+            "The time-variation paragraph of the xQRM paper is written for exactly one (singular "
             "noun, named structure and controller) and must be rewritten before "
             "this macro can be regenerated."
         )
     m.add("xqValidityViolations", n_viol, "{:d}")
 
-    # -- against the implied margins of Berberich et al. ----------------
     # -- the synthesised CNOT ensemble versus the universal bound ------
+    # Range over structures of median M/M^K, and median r_FS/r_0.
     kk = [np.median(col(cn, f"M_{k}") / col(cn, f"KM_{k}")) for k in ("H0", "X1", "X2")]
     m.add("xqCnotOverKosutMin", _floor_to(min(kk), 2))
     m.add("xqCnotOverKosutMax", _ceil_to(max(kk), 2))
     m.add("xqCnotFsOverRZero", np.median(col(cn, "rfs_X1") / col(cn, "r0_X1")))
 
-    tvb = read(res / "multiparameter-margin-python/tv_bracket_0.999.csv")
-
     # -- the two-sided bracket on the trajectory margin -----------------
-    # Certified lower ends (r_FS) together with adversarial violation witnesses
-    # (m_adv) on the controllers that were probed; the interval is strictly
-    # positive. Both are taken from the SAME record as Table tab:tvbracket,
-    # joined by controller, structure and threshold, and not from a
-    # separate run whose margins are evaluated to a different tolerance.
+    # Range of r_FS (lower end) and m_adv (upper end) over the probed
+    # controllers, in units of 10^-3, from the same file as the bracket table.
     lo = col(tvb, "r_fs")
     hi = col(tvb, "m_adv")
-    m.add("xqTvBracketLowMin", _floor_to(lo.min() * 1e3, 2), "{:.2f}")
-    m.add("xqTvBracketLowMax", _ceil_to(lo.max() * 1e3, 2), "{:.2f}")
-    m.add("xqTvBracketHighMin", _floor_to(hi.min() * 1e3, 2), "{:.2f}")
-    m.add("xqTvBracketHighMax", _ceil_to(hi.max() * 1e3, 2), "{:.2f}")
+
+    # Min and max of the values as the table prints them (two decimals,
+    # ordinary rounding), so prose and table agree.
+    def _printed_milli(x: float) -> float:
+        return float(f"{float(x) * 1e3:.2f}")
+
+    printed_lo = np.array([_printed_milli(x) for x in lo])
+    printed_hi = np.array([_printed_milli(x) for x in hi])
+    m.add("xqTvBracketLowMin", float(printed_lo.min()), "{:.2f}")
+    m.add("xqTvBracketLowMax", float(printed_lo.max()), "{:.2f}")
+    m.add("xqTvBracketHighMin", float(printed_hi.min()), "{:.2f}")
+    m.add("xqTvBracketHighMax", float(printed_hi.max()), "{:.2f}")
 
     # -- the constancy gap M_const - M_tv, per controller ---------------
-    # A different quantity from the bracket above, and it had previously been
-    # reported using the bracket numbers. Per controller:
-    #
-    #   gap_lower = max(0, M_const - m_adv)      needs a violating
-    #                                            trajectory at m_adv
-    # gap_upper = M_const_upper - r_FS requires an unsafe constant
-    #                                            perturbation at M_upper
-    #
-    # Endpoints are built per controller in full precision first and
-    # only then reduced to ensemble extremes; a controller lacking an upper
-    # witness contributes no upper endpoint rather than a truncated one.
+    # Per controller, in full precision, then reduced to ensemble extremes
+    # (units of 10^-3):
+    #   gap_lower = max(0, M_const - m_adv)   (needs a violating trajectory)
+    #   gap_upper = M_const_upper - r_FS      (needs an unsafe constant at M_upper)
+    # A controller without an upper witness contributes no upper endpoint.
     gap_lo, gap_hi = [], []
     for r in tvb:
         if not int(r["adv_violated"]):
@@ -812,8 +748,8 @@ def main() -> None:
     m.add("xqConstGapBracketed", len(gap_hi), "{:d}")
 
     # -- how much the absorption choice actually moves ------------------
-    # The share of the angle budget consumed by the nominal error, and the
-    # resulting reduction of the implied universal-bound margin.
+    # theta_0/theta_T in percent, and the range over structures of the drop of
+    # median M^K from additive to angular absorption.
     th_T = math.acos(THRESHOLD)
     th_0 = math.acos(1.0 - eps0)
     m.add("xqAbsorptionAngleShare", 100.0 * th_0 / th_T, "{:.0f}")
@@ -824,6 +760,150 @@ def main() -> None:
     ]
     m.add("xqAbsorptionMarginDropMin", _floor_to(min(dec)), "{:.0f}")
     m.add("xqAbsorptionMarginDropMax", _ceil_to(max(dec)), "{:.0f}")
+
+    # -- state targets (appendix on state preparation) --------------------
+    se = res / "state-examples-python"
+    gz = read(se / "ghz_detuning_0.999.csv")
+    tf = read(se / "tfim_preparation_0.999.csv")
+    gd = read(se / "ghz_dephasing_0.999.csv")
+    cl = read(se / "closed_limit.csv")
+    sv = read(se / "state_variance_0.999.csv")
+    # E1: largest n, and the gate-to-state crossing ratio at that n.
+    m.add("xqStateGhzMaxN", int(gz[-1]["n"]), "{:d}")
+    m.add(
+        "xqStateGhzGateOverState",
+        float(gz[-1]["crossing_gate_hold"]) / float(gz[-1]["crossing_state_hold"]),
+    )
+    # E2: one-step radius and M as a percentage of the resolved crossing
+    # (both directions), and the largest evaluation count.
+    frac = [
+        float(r["r_one_step"]) / float(r[f"crossing_lo_{d}"])
+        for r in tf
+        for d in ("minus", "plus")
+    ]
+    m.add("xqStateTfimOneStepPctMin", 100 * min(frac), "{:.1f}")
+    m.add("xqStateTfimOneStepPctMax", 100 * max(frac), "{:.0f}")
+    reach = [
+        float(r[f"M_{d}"]) / float(r[f"crossing_lo_{d}"])
+        for r in tf
+        for d in ("minus", "plus")
+    ]
+    m.add("xqStateTfimReachPctMin", 100 * min(reach), "{:.2f}")
+    m.add(
+        "xqStateTfimEvalsMax",
+        max(max(int(r["evals_minus"]), int(r["evals_plus"])) for r in tf),
+        "{:d}",
+    )
+    # E4: GHZ dephasing, one-step radius over the analytic crossing.
+    ratio = [float(r["r_one_step"]) / float(r["crossing"]) for r in gd]
+    m.add("xqStateDephRatioMin", min(ratio), "{:.4f}")
+    # Closed limit on the chain structures: decade of the closed-form excess
+    # over the spread, and the solver-free excess in percent.
+    excess = max(float(r["closed_form_certified"]) / float(r["spread"]) - 1 for r in cl)
+    m.add("xqStateClosedExcessExp", int(np.floor(np.log10(excess))), "{:d}")
+    m.add(
+        "xqStateFreeExcessPct",
+        100 * max(float(r["free_certified"]) / float(r["spread"]) - 1 for r in cl),
+        "{:.2f}",
+    )
+    # E3: integrated state-dependent speed over C^st, range in percent.
+    sr = [float(r["int_sigma"]) / float(r["C_state"]) for r in sv]
+    m.add("xqStateSigmaPctMin", 100 * min(sr), "{:.0f}")
+    m.add("xqStateSigmaPctMax", 100 * max(sr), "{:.0f}")
+
+    # -- targeted algorithm tests ----------------------------------------
+    # Crosstalk gains at the smallest kappa, smallest boundary fidelity,
+    # revival, touching and noisy-band ray cases.
+    at = res / "algorithm-tests-python"
+    ct = read(at / "crosstalk_0.999.csv")
+    ry = {r["case"]: r for r in read(at / "rays_0.999.csv")}
+    kap = sorted({float(r["kappa"]) for r in ct})
+    gain_small = np.median(
+        [float(r["gain_gauge"]) for r in ct if float(r["kappa"]) == kap[0]]
+    )
+    m.add("xqCrosstalkKappaMin", kap[0], "{:g}")
+    m.add("xqCrosstalkGainGauge", gain_small, "{:.0f}")
+    m.add(
+        "xqCrosstalkGainAng",
+        np.median([float(r["gain_ang"]) for r in ct if float(r["kappa"]) == kap[0]]),
+        "{:.0f}",
+    )
+    m.add(
+        "xqCrosstalkMinF",
+        min(
+            min(float(r["minF_gauge_boundary"]), float(r["minF_ang_boundary"]))
+            for r in ct
+        ),
+        "{:.5f}",
+    )
+    m.add("xqCrosstalkChecked", len(ct), "{:d}")
+    m.add("xqRevivalIslandLo", float(ry["revival_angular"]["island_lo"]), "{:.2f}")
+    m.add("xqRevivalFirst", float(ry["revival_angular"]["first_unsafe"]), "{:.4f}")
+    m.add("xqTouchM", float(ry["touch"]["M"]), "{:.4f}")
+    m.add("xqTouchUpper", float(ry["touch"]["M_upper"]), "{:.2f}")
+    m.add("xqTouchEvals", int(ry["touch"]["n_evals"]), "{:d}")
+    over = float(ry["noisy_band0"]["M"]) / float(ry["noisy_band0"]["first_unsafe"]) - 1
+    m.add("xqNoisyOvershootExp", int(np.floor(np.log10(over))), "{:d}")
+    m.add("xqNoisyUnresolved", int(ry["noisy_band1e-09"]["n_unresolved"]), "{:d}")
+
+    # -- bracket audit and cost ------------------------------------------
+    # Evaluation band, bracket widths, angular vs precursor evaluation counts,
+    # and median timings with the CPU name.
+    ba_dir = res / "bracket-audit-python"
+    ba = read(ba_dir / "brackets_0.999.csv")
+    band = max(float(r["band"]) for r in ba)
+    m.add(
+        "xqAuditBand",
+        f"10^{{{int(round(np.log10(band)))}}}",
+        raw=band,
+    )
+    m.add(
+        "xqAuditRays",
+        sum(1 for r in ba if r["rule"] == "angular" and float(r["band"]) == 0),
+        "{:d}",
+    )
+    wb = np.array(
+        [
+            float(r["rel_width"])
+            for r in ba
+            if r["rule"] == "angular" and float(r["band"]) == band
+        ]
+    )
+    for name, v in (("Med", np.median(wb)), ("Max", wb.max())):
+        e = int(np.floor(np.log10(v)))
+        m.add(
+            f"xqAuditWidthBand{name}", f"{v / 10**e:.1f}\\times10^{{{e}}}", raw=float(v)
+        )
+    ang = {
+        (r["controller"], r["direction"]): r
+        for r in ba
+        if r["rule"] == "angular" and float(r["band"]) == 0
+    }
+    pre = [r for r in ba if r["rule"] == "precursor" and float(r["band"]) == 0]
+    no_more = sum(
+        int(ang[(r["controller"], r["direction"])]["n_evals"]) <= int(r["n_evals"])
+        for r in pre
+    )
+    saving = np.median(
+        [
+            (int(r["n_evals"]) - int(ang[(r["controller"], r["direction"])]["n_evals"]))
+            / int(r["n_evals"])
+            for r in pre
+        ]
+    )
+    m.add("xqAuditPrecursorRays", len(pre), "{:d}")
+    m.add("xqAuditNoMorePct", 100 * no_more / len(pre), "{:.0f}")
+    m.add("xqAuditSavingPct", 100 * saving, "{:.1f}")
+    tm = read(ba_dir / "timing_0.999.csv")
+    m.add("xqTimeRepeats", int(tm[0]["repeats"]), "{:d}")
+    m.add("xqTimeControllers", len(tm), "{:d}")
+    m.add("xqTimePreprocMs", 1e3 * np.median(col(tm, "t_preproc_med")), "{:.1f}")
+    m.add("xqTimeEvalMs", 1e3 * np.median(col(tm, "t_eval_med")), "{:.2f}")
+    m.add("xqTimeDirS", np.median(col(tm, "t_dir_med")), "{:.2f}")
+    iqr_rel = max(float(r["t_dir_iqr"]) / float(r["t_dir_med"]) for r in tm)
+    m.add("xqTimeDirSpreadPct", 100 * iqr_rel, "{:.1f}")
+    env = json.loads((ba_dir / "environment.json").read_text())
+    m.add("xqTimeCpu", env["cpu"].replace(" Processor", ""), raw=1.0)
 
     out = res / "paper-xqrm" / "macros.tex"
     n = m.write(out)

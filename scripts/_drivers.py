@@ -6,11 +6,11 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Shared plumbing for the experiment drivers.
+"""Helpers shared by the experiment drivers.
 
-Nineteen drivers repeated the same ROOT/CTRL preamble and ensemble load, fourteen the same DictWriter block, fifteen the same --FT/--out options. That is plumbing, not science, and duplicating it is how the three paper generators drifted apart from each other.
-
-Nothing here computes a result. The helpers reproduce what the copies did exactly -- same default error filter, same CSV dialect, same field order -- so moving a driver onto them cannot change its output."""
+Paths, default settings, ensemble loading, CSV writing, the common --FT/--out
+options, the CNOT model and the three-structure uncertainty spec. Nothing
+here computes a result."""
 
 from __future__ import annotations
 
@@ -28,66 +28,49 @@ ROOT = Path(__file__).resolve().parents[1]
 #: The shipped three-qubit ensemble that every xQRM driver starts from.
 CTRL = ROOT / "data/controllers/problem9_tf15_K32_quasi-newton"
 
-#: The error filter ten drivers hardcoded and seven exposed through --max-error.
+#: Default nominal-error filter for the ensemble (--max-error).
 DEFAULT_MAX_ERROR = 1e-4
 
-#: The paper's fidelity threshold, declared in one place. Twelve drivers each carried
-#: their own FT = 0.999 and fourteen expose it as --FT, so that value lived in a
-#: dozen places while remaining one number. Output files encode the threshold they
-#: were written at (..._0.999.csv), and the threshold sweep deliberately runs
-#: 0.99 / 0.999 / 0.9999, so this is a default we override, never a constant to
-#: assume.
+#: Default fidelity threshold F_T (--FT). Output file names carry the
+#: threshold they were written at (..._0.999.csv); it is a default, not a constant.
 DEFAULT_FT = 0.999
 
-#: Safe-radius continuation step of Algorithm 1. Ten drivers carried their own
-#: ETA = 1e-6; it is a numerical setting with a single correct value, not an
-#: experiment parameter.
+#: Safe-radius continuation step eta of the margin algorithm (numerical setting).
 DEFAULT_ETA = 1e-6
 
-#: Magnus refinement levels: a piecewise-constant trajectory sampled at
-#: one, four and sixteen sub-steps per control interval. Five drivers plus
-#: the table generator sweep precisely these, and a certificate that only
-#: fails under refinement is what they seek, so the levels
-#: are named once rather than retyped.
+#: Magnus refinement levels: sub-steps per control interval of the
+#: piecewise-constant trajectory.
 REFINEMENTS = (1, 4, 16)
 
-#: Slack on the threshold before an adversarial fidelity is counted as a
-#: violation: one fidelity evaluation of rounding, not a tolerance applied to the
-#: certificate. Three validity drivers use the same allowance, so a
-#: change to it must move all three together or their counts cease being
-#: comparable.
+#: Slack below F_T before an adversarial fidelity counts as a violation
+#: (rounding of one fidelity evaluation). Shared by the validity drivers so
+#: their counts are comparable.
 VIOLATION_TOL = 1e-10
 
-#: Quadrature nodes for the differential sensitivity zeta, used jointly by the
-#: case-study driver and the consistency tests so both engines remain held to
-#: the same setting.
+#: Quadrature nodes for the differential sensitivity zeta (case-study driver
+#: and consistency tests).
 ZETA_N_QUAD = 32
 
-#: Bracketing for :func:`true_crossing`: expand the upper end by this factor
-#: from a floor that is non-zero even when the certified margin is, halt at
-#: the cap, then halve. Forty halvings push the bracket far below the
-#: precision at which a crossing is ever reported.
+#: Bracketing for :func:`true_crossing`: grow the upper end by GROWTH from
+#: max(GROWTH * seed, FLOOR) up to CAP, then bisect STEPS times.
 CROSSING_GROWTH = 10.0
 CROSSING_FLOOR = 1e-6
 CROSSING_CAP = 1e3
 CROSSING_STEPS = 40
 
-#: Seed strides that keep each attack on its own random stream. The
-#: budget index occupies the units place, the refinement index occupies the tens,
-#: the structure the hundreds, and a controller steps past all three of
-#: its structures. run_fs_validity and run_kosut_validity attack that same
-#: (controller, structure, refinement, budget) grid, so they share that
-#: layout; a driver that changed it alone would silently reuse another driver's
-#: streams.
+#: Seed strides giving each (controller, structure, refinement, budget)
+#: attack its own random stream: budget in the units, refinement in the
+#: tens, structure in the hundreds. Shared by run_fs_validity and
+#: run_kosut_validity.
 SEED_STRIDE_REFINEMENT = 10
 SEED_STRIDE_STRUCTURE = 100
 SEED_STRIDE_CTRL = 3 * SEED_STRIDE_STRUCTURE
 
 
 def load_ensemble(ctrl_dir: Path = CTRL, max_error: float = DEFAULT_MAX_ERROR):
-    """The problem definition and the controllers that pass the error filter.
+    """Load the problem definition and the controllers that pass the error filter.
 
-    Returns ``(problem, controllers)``, exactly as the nineteen inline copies did."""
+    Returns ``(problem, controllers)``."""
     problem = load_problem(ctrl_dir / "problem9.mat")
     controllers = load_controllers(ctrl_dir / "controllers.csv", max_error)
     return problem, controllers
@@ -96,15 +79,16 @@ def load_ensemble(ctrl_dir: Path = CTRL, max_error: float = DEFAULT_MAX_ERROR):
 def write_rows(path: Path, rows: list, fieldnames: list | None = None) -> Path:
     """Write ``rows`` as CSV, creating the parent directory.
 
-    ``lineterminator="\\n"`` is not cosmetic: the MATLAB and Octave peers emit LF, and the parity comparison is byte-oriented. ``fieldnames`` defaults to the first row's key order, which is what the copies used."""
+    LF line endings, as the MATLAB and Octave peers write, since the parity
+    comparison is byte-oriented. ``fieldnames`` defaults to the first row's
+    key order. Refuses to write an empty ``rows``."""
     if not rows:
         raise SystemExit(f"ERROR: refusing to write {path} with no rows")
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="") as f:
         w = csv.DictWriter(
             f,
-            # `or` would treat an explicitly empty list as meaning "use them all";
-            # an empty selection should emit a header-only file.
+            # An explicitly empty fieldnames list gives a header-only file.
             fieldnames=list(rows[0].keys()) if fieldnames is None else fieldnames,
             lineterminator="\n",
         )
@@ -129,8 +113,7 @@ def base_parser(
     return ap
 
 
-#: Single-qubit operators the CNOT drivers also employ outside the model
-#: itself (run_cnot_case_study constructs its dephasing structure from them).
+#: Single-qubit Pauli Z, X and identity (also used by run_cnot_case_study).
 PAULI_Z = np.diag([1.0, -1.0]).astype(complex)
 PAULI_X = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=complex)
 EYE2 = np.eye(2, dtype=complex)
@@ -147,9 +130,15 @@ def true_crossing(
 ) -> float:
     """Certified lower end of the true threshold crossing.
 
-    ``F`` is a one-parameter fidelity and ``ft`` the threshold. ``seed`` is a point known to satisfy it -- normally a certified margin, so what is returned measures that certificate's conservatism rather than assuming it -- and sets the initial upper end; pass ``lo`` to start the lower end elsewhere. The upper end grows geometrically until the fidelity drops or the cap is reached, then the bracket is halved ``steps`` times, stopping early once its relative width falls below ``rel_tol`` if one is given.
+    ``F`` is a one-parameter fidelity and ``ft`` the threshold F_T. ``seed``
+    is a point known to satisfy F >= ft (normally a certified margin) and sets
+    the initial upper end; ``lo`` starts the lower end elsewhere. The upper end
+    grows geometrically until F drops below ft or the cap is reached, then the
+    bracket is bisected ``steps`` times, stopping early once its relative width
+    is below ``rel_tol`` if given.
 
-    The returned value is the bracket's LOWER end, at which the fidelity was evaluated and found to meet the threshold. It is therefore a guarantee -- a point the gate provably survives, hence a lower bound on the crossing -- whereas the bracket's midpoint would be an estimate with nothing behind it. Every conservatism ratio built on this is a lower bound in the same way, and the paper reports it as one."""
+    Returns the bracket's lower end, where F >= ft was evaluated: a lower
+    bound on the crossing, not an estimate of it."""
     hi = max(CROSSING_GROWTH * seed, CROSSING_FLOOR)
     lo = seed if lo is None else lo
     while F(hi) >= ft and hi < CROSSING_CAP:
@@ -166,9 +155,10 @@ def true_crossing(
 
 
 def cnot_model():
-    """The two-qubit CNOT model three drivers define in the same way.
+    """The two-qubit CNOT model used by the CNOT drivers.
 
-    Returns ``(H0, X1, X2, CNOT)``: the ZZ-coupled drift with a local-Z detuning, the two control structures, and the target gate. The expressions are those the three copies used, unchanged, so the Kronecker products and their floating-point results match."""
+    Returns ``(H0, X1, X2, CNOT)``: the ZZ-coupled drift with a local-Z
+    detuning, the two control Hamiltonians, and the target gate."""
     Z, X, I2 = PAULI_Z, PAULI_X, EYE2
     H0 = 2 * np.pi * 0.5 * np.kron(Z, Z) + np.pi * 0.1 * (
         np.kron(Z, I2) - np.kron(I2, Z)
@@ -182,9 +172,9 @@ def cnot_model():
 
 
 def three_structure_specs(problem, c):
-    """The p=3 uncertainty spec six drivers build in the same way.
-
-    Drift plus the two multiplicative control errors, in the order ``mp.structure_constants`` expects. Returned as a fresh list of the same tuples the inline copies built, so the constants it yields stay unchanged."""
+    """The p=3 uncertainty spec for controller ``c``: drift plus the two
+    multiplicative control errors, in the order ``mp.structure_constants``
+    expects. Returns a fresh list."""
     return [
         ("drift", problem["H0"]),
         ("control", problem["H1"], c["u1"]),

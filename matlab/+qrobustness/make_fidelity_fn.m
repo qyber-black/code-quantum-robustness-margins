@@ -1,7 +1,12 @@
 function fn = make_fidelity_fn(H0, H1, H2, u1, u2, Uf, dt, structure)
-%MAKE_FIDELITY_FN Function handle F = fn(delta) associated with a structure.
+%MAKE_FIDELITY_FN Handle delta -> F for one perturbation structure.
+%   H0, H1, H2 - drift and control Hamiltonians
+%   u1, u2     - controls per interval
+%   Uf         - target gate
+%   dt         - interval length
+%   structure  - 'H0', 'H1' or 'H2'
 %
-%   Peer of python/src/qrobustness/core.py.
+%   Peer of python/src/qrobustness/core.py:make_fidelity_fn.
 
     fn = @(delta) local_fid(delta, H0, H1, H2, u1, u2, Uf, dt, structure);
 end

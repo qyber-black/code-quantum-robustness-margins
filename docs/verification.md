@@ -1,4 +1,4 @@
-# Numerical verification of the theorems
+# Tests and verification
 
 > SPDX-FileCopyrightText: (C) 2026 F. C. Langbein <frank@langbein.org>\
 > SPDX-FileCopyrightText: (C) 2026 S. P. O'Neil <sean.oneil@westpoint.edu>\
@@ -8,125 +8,76 @@
 >
 > SPDX-License-Identifier: AGPL-3.0-or-later
 
-We re-verify every certified inequality shipped with the package
-numerically. `python/src/qrobustness/verify.py` provides the harness.
-`python/tests/test_theorems.py` runs fast seeded instances of every
-check, one test per theorem or lemma of the paper.
-`scripts/run_theorem_verification.py` sweeps the shipped three-qubit
-ensemble and exits nonzero on any violation.
+## `make test`
 
-## Principles
+Runs every stage for every engine. `ENGINE=...` restricts the run to one
+engine. Each stage runs even if an earlier stage failed. Each engine ends
+with a tally.
 
-1. **Slack, not equality.** Each check evaluates a certified inequality
-   as a slack (certified quantity minus its bound, nonnegative when
-   satisfied) and fails only when the slack is negative beyond a
-   numerical allowance.
-2. **Derived tolerances.** The allowance is derived from the
-   computation, not assumed: fidelities are evaluated through two
-   independent propagator routes (per-interval eigendecomposition and
-   `scipy.linalg.expm`), and the observed cross-route discrepancy plus
-   the unitarity defect of the propagator product set the tolerance.
-   Where the certificate itself terminates on a band (the fidelity band
-   `eta` of Algorithm 1), that band is the allowance.
-3. **Adversarial probes.** Certificates are probed where they are most
-   likely to fail: at the certified boundary, with sign-modulated and
-   sparse trajectories, with sub-interval refinement (the failure mode
-   that disproved the sup-norm reading of the constant-class
-   time-bandwidth margin; see docs/time-bandwidth-bound.md), and with
-   multi-start exact-gradient adversaries -- not only with uniform
-   random samples.
+| stage | what it runs |
+| :--- | :--- |
+| `test-lint` | `lint`: ruff on `python/` and `scripts/`, miss_hit on `matlab/` |
+| `test-unit` | `python/tests` (pytest) or `matlab/tests/run_all_tests` (MATLAB, Octave) |
+| `test-synth` | synthesis smoke on a few unseen controllers, written to `build/` |
+| `test-parity` | for MATLAB and Octave: the engine's committed result tables against Python's (no-op for Python) |
 
-## Checks
+The MATLAB/Octave state and open-state tests read the parity fixture
+`matlab/tests/fixtures/states_parity.json`, written by
+`scripts/gen_states_parity.py`; `python/tests/test_states_parity.py` checks
+that the committed fixture is current.
 
-| Check | Statement verified |
-|-------|--------------------|
-| `check_metric_triangle` | The gate-fidelity angle is a metric (triangle inequality on random unitary triples) |
-| `check_absorption` | Angular nominal-error absorption: achieved-gate fidelity at the angular threshold implies target fidelity at `F_T` |
-| `check_constant_margin` | Algorithm 1 margin: `F(mu) >= F_T` on a dense grid of `[-M, M]` |
-| `check_polytope` | Safe-polytope theorem: `F >= F_T` at random boundary and interior points of the certified cross-polytope |
-| `check_lipschitz_pairs` | Trajectory Lipschitz lemma on random trajectory pairs inside the safe set |
-| `check_fs_angle` | Fubini-Study certificate, inner inequality: `theta(U_S, U(delta)) <= m * s` on refined random trajectories |
-| `check_trajectory_certificate` | Uniform trajectory margins (`r_0`, `r_FS`, `M^K_tv`): adversaries at the certified budget cannot break `F >= F_T` |
+## `make verify`
 
-Each check returns a `CheckReport` with the number of probes, the
-minimum observed slack, the tolerance in force, and the probe that
-attained the minimum, so a failure is immediately reproducible.
+| part | what it checks |
+| :--- | :--- |
+| `verify-PAPER-reproduce` | recomputes every result of the paper into a separate tree and compares it numerically with the committed tree; regenerates the paper artefacts and compares them with the paper's copies; every generated macro and table must be cited by the paper and every cited one generated |
+| `verify-QRM-consistency` | every number of the QRM manuscript against the results tree (`verify_paper.md`) |
+| `verify-xQRM-theorems` | the certified inequalities over the shipped ensemble (`scripts/run_theorem_verification.py`) |
+| `verify-xQRM-synth` | the same checks on a freshly synthesised ensemble |
 
-## Interpreting a failure
+## Theorem checks (`qrobustness.verify`)
 
-A failing check means one of three things. It may be a genuine theorem
-violation, as with the additive absorption and the constant-class
-time-bandwidth margin, both found by exactly this kind of probing. It
-may be an implementation bug, as with the cancellation in the
-quadratic-root inversion, caught by the single-qubit commuting case.
-Otherwise the tolerance is under-estimated. The
-`argmin` field pinpoints the probe; reproduce it in isolation before
-changing any tolerance.
+Each check evaluates a certified inequality as a slack. The slack is the
+certified quantity minus its bound, and it is non-negative when the
+inequality holds. The check fails only when the slack is negative by more
+than a tolerance. The tolerance comes from the computation. Fidelities are
+evaluated by two propagator routes, a per-interval eigendecomposition and
+`expm`, and their discrepancy plus the unitarity defect set the tolerance.
+Where a certificate stops on a band (eta), that band is the tolerance.
+Probes sit where a certificate is most likely to fail: on the certified
+boundary, on sign-modulated and sparse trajectories, under sub-interval
+refinement, and under multi-start adversaries.
 
-## MATLAB and Octave parity
+| check | inequality |
+| :--- | :--- |
+| `check_metric_triangle` | arccos F is a metric (triangle inequality) |
+| `check_absorption` | angular nominal-error absorption implies F >= F_T on the target |
+| `check_constant_margin` | F(mu) >= F_T on a dense grid of [-M, M] |
+| `check_polytope` | F >= F_T in the certified cross-polytope |
+| `check_lipschitz_pairs` | trajectory Lipschitz bound on pairs inside the safe set |
+| `check_tv_slope` | trajectory slope bound along homotopies |
+| `check_fs_angle` | theta(U_S, U(delta)) <= m s on refined trajectories |
+| `check_trajectory_certificate` | adversaries at r_0, r_FS, M^{K,tri}_tv cannot break F >= F_T |
 
-The paper-1 core (`core`, `kosut`, `optimize`, `plotting`) has full
-three-engine parity, held to Python by `make test-parity`, which compares
-the committed result tables of the two engines directly. The certificate layers have peers as follows:
+Each returns a `CheckReport` (number of probes, minimum slack, tolerance,
+the probe that attained the minimum), so a failure can be reproduced in
+isolation. A failure is a theorem violation, an implementation error or an
+under-estimated tolerance; reproduce the arg-min probe before changing a
+tolerance.
 
-| module | MATLAB/Octave peer | notes |
+## MATLAB and Octave coverage
+
+| module | peer | test |
 | :--- | :--- | :--- |
+| `core` (incl. `iterative_margin`), `optimize`, `plotting` | `+qrobustness` | `test_*` core tests, `test_evaluation_band.m`; parity on the QRM tables |
+| `kosut` | `+qrobustness/+kosut` | `test_kosut_bound.m`; parity on the Kosut tables |
 | `lengthspace` | `+qrobustness/+lengthspace` | `test_lengthspace.m` |
-| `lindblad` | `+qrobustness/+lindblad` | superoperators, the diamond norm, `channel`, `open_margin`; `test_lindblad.m` |
-| `multiparam` | `+qrobustness/+multiparam` | polytope, both gauges, directional margin; `test_multiparam.m` |
-| `timevarying` | `+qrobustness/+timevarying` | `uniform_margin`, `fs_margin`, `fs_margin_joint`; `test_timevarying.m` |
-| `berberich` | `+qrobustness/+berberich` | `margin`, both uncertainty classes |
-| `verify` | -- | Python only |
-| `synthesis` | -- | Python only |
+| `multiparam` | `+qrobustness/+multiparam` | `test_multiparam.m` |
+| `timevarying` (certificates) | `+qrobustness/+timevarying` | `test_timevarying.m` |
+| `lindblad` | `+qrobustness/+lindblad` | `test_lindblad.m` |
+| `berberich` | `+qrobustness/+berberich` | no MATLAB/Octave test yet |
+| `states`, `openstates` | `+qrobustness/+states`, `+openstates` | `test_states.m`, `test_openstates.m` (parity fixture) |
+| `synthesis`, `verify`, adversarial search | none | Python only |
 
-Python-only, and why: `verify` is the numerical theorem harness, a testing
-tool rather than toolbox API; `synthesis` is ensemble-robust GRAPE, which
-needs an optimiser whose MATLAB and Octave behaviour differ (`fminunc`
-against the core Octave one) enough that a peer would not reproduce
-Python's controllers bit for bit. Neither blocks a user computing margins.
-The adversarial search behind the upper witnesses is Python-only for the
-same reason: it is evidence, not a certificate.
-
-`iterative_margin` takes a `safe_radius_fn` hook in both engines, which is
-what lets the multi-parameter layer step with the Choi-angular rule. Its
-default is the Lipschitz surplus rule.
-
-`PathGauge` is a struct plus functions rather than a `classdef`: the `.m`
-sources are meant to run unchanged under both engines and Octave's
-`classdef` support is not complete enough to rely on.
-
-### The diamond norm needs no SDP solver
-
-The Watrous program is a **minimisation**: every feasible point is already
-an upper bound, and an upper bound is exactly what a robustness constant
-needs. A solver is only required to make the bound tight. Neither CVX
-(MATLAB) nor SDPT3 (Octave) is therefore required, and neither ports
-cleanly.
-
-`qrobustness.lindblad.diamond_norm` (MATLAB/Octave) and
-`lindblad.diamond_norm_free` (Python) therefore start from a closed-form
-feasible point built from the polar factors of the Choi matrix, then
-tighten it by subgradient steps, restoring feasibility by projection
-onto the positive semidefinite cone. A final shift repairs the iterate
-to exact feasibility, so the answer is an upper bound whatever the
-iteration did.
-
-Accuracy, measured rather than assumed:
-
-- exact on the dephasing and amplitude-damping families of the case
-  studies, where the analytic value is `2n` -- and in fact closer to it
-  than the cvxpy path, which returns `4 + 6e-8` where this returns
-  `4 + 1.5e-10`;
-- agreeing with cvxpy to about 1e-4 relative on random dissipative and
-  mixed generators;
-- up to about 3% conservative for a pure Hamiltonian superoperator,
-  where the subgradient stalls on a degenerate spectrum. Conservative is
-  the safe direction. `python/tests/test_diamond_free.py` asserts this
-  bound so the limitation cannot regress silently.
-
-So `cvxpy` is off the critical path: the open-system layer runs with numpy
-and scipy alone, and the `[open]` extra is needed only to cross-check
-against the SDP.
-
-`make test ENGINE=octave` runs the unit suite under Octave, not only the
-case-study drivers.
+`lindblad.diamond_norm` in MATLAB/Octave is the solver-free upper bound
+(Python `diamond_norm_free`); Python's SDP `diamond_norm` has no peer.

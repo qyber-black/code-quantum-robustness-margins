@@ -1,7 +1,8 @@
 function apply_plot_style(fig)
-%APPLY_PLOT_STYLE Force a light theme suitable for manuscript figures.
+%APPLY_PLOT_STYLE Apply a light theme to a figure for the manuscript.
+%   fig - figure handle (default gcf)
 %
-%   Peer of python/src/qrobustness/plotting.py.
+%   Peer of python/src/qrobustness/plotting.py:apply_plot_style.
     if nargin < 1 || isempty(fig)
         fig = gcf;
     end

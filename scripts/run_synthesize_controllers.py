@@ -6,9 +6,22 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Synthesize an ensemble of controllers that maximise fidelity -> results/synth-python/.
+"""Synthesise a controller ensemble on the main three-qubit problem.
 
-Leaves unmodified data/controllers/problem9_tf15_K32_quasi-newton/."""
+Runs n_opt L-BFGS-B / GRAPE optimisations from random initial controls on
+the problem in --problem-mat (default: the main ensemble's problem9.mat,
+which is copied, not modified). Options: --n-opt, --seed (first seed; run i
+uses seed + i), --sigma (initial control scale), --tf, --tau, --maxiter,
+--ftol, --out, --problem-mat.
+
+Writes to results/synth-python/ (or --out):
+    problem9.mat: copy of the source problem.
+    controllers.csv: no header, one row per run in the load_controllers
+        format: problem id, run id, tf, tau, error, packed controls.
+    meta.json: optimiser settings, source path, the analysis filter, the
+        number of runs with error <= DEFAULT_MAX_ERROR, and error min, max,
+        median.
+"""
 
 from __future__ import annotations
 
@@ -128,9 +141,7 @@ def main() -> None:
             f"eps0 <= {DEFAULT_MAX_ERROR:g} "
             "(paper; applied by load_controllers, not here)"
         ),
-        # The key spells the threshold, and the MATLAB peer emits the same
-        # name, so the two would have to change together; the value it counts
-        # comes from DEFAULT_MAX_ERROR either way.
+        # Key name shared with the MATLAB peer; the count uses DEFAULT_MAX_ERROR.
         "n_accepted_1e-4": int(np.sum(errs <= DEFAULT_MAX_ERROR)),
         "error_min": float(errs.min()),
         "error_max": float(errs.max()),

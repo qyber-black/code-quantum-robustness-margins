@@ -6,9 +6,9 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function m = margin_from(budget, speed)
-%MARGIN_FROM budget/speed, using the zero-speed convention Inf.
+%MARGIN_FROM Margin budget/speed, Inf when speed <= 0.
 %
-% Counterpart of python/src/qrobustness/lengthspace.py:margin_from.
+%   Peer of python/src/qrobustness/lengthspace.py:margin_from.
 
     if speed > 0
         m = budget / speed;

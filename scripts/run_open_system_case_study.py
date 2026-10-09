@@ -6,21 +6,35 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Open-system margins belonging to the paper-2 case study.
+"""Open-system margins for common-rate local dephasing.
 
-We treat three-qubit chain controllers under local dephasing D[sz_q] on each qubit
-q at a common uncertain rate gamma.  For each controller:
+For each controller of the main ensemble, with local dephasing D[sz_q] on
+every qubit at a common rate gamma, computes the certified margin on gamma
+from the diamond-norm constant (closed form 2n), the one-step radius, and the
+bisected true crossing gamma*, all on F^pro with threshold FT^2 (the xQRM
+paper, Numerical evaluation, open system: local dephasing). Controllers with
+F^pro_0 <= FT^2 are skipped. For the first few controllers it also evaluates
+the H1 control error through the open-system functional, comparing the
+diamond-norm constant with the closed-system L_j.
 
-  - the certified margin on gamma (open_margin using the diamond-norm constant),
-    with margin_tol brackets;
-  - the true threshold crossing gamma* obtained by bisection on the exact
-    process fidelity (the conservatism reference);
-  - the conservatism factor gamma* / M_gamma.
+Options: --FT, --out, --controllers N (first N; 0 = all),
+--coherent-controllers N (controllers for the coherent comparison; 0 skips).
 
-The process-fidelity threshold is FT_pro = FT^2, which matches the closed-system
-threshold on |Tr(Uf' U)|/N.
-
-Writes results/lindblad-margin-python/open_margins_<FT>.csv."""
+Writes results/lindblad-margin-python/:
+open_margins_<FT>.csv
+    controller, fid, err, F_pro_0: instance, nominal fidelity / error, F^pro_0.
+    L_gamma, M_gamma, M_gamma_upper, r0_gamma: rate constant, bracket on the
+        margin, one-step radius.
+    gamma_star, conservatism_M, conservatism_r0: true crossing and its ratio
+        to M_gamma and r0_gamma.
+    n_evals: fidelity evaluations of the margin.
+open_coherent_<FT>.csv
+    controller, dnorm_unit: instance and dnorm(-i[H1, .]).
+    L_op, L_closed, ratio_L: open-system and closed-system constants, ratio.
+    F_pro_0, r0, M, mu_star: F^pro_0, one-step radius, iterated margin, true
+        crossing on mu.
+    ratio_r0, ratio_M, n_evals: mu_star over r0 and M; evaluations.
+"""
 
 from __future__ import annotations
 
@@ -39,12 +53,11 @@ from _drivers import base_parser, load_ensemble, true_crossing, write_rows
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT_DIR = ROOT / "results/lindblad-margin-python"
-#: We refine brackets for the open-system margins: each probe is a
-#: Liouville-space propagation, and therefore this is looser than the closed-system
-#: 1e-8 the coherent drivers use.
+#: Relative bracket tolerance for the open-system margins, coarser than the
+#: closed-system 1e-8 because each probe is a Liouville-space propagation.
 MARGIN_TOL = 1e-6
 
-#: Stopping rules used by the pair of conservatism references below.
+#: Bisection stopping rules for gamma* and mu*.
 GAMMA_STAR_STEPS = 60
 GAMMA_STAR_RTOL = 1e-10
 MU_STAR_STEPS = 80
@@ -76,15 +89,12 @@ def main() -> None:
         controllers = controllers[: args.controllers]
 
     Vs = lb.local_dephasing_ops(problem["n_qubits"])
-    # The dissipative structure generator at the common rate gamma is the
-    # sum of the per-qubit dissipators; it does not depend on the interval.
+    # Dissipative structure at the common rate: sum of per-qubit dissipators.
     G_gamma = sum(lb.dissipator(V) for V in Vs)
 
     rows = []
-    # The common-rate local dephasing family possesses the exactly proved
-    # diamond norm 2n (paper Lemma "common-rate diamond norms"), and thus no
-    # SDP is solved for it here. run_dnorm_certificates.py retains the
-    # solver cross-check of that closed form.
+    # Closed-form diamond norm 2n; no SDP here (run_dnorm_certificates.py
+    # checks it against the solver).
     dn = lb.common_rate_local_dnorm(problem["n_qubits"])
     print(f"dnorm(sum_q D[sz_q]) = {dn.value:.6f}  (status {dn.status})", flush=True)
 
@@ -114,7 +124,7 @@ def main() -> None:
         M_gamma = res.M_plus  # gamma >= 0 side
         r0_gamma = (F0 - ft_pro) / L_gamma  # one-step certified radius
 
-        # Conservatism reference: the true crossing obtained by bisection on gamma.
+        # True crossing gamma* by bisection.
         gamma_star = true_crossing(
             F_pro,
             ft_pro,
@@ -155,17 +165,11 @@ def main() -> None:
 
 
 def write_coherent(args, problem, controllers, ft_pro, out) -> None:
-    """Coherent perturbation evaluated through the open-system functional.
-
-    The open-system constant accounts for dissipation; used on a coherent
-    structure it is far looser than the closed-system one, and the paper
-    quotes the size of that gap. Producing it here keeps those figures out
-    of the prose.
-    """
+    """Evaluate the H1 control error through the open-system functional and
+    write open_coherent_<FT>.csv (columns in the module docstring)."""
     N = problem["H0"].shape[0]
     B_T = float(np.sqrt((1.0 - args.FT**2) / N))
-    # For a Hamiltonian superoperator the diamond norm equals the spectral
-    # spread of the generator; we report it once for the unit structure.
+    # Certified dnorm(-i[H1, .]), computed once for the unit structure.
     dn_unit = lb.diamond_norm(lb.hamiltonian_superop(problem["H1"])).value
     rows = []
     for ci, c in enumerate(controllers[: args.coherent_controllers]):
@@ -181,20 +185,11 @@ def write_coherent(args, problem, controllers, ft_pro, out) -> None:
             for k in range(tau)
         ]
         Gd = [lb.hamiltonian_superop(d) for d in dH]
-        # A multiplicative control error scales a single fixed structure per
-        # interval, Hhat^(k) = u1(k) H1, and the diamond norm equals the absolute
-        # homogeneous, so sum_k dnorm(-i[Hhat^(k),.]) = dnorm(-i[H1,.])
-        # sum_k |u1(k)|. That is one SDP rather than tau of them, and exact
-        # rather than an approximation.
-        #
-        # The SDP remains because the certified value is what a robustness
-        # constant may use. Compared with the solver optimum, that
-        # optimum agrees with the spectral spread of the generator to six
-        # decimals on every Hermitian tried, hence dnorm(-i[A,.]) = spread(A)
-        # resembles an identity and would yield a tighter constant here --
-        # the certified bound lies up to 9% above it at N=4 through the
-        # Gershgorin step. Using that shortcut requires the identity to be proved,
-        # not observed, so it is left alone.
+        # Hhat^(k) = u1(k) H1 and the diamond norm is absolutely homogeneous,
+        # so sum_k dnorm(-i[Hhat^(k), .]) = dnorm(-i[H1, .]) sum_k |u1(k)|:
+        # one SDP. The certified SDP value is used, not the (unproved)
+        # spectral-spread identity, which would give a tighter constant.
+
         L_op = 0.5 * dt * dn_unit * float(np.abs(np.asarray(c["u1"])).sum())
         L_closed = B_T * structure_constant("control", problem["H1"], dt, tau, c["u1"])
 

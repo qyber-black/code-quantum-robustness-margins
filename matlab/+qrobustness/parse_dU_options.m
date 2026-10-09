@@ -1,16 +1,13 @@
 function opts = parse_dU_options(varargin)
-%PARSE_DU_OPTIONS Options that control evaluation of the segment derivative. opts = PARSE_DU_OPTIONS(...) returns a struct whose
-% fields are
-%     .method   'exact' (default) or 'quadrature'
-% .n_quad Gauss-Legendre nodes, applied only when method is 'quadrature'
-%               (default 32)
+%PARSE_DU_OPTIONS Parse options for the interval derivative.
+%   opts = qrobustness.parse_dU_options(...)
 %
-% A leading bare numeric argument is taken as a positional n_quad, so calls of the form f(..., 32) are accepted. n_quad applies only
-% to the 'quadrature' method; under the default 'exact' it is unused.
+%   opts.method - 'exact' (default) or 'quadrature'
+%   opts.n_quad - Gauss-Legendre nodes for 'quadrature' (default 32)
 %
-% Related functions: QROBUSTNESS.DU_DMU_EXACT, QROBUSTNESS.DU_DMU_INTEGRAL.
+%   A leading bare numeric argument is read as n_quad.
 %
-% Counterpart of python/src/qrobustness/core.py (dU_dmu option handling).
+%   Peer of python/src/qrobustness/core.py (dU_dmu option handling).
 
     args = varargin;
     n_quad_positional = [];

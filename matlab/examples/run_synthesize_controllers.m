@@ -1,18 +1,18 @@
 function run_synthesize_controllers(varargin)
-%RUN_SYNTHESIZE_CONTROLLERS Ensemble fidelity maximisation written to results/synth-matlab/.
+%RUN_SYNTHESIZE_CONTROLLERS Synthesise controllers by fidelity maximisation; writes controllers.csv and meta.json.
 %
-% Leaves data/controllers/problem9_tf15_K32_quasi-newton/ unmodified.
-%
-%   Name-value:
-%     'n_opt'   100
-%     'seed'    0
-%     'sigma'   1
-%     'tf'      15
-%     'tau'     32
-%     'maxiter' 500
-%     'ftol'    1e-12
-%     'out'     results/synth-matlab
-%     'root'    auto
+%   Name-value options:
+%     'n_opt'       - number of optimisations (default 100)
+%     'seed'        - first RNG seed (default 0)
+%     'sigma'       - initial control standard deviation (default 1)
+%     'tf'          - gate time (default 15)
+%     'tau'         - number of intervals (default 32)
+%     'maxiter'     - maximum iterations (default 500)
+%     'ftol'        - tolerance (default 1e-12)
+%     'out'         - output directory (default results/synth-matlab)
+%     'root'        - repository root (default: detected)
+%     'problem_mat' - problem MAT file (default problem9.mat of
+%                     data/controllers/problem9_tf15_K32_quasi-newton)
 %
 %   Peer of scripts/run_synthesize_controllers.py.
 
@@ -94,7 +94,7 @@ function run_synthesize_controllers(varargin)
 end
 
 function write_controllers_csv(path, rows, tf, tau)
-    % Write the ensemble in the flat format that load_controllers reads.
+    % Write the controllers in the flat format that load_controllers reads.
     fid = fopen(path, 'w');
     if fid < 0
         error('Cannot write %s', path);
@@ -113,8 +113,8 @@ function write_controllers_csv(path, rows, tf, tau)
 end
 
 function write_meta_json(path, meta)
-    % Write the run provenance beside the ensemble, in the same schema
-    % as the Python peer's meta.json.
+    % Write the run provenance beside the controllers, in the same schema
+    % as the Python driver's meta.json.
     fid = fopen(path, 'w');
     fprintf(fid, '{\n');
     fprintf(fid, '  "method": "%s",\n', meta.method);

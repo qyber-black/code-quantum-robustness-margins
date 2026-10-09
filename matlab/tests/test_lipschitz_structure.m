@@ -1,6 +1,5 @@
 function test_lipschitz_structure()
-%TEST_LIPSCHITZ_STRUCTURE Both structure constants match their closed forms, and the Lipschitz constant equals exactly B_T times the
-% structure constant.
+%TEST_LIPSCHITZ_STRUCTURE Structure constants match their closed forms and L = B_T C_{\hat H}.
 %   Peer of the Python test_lipschitz_structure.
     H0 = [0 1; 1 0];
     H1 = [1 0; 0 -1];

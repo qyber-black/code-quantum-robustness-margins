@@ -6,21 +6,28 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Numerical verification of every certificate across the ensemble.
+"""Numerical verification of the certificates on the ensemble.
 
-We sweep the shipped three-qubit ensemble with the verify harness: for
-every controller and structure, the constant margin M (dense grid),
-the joint polytope, the trajectory Lipschitz lemma, the FS angle bound
-and the uniform trajectory certificates at budget r_FS (passed as
-FSMargin.r, which we set to max(r_0, r_FS) defensively and which equals r_FS under
-the dominance theorem)
-(gradient adversary together with adversarially-shaped random trajectories,
-control grid and x4 refined); together with the model-independent metric and
-absorption lemmas.  Any check whose slack is negative beyond its
-derived numerical allowance is reported as a violation.
+Runs the qrobustness.verify checks: the metric triangle inequality and the
+absorption lemma for N = 2, 4, 8; and, per controller, the joint safe
+polytope, the trajectory Lipschitz pairs, the time-varying slope bound, and
+per structure H0, H1, H2 the constant margin M on a dense grid, the FS angle
+bound, and the uniform trajectory certificate at budget max(r_0, r_FS)
+(gradient adversary and random trajectories, control grid and x4).
+Controllers with nominal fidelity at or below FT are skipped. Exit status 1
+if any check's slack is below minus its tolerance.
 
-Writes results/verification-python/verification_<FT>.csv (one row per
-check instance) and exits nonzero if any check failed."""
+Options: --FT, --controller-dir, --max-error, --out, --first N, --grid-n,
+--n-starts, --maxiter, --slope-homotopy, --slope-span, --slope-n.
+
+Writes results/verification-python/verification_<FT>.csv, one row per check
+instance:
+    scope, check, n: N=<N>, ctrl<i> or ctrl<i>:<structure>; check name;
+        probes.
+    min_slack, tol, passed: least slack, its tolerance, pass flag.
+    max_fraction_of_bound: slope check only, largest realised slope as a
+        fraction of the bound.
+"""
 
 from __future__ import annotations
 
@@ -45,9 +52,9 @@ from _drivers import DEFAULT_ETA, DEFAULT_FT, DEFAULT_MAX_ERROR, three_structure
 
 ROOT = Path(__file__).resolve().parents[1]
 CTRL = ROOT / "data/controllers/problem9_tf15_K32_quasi-newton"
-#: Bracket refinement, aligned with the other drivers.
+#: Relative bracket tolerance, as in the other drivers.
 MARGIN_TOL = 1e-8
-#: Continuation step of the safe radius, aligned with the other drivers.
+#: Continuation hand-over surplus eta, as in the other drivers.
 ETA = DEFAULT_ETA
 
 OUT_DIR = ROOT / "results/verification-python"
@@ -57,7 +64,9 @@ STRUCTURES = ("H0", "H1", "H2")
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(
+        description="Numerical verification of the certificates on an ensemble."
+    )
     ap.add_argument("--FT", type=float, default=FT)
     ap.add_argument(
         "--controller-dir",
@@ -103,12 +112,8 @@ def main() -> None:
     )
     if args.first:
         controllers = controllers[: args.first]
-    # Each certificate here is conditional on the nominal fidelity being
-    # above the threshold, so a controller that already fails that threshold is out of
-    # scope rather than a violation. The ensemble as shipped is filtered well
-    # below 1 - FT and never reaches this path, but a synthesised one does:
-    # without that filter the safe radius becomes negative and the random
-    # trajectory draw raises instead of reporting.
+    # Every certificate assumes nominal fidelity above FT; other controllers
+    # are out of scope, not violations.
     n_loaded = len(controllers)
     controllers = [c for c in controllers if c["fid"] > ft]
     n_skipped = n_loaded - len(controllers)
@@ -136,8 +141,7 @@ def main() -> None:
                 "min_slack": rep.min_slack,
                 "tol": rep.tol,
                 "passed": int(rep.passed),
-                # The slope check reports the room that the bound leaves;
-                # blank for checks that have no such quantity.
+                # Slope check only; blank otherwise.
                 "max_fraction_of_bound": rep.details.get("max_fraction_of_bound", ""),
             }
         )
@@ -184,10 +188,9 @@ def main() -> None:
                 H_list, dHs, dt, problem["Uf"], L, ft, m_safe, n=30, seed=ci
             ),
         )
-        # We sweep well past the one-step radius: the realised slope is
-        # greatest near the threshold crossing, and the check's own
-        # safe-set filter drops probes that fall below FT, so a
-        # generous span explores as far as the boundary and no further.
+        # Probe span well past the one-step radius; the check drops probes
+        # below FT itself.
+
         r_one = args.slope_span * float((F0 - ft) / L.sum())
         record(
             scope0,

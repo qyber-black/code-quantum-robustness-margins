@@ -5,7 +5,7 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Robustness margins based on fidelity for finite-time quantum control."""
+"""Fidelity-based robustness margins for finite-time quantum control."""
 
 from .core import (
     dU_dmu_exact,
@@ -60,9 +60,8 @@ from .plotting import (
     plot_margins_vs_sensitivity,
 )
 
-# xQRM extensions: joint static regions, the Choi-Fubini-Study
-# the trajectory certificate, Lindblad rate margins, the verification harness,
-# and the synthesis used to build the CNOT and four-qubit ensembles.
+# xQRM: joint static regions, Choi-Fubini-Study and time-varying margins,
+# Lindblad rate margins, verification checks and controller synthesis.
 from .lengthspace import (
     PathGauge,
     angle_budget,
@@ -89,9 +88,11 @@ from .multiparam import (
 from .timevarying import (
     FSMargin,
     TVBracket,
+    adversarial_fidelity,
     adversarial_upper_bound,
     fs_margin,
     fs_margin_joint,
+    toggling_frame_integral,
     tv_bracket,
     tv_fidelity_and_gradient,
     uniform_margin,
@@ -111,7 +112,11 @@ from .lindblad import (
     dissipator,
     frechet_derivative,
     generator,
+    hamiltonian_dnorm,
+    hamiltonian_part,
     hamiltonian_superop,
+    local_dephasing_ops,
+    local_ops,
     make_open_fidelity_fn,
     open_margin,
     open_structure_constants,
@@ -180,6 +185,7 @@ __all__ = [
     "fidelity_bound_at",
     "effective_threshold",
     "threshold_time_bandwidth",
+    "toggling_frame_integral",
     "ABSORPTIONS",
     "kosut_margin",
     "fidelity_and_gradient",
@@ -187,6 +193,7 @@ __all__ = [
     "OptimizeResult",
     "pack_controls",
     "unpack_controls",
+    "adversarial_fidelity",
     "apply_plot_style",
     "save_fig",
     "log10_axis",
@@ -243,9 +250,13 @@ __all__ = [
     "grape",
     "grape_ensemble",
     "grape_robust",
+    "hamiltonian_dnorm",
+    "hamiltonian_part",
     "hamiltonian_superop",
     "interval_grams",
     "joint_gauge",
+    "local_dephasing_ops",
+    "local_ops",
     "make_multiparam_fidelity_fn",
     "make_open_fidelity_fn",
     "make_ray_fn",
@@ -258,7 +269,6 @@ __all__ = [
     "safe_polytope",
     "sphere_directions",
     "structure_constants",
-    "traceless",
     "tv_bracket",
     "tv_fidelity_and_gradient",
     "uniform_margin",

@@ -6,9 +6,11 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function F = average_gate_fidelity(S, Uf)
-%AVERAGE_GATE_FIDELITY (N F_pro + 1)/(N + 1).
+%AVERAGE_GATE_FIDELITY Average gate fidelity (N F^pro + 1)/(N + 1).
+%   S  - channel superoperator (column-stacked)
+%   Uf - unitary target
 %
-% MATLAB counterpart of python/src/qrobustness/lindblad.py:average_gate_fidelity.
+%   Peer of python/src/qrobustness/lindblad.py:average_gate_fidelity.
 
     N = size(Uf, 1);
     F = (N * qrobustness.lindblad.process_fidelity(S, Uf) + 1) / (N + 1);

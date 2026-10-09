@@ -6,13 +6,22 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Benchmark selectable margin solvers against Algorithm 1.
+"""Time the selectable margin solvers of iterative_margin against
+Algorithm 1.
 
-A developer benchmark, not a paper driver: the output is gitignored and no
-generated artefact reads it (docs/margin-solvers-notes.md stores the
-invocation). The comparable measure is ``n_evals`` and the ``eval_ratio``
-against Algorithm 1, both deterministic; ``wall_s`` is recorded alongside
-them as an indicative figure only, since it varies with machine load."""
+A developer benchmark, not a paper driver: no generated artefact reads its
+output. Runs each method in METHODS on three synthetic landscapes and, unless
+--skip-case-study, on structures H0, H1, H2 of the first --controllers
+controllers of the main ensemble, and re-checks every margin against FT.
+Options: --controllers N (default 3), --skip-case-study.
+
+Writes results/bench-margin-solvers/bench_margin_solvers.csv:
+    case, method: landscape and solver.
+    M, M_minus, M_plus, n_evals, n_steps: margin, its arms, evaluations, steps.
+    wall_s: wall-clock seconds (indicative only; varies with machine load).
+    cert_ok: whether F(+-M) >= FT - CERT_TOL.
+    dM, eval_ratio: |M - M_alg1| and n_evals / n_evals_alg1.
+"""
 
 from __future__ import annotations
 
@@ -36,20 +45,17 @@ from _drivers import DEFAULT_ETA, DEFAULT_FT, load_ensemble
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "results/bench-margin-solvers"
 
-# A certified margin must not push the fidelity below the threshold. The
-# slack absorbs the rounding of one fidelity evaluation, nothing else.
+# Slack for re-checking F(+-M) >= FT: the rounding of one fidelity evaluation.
 CERT_TOL = 1e-12
 
-# The synthetic surfaces are toys with an intentionally loose threshold and
-# a coarse tolerance, so they avoid the drivers' defaults.
+# Threshold and constants of the synthetic landscapes.
 SYNTH_FT = 0.99
 SYNTH_ETA = 1e-8
 SYNTH_L = 0.05
 SYNTH_L_LARGE = 10.0
 SYNTH_ETA_LARGE = 1e-6
 
-# Quadrature nodes for the Newton probe's slope estimate; the probe merely
-# needs a direction, so this sits well below the accuracy used for results.
+# Quadrature nodes for the Newton probe's slope estimate (direction only).
 PROBE_QUAD = 16
 
 METHODS = (
@@ -142,7 +148,7 @@ def synthetic_cases():
 
 
 def case_study_rows(n_controllers: int = 3):
-    """Rows covering the first ``n_controllers`` of the shared CNOT ensemble."""
+    """Rows for the first ``n_controllers`` of the main three-qubit ensemble."""
     FT = DEFAULT_FT
     eta = DEFAULT_ETA
     problem, controllers = load_ensemble()
@@ -222,6 +228,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--controllers", type=int, default=3)
     ap.add_argument("--skip-case-study", action="store_true")
+    ap.add_argument("--out", type=Path, default=None, help="CSV path for the table")
     args = ap.parse_args()
 
     rows = synthetic_cases()
@@ -230,7 +237,7 @@ def main():
     rows = attach_baseline_delta(rows)
 
     OUT.mkdir(parents=True, exist_ok=True)
-    csv_path = OUT / "bench_margin_solvers.csv"
+    csv_path = args.out if args.out is not None else OUT / "bench_margin_solvers.csv"
     fields = [
         "case",
         "method",
@@ -245,7 +252,8 @@ def main():
         "eval_ratio",
     ]
     with csv_path.open("w", newline="") as f:
-        # lineterminator: LF in every file, matching the MATLAB peers.
+        # LF line endings, as the MATLAB peers write.
+
         w = csv.DictWriter(f, fieldnames=fields, lineterminator="\n")
         w.writeheader()
         for r in rows:

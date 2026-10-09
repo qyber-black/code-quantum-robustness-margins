@@ -29,7 +29,7 @@ CODE_SPAN = re.compile(r"```.*?```|`[^`\n]+`", re.S)
 DOCUMENTED = ("README.md", "docs/*.md", "python/tests/*.py", "matlab/tests/*.m")
 
 #: Metavariables that denote a family rather than naming a target:
-#: `make paper-PAPER`, `make test-TESTNAME`. A name that contains one is a
+#: `make run-PAPER`, `make test-TESTNAME`. A name that contains one is a
 #: pattern, and the reader substitutes before executing it.
 METAVARIABLES = ("PAPER", "ENGINE", "TESTNAME", "NAME", "ID")
 

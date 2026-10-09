@@ -5,40 +5,14 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Certified robustness margins in the multi-parameter setting.
+"""Certified robustness regions and directional margins for p simultaneous structures.
 
-For p simultaneous structured perturbations
-
-    Htil^(k)(mu) = H^(k) + sum_j (mu_j - mu0_j) Hhat_j^(k),
-
-per-parameter Lipschitz constants L_j = B_T C_j certify the weighted
-cross-polytope
-
-    P_nu = { mu : sum_j L_j |mu_j - nu_j| <= F_nu - F_T }
-
-around any safe point nu, without extra fidelity evaluations, and the
-scalar certified iteration of :func:`qrobustness.iterative_margin` applies
-along any ray with the directional constant L(d) = sum_j L_j |d_j|.  The
-scalar case p = 1 is recovered exactly.
-
-The cross-polytope is the separable relaxation, and this module also constructs
-the two sharper regions that contain it:
-
-* :class:`JointGauge`, the combined-structure Frobenius gauge
-  ``C_joint(x) = sum_k Delta ||sum_j x_j Hbar_j^(k)||_F``, which retains the
-  cancellations between structures that the parameter-wise triangle
-  inequality discards, and supplies the sharper directional constant
-  ``L_dir(d) = B_T C_joint(d) <= sum_j L_j |d_j|``;
-* :class:`AngularGauge`, the static Choi-angular gauge, which contains the
-  combined-structure region in turn by the dominance theorem.
-
-Both are free: neither costs a fidelity evaluation beyond the structure
-constants. On the shipped ensemble the gauge region's certified Euclidean
-inradius exceeds the polytope's in 61 of 61 controllers.
-
-The scalar iteration is reused, not rewritten, so every directional
-margin inherits its error control (``margin_tol`` brackets, ``certificate``
-classes) without change."""
+The per-parameter constants are L_j = B_T C_j. The separable cross-polytope
+is sum_j L_j |mu_j - nu_j| <= F_nu - F_T. The combined-structure gauge
+C_joint is :class:`JointGauge`. The static angular gauge C^stat_FS is
+:class:`AngularGauge`. Directional margins along rays go through
+:func:`qrobustness.iterative_margin`.
+"""
 
 from __future__ import annotations
 
@@ -84,10 +58,29 @@ def structure_constants(
     FT: float,
     N: int,
 ) -> Tuple[Array, Array]:
-    """Constants per parameter ``(C, L)`` satisfying ``L_j = B_T C_j``.
+    """Per-parameter structure constants C_j and Lipschitz constants L_j = B_T C_j.
 
-    Each spec is ``('drift', Hhat)`` or ``('control', Hhat, controls)``,
-    matching the cases of :func:`qrobustness.structure_constant`.
+    Parameters
+    ----------
+    specs :
+        One spec per parameter: ``('drift', Hhat)`` or
+        ``('control', Hhat, controls)``, as in
+        :func:`qrobustness.structure_constant`.
+    dt :
+        Interval length Delta.
+    tau :
+        Number of control intervals.
+    FT :
+        Fidelity threshold F_T.
+    N :
+        Hilbert-space dimension.
+
+    Returns
+    -------
+    C : ndarray, shape (p,)
+        Structure constants C_j.
+    L : ndarray, shape (p,)
+        Lipschitz constants L_j.
     """
     C = []
     for spec in specs:
@@ -107,8 +100,16 @@ def structure_constants(
 class SafePolytope:
     """Certified cross-polytope ``sum_j L_j |mu_j - centre_j| <= surplus``.
 
-    Each point of the polytope satisfies ``F >= F_T``; interior points lie
-    in the connected safe component of the centre.
+    Every point of the polytope has ``F >= F_T``.
+
+    Attributes
+    ----------
+    centre : ndarray, shape (p,)
+        Safe centre nu.
+    L : ndarray, shape (p,)
+        Per-parameter Lipschitz constants L_j.
+    surplus : float
+        F(centre) - F_T.
     """
 
     centre: Array
@@ -127,10 +128,11 @@ class SafePolytope:
 
     @property
     def inradius_l2(self) -> float:
-        """Radius of the largest Euclidean ball that we certify."""
+        """Radius of the largest certified Euclidean ball."""
         return self.surplus / float(np.linalg.norm(self.L))
 
     def contains(self, mu: Array) -> bool:
+        """True if ``mu`` lies in the polytope."""
         d = np.abs(np.asarray(mu, dtype=float) - self.centre)
         return bool(np.dot(self.L, d) <= self.surplus)
 
@@ -142,12 +144,22 @@ class SafePolytope:
 
 
 def safe_polytope(centre: Array, L: Array, F: float, FT: float) -> SafePolytope:
-    """Certified free region about a nominal point.
+    """Certified cross-polytope ``sum_j L_j |x_j - centre_j| <= F - F_T`` about a safe point.
 
-    Weighted cross-polytope ``sum_j L_j |x_j - centre_j| <= F - FT``:
-    every interior point meets the threshold, at no off-nominal fidelity
-    evaluations. A strict surplus is required, because a nominal point already at
-    the threshold certifies nothing.
+    Parameters
+    ----------
+    centre : array_like, shape (p,)
+        Safe point nu.
+    L : array_like, shape (p,)
+        Per-parameter Lipschitz constants L_j.
+    F :
+        Fidelity at ``centre``; must exceed ``FT``.
+    FT :
+        Fidelity threshold F_T.
+
+    Returns
+    -------
+    SafePolytope
     """
     if not (F > FT):
         raise ValueError("Require F > FT at the centre")
@@ -168,13 +180,29 @@ def make_multiparam_fidelity_fn(
     dt: float,
     structures: Sequence[str] = ("H0", "H1", "H2"),
 ) -> Callable[[Array], float]:
-    """Fidelity treated as a map of the joint perturbation vector.
+    """Gate fidelity as a function of a relative-amplitude perturbation vector ``mu``.
 
-    ``structures`` chooses which relative-amplitude perturbations the
-    components of ``mu`` act on, in order.  Under the default of all three, the
-    perturbed interval Hamiltonians are
+    With all three structures the interval Hamiltonians are
+    ``H^(k)(mu) = H0 (1+mu_0) + u1_k H1 (1+mu_1) + u2_k H2 (1+mu_2)``.
 
-        H^(k)(mu) = H0 (1+mu_0) + u1_k H1 (1+mu_1) + u2_k H2 (1+mu_2).
+    Parameters
+    ----------
+    H0, H1, H2 : ndarray, shape (N, N)
+        Drift and two control Hamiltonians.
+    u1, u2 : array_like, shape (tau,)
+        Piecewise-constant control amplitudes.
+    Uf : ndarray, shape (N, N)
+        Target unitary.
+    dt :
+        Interval length Delta.
+    structures :
+        Which of ``"H0"``, ``"H1"``, ``"H2"`` the components of ``mu``
+        perturb, in order; the others are left unperturbed.
+
+    Returns
+    -------
+    callable
+        ``fn(mu) -> float``, the gate fidelity at ``mu``.
     """
     u1 = np.asarray(u1, dtype=float).ravel()
     u2 = np.asarray(u2, dtype=float).ravel()
@@ -200,7 +228,22 @@ def make_ray_fn(
     mu0: Array,
     d: Array,
 ) -> Callable[[float], float]:
-    """Restrict a multi-parameter fidelity map to the ray ``mu0 + s d``."""
+    """Restrict a multi-parameter fidelity map to the ray ``mu0 + s d``.
+
+    Parameters
+    ----------
+    fidelity_fn :
+        Map ``mu -> F``.
+    mu0 : array_like, shape (p,)
+        Ray origin.
+    d : array_like, shape (p,)
+        Ray direction.
+
+    Returns
+    -------
+    callable
+        ``ray(s) -> float``, equal to ``fidelity_fn(mu0 + s d)``.
+    """
     mu0 = np.asarray(mu0, dtype=float)
     d = np.asarray(d, dtype=float)
 
@@ -220,24 +263,41 @@ def directional_margin(
     angular_gauge: Optional["AngularGauge"] = None,
     **kwargs,
 ) -> MarginResult:
-    """Certified margin along the ray ``mu0 + s d``.
+    """Certified margin along the ray ``mu0 + s d``, via :func:`qrobustness.iterative_margin`.
 
-    Invokes :func:`qrobustness.iterative_margin` with the directional
-    Lipschitz constant.  Pass ``L_dir`` explicitly to adopt the sharper
-    joint-gauge constant ``B_T C_joint(d)`` of
-    :meth:`JointGauge.L_dir` (Theorem gauge); otherwise the separable
-    relaxation ``L(d) = sum_j L_j |d_j|`` is used.  Supply
-    ``angular_gauge`` (an :class:`AngularGauge`) to step and certify
-    with the Choi-angular safe radius
-    ``(arccos FT - arccos F)/C_FS(d)`` in place of the Lipschitz
-    surplus rule -- by full-gauge dominance the angular step is never
-    smaller, so the same crossing is resolved with fewer evaluations;
-    ``L_dir`` still feeds the aggressive-probe floor and is required
-    positive, with one exception: a direction in which the gauge
-    vanishes changes no relevant dynamics, so the whole admissible ray
-    is certified and no division is performed.  Every option, including ``margin_tol``, is passed through
-    unchanged.  Returned margins are in units of ``s``: the
-    certified parameter excursion is ``M * d``.
+    Parameters
+    ----------
+    fidelity_fn :
+        Map ``mu -> F``.
+    L : array_like, shape (p,)
+        Per-parameter Lipschitz constants L_j.
+    FT :
+        Fidelity threshold F_T.
+    d : array_like, shape (p,)
+        Ray direction.
+    mu0 : array_like, shape (p,), optional
+        Ray origin; default the zero vector.
+    L_dir :
+        Directional Lipschitz constant; default the separable
+        ``sum_j L_j |d_j|``. Pass ``JointGauge.L_dir(d, FT, N)`` =
+        B_T C_joint(d) for the sharper constant.
+    angular_gauge :
+        If given, steps use the angular safe radius
+        ``(arccos F_T - arccos F)/C^stat_FS(d)`` instead of the Lipschitz
+        rule, unless ``safe_radius_fn`` is passed explicitly.
+    **kwargs :
+        Passed unchanged to :func:`qrobustness.iterative_margin`
+        (``omega`` bounds the ray parameter ``s``).
+
+    Returns
+    -------
+    MarginResult
+        Margins in units of ``s``; the certified excursion is ``M * d``.
+        If the gauge vanishes along ``d`` (C^stat_FS(d) = 0 when
+        ``angular_gauge`` is given, else ``L_dir == 0``) the whole admissible
+        ray is certified: ``M`` is the distance to the nearer end of
+        ``omega`` (``inf`` if unbounded) and ``method``, ``status_*`` and
+        ``reason_*`` are ``'zero_gauge'``.
     """
     d = np.asarray(d, dtype=float)
     L = np.asarray(L, dtype=float)
@@ -245,17 +305,11 @@ def directional_margin(
         mu0 = np.zeros_like(d)
     if L_dir is None:
         L_dir = float(np.dot(L, np.abs(d)))
-    if L_dir == 0.0 and (angular_gauge is None or angular_gauge.C(d) == 0.0):
-        # Zero gauge: the combined structure is absent on every interval
-        # along this direction, so the perturbation alters nothing the
-        # certificate depends on and the entire admissible ray stays
-        # certified. Quotienting the budget by that value is the bug this branch
-        # exists to prevent -- the scalar iteration would refuse L = 0
-        # outright, which reports a failure where the correct answer is "no
-        # bound needed".
-        # ``omega`` bounds the RAY parameter s, centred at s = 0,
-        # hence the certified reach equals the distance to whichever end of the
-        # admissible interval lies nearer (infinite when unbounded).
+    zero_gauge = (
+        angular_gauge.C(d) == 0.0 if angular_gauge is not None else L_dir == 0.0
+    )
+    if zero_gauge:
+        # The perturbation does not act along d: the whole admissible ray is safe.
         s_lo, s_hi = kwargs.get("omega", (-np.inf, np.inf))
         M_zero = min(
             float("inf") if not np.isfinite(s_lo) else abs(float(s_lo)),
@@ -287,28 +341,40 @@ def directional_margin(
 
 @dataclass
 class SafeUnion:
-    """Certified union of safe polytopes, each with per-centre provenance."""
+    """Union of certified safe polytopes sharing the constants ``L``.
+
+    Attributes
+    ----------
+    L : ndarray, shape (p,)
+        Per-parameter Lipschitz constants L_j.
+    polytopes : list of SafePolytope
+        Member polytopes.
+    provenance : list of str
+        One note per polytope.
+    """
 
     L: Array
     polytopes: List[SafePolytope] = field(default_factory=list)
     provenance: List[str] = field(default_factory=list)
 
     def add(self, centre: Array, F: float, FT: float, note: str = "") -> None:
+        """Add the polytope about safe ``centre`` with fidelity ``F``, recording ``note``."""
         self.polytopes.append(safe_polytope(centre, self.L, F, FT))
         self.provenance.append(note)
 
     def contains(self, mu: Array) -> bool:
+        """True if ``mu`` lies in any member polytope."""
         return any(P.contains(mu) for P in self.polytopes)
 
 
 def axis_directions(p: int) -> Array:
-    """The ``2p`` signed coordinate directions (unit under every norm)."""
+    """The ``2p`` signed coordinate directions, shape (2p, p)."""
     eye = np.eye(p)
     return np.vstack([eye, -eye])
 
 
 def diagonal_directions(p: int) -> Array:
-    """All ``2^p`` diagonal directions, normalised in the Euclidean norm."""
+    """All ``2^p`` sign diagonals, Euclidean unit length, shape (2^p, p)."""
     from itertools import product
 
     signs = np.array(list(product((-1.0, 1.0), repeat=p)))
@@ -316,7 +382,7 @@ def diagonal_directions(p: int) -> Array:
 
 
 def sphere_directions(p: int, n: int, seed: Optional[int] = None) -> Array:
-    """``n`` quasi-uniform Euclidean unit directions."""
+    """``n`` random Euclidean unit directions (normalised Gaussians), shape (n, p)."""
     rng = np.random.default_rng(seed)
     d = rng.normal(size=(n, p))
     return d / np.linalg.norm(d, axis=1, keepdims=True)
@@ -324,57 +390,52 @@ def sphere_directions(p: int, n: int, seed: Optional[int] = None) -> Array:
 
 @dataclass
 class JointGauge(PathGauge):
-    """The combined-structure gauge ``C_joint`` together with its certified region.
+    """Combined-structure gauge C_joint and its certified region.
 
-    ``C_joint(x) = sum_k Delta ||sum_j x_j Hbar_j^(k)||_F``, with ``Hbar``
-    the traceless part of the structure, is a
-    homogeneous convex gauge on parameter displacements: applying the
-    scalar sensitivity bound along the ray ``nu + s x`` with the
-    combined structure ``sum_j x_j Hhat_j^(k)`` certifies the region
-    ``B_T C_joint(x) <= F_nu - F_T``, which captures cancellations and
-    near-dependencies between structures that the parameter-wise
-    triangle inequality (the weighted cross-polytope) discards, and
-    detects exact null directions.  ``C_joint(x)^2 = sum_k Delta^2 *
-    (x^T P^(k) x)`` with per-interval Gram matrices
-    ``P^(k)_ij = Re Tr(Hbar_i^(k)' Hbar_j^(k))``, so the region is
-    second-order-cone representable.
-
-    The gauge arithmetic (``C``, the Cauchy--Schwarz sphere bound)
-    lives in :class:`qrobustness.lengthspace.PathGauge` (master-lemma
-    case (b), traceless Frobenius grams); this class adds the
-    Lipschitz-constant conversion via ``B_T``.
+    ``C_joint(x) = Delta sum_k sqrt(x^T P^(k) x)`` with traceless interval Grams
+    ``P^(k)_ij = Re Tr(Hbar_i^(k)' Hbar_j^(k))``. The region
+    ``B_T C_joint(x) <= F_nu - F_T`` about a safe point nu is certified and
+    contains the separable cross-polytope. Gauge arithmetic is inherited from
+    :class:`qrobustness.lengthspace.PathGauge`.
     """
 
     def L_dir(self, d, FT: float, N: int) -> float:
-        """Sharp directional Lipschitz constant ``B_T C_joint(d)``.
+        """Directional Lipschitz constant B_T C_joint(d) (at most ``sum_j L_j |d_j|``).
 
-        Never exceeds the separable ``sum_j L_j |d_j|``; take it as the
-        scalar constant when iterating along the ray ``d``.
+        Parameters
+        ----------
+        d : array_like, shape (p,)
+            Direction.
+        FT :
+            Fidelity threshold F_T.
+        N :
+            Hilbert-space dimension.
+
+        Returns
+        -------
+        float
         """
         from .core import lipschitz_constant
 
         return lipschitz_constant(FT, N, self.C(d))
 
     def contains(self, x, surplus: float, FT: float, N: int) -> bool:
+        """True if displacement ``x`` satisfies ``B_T C_joint(x) <= surplus``."""
         from .core import lipschitz_constant
 
         return lipschitz_constant(FT, N, self.C(x)) <= surplus
 
     def boundary_radius(self, d, surplus: float, FT: float, N: int) -> float:
-        """Certified radius along the direction ``d`` (free, no evaluations)."""
+        """Certified radius ``surplus / (B_T C_joint(d))`` along ``d`` (``inf`` if zero)."""
         L = self.L_dir(d, FT, N)
         return surplus / L if L > 0 else float("inf")
 
     def alpha2_certified(self) -> float:
-        """Certified upper bound on ``max_{|d|_2 = 1} C_joint(d)``.
-
-        The Cauchy--Schwarz sphere bound supplied by
-        :meth:`~qrobustness.lengthspace.PathGauge.alpha_cs`.
-        """
+        """Upper bound on ``max_{|d|_2 = 1} C_joint(d)`` (see ``PathGauge.alpha_cs``)."""
         return self.alpha_cs()
 
     def inradius_certified(self, surplus: float, FT: float, N: int) -> float:
-        """Certified Euclidean inradius belonging to the gauge region."""
+        """Certified Euclidean inradius of the gauge region for the given surplus F_nu - F_T."""
         from .core import lipschitz_constant
 
         L = lipschitz_constant(FT, N, self.alpha2_certified())
@@ -382,62 +443,67 @@ class JointGauge(PathGauge):
 
 
 def joint_gauge(Hhat_lists: Sequence[HList], dt: float) -> JointGauge:
-    """Assemble the combined-structure gauge from per-structure interval lists.
+    """Build the combined-structure gauge C_joint.
 
-    The structures are centred to their traceless parts first, exactly as
-    :func:`qrobustness.structure_constant` centres the scalar constant: the
-    trace part of a perturbation contributes only a global phase, to which
-    the trace-amplitude fidelity is invariant.  Centring therefore leaves the
-    certified region valid while shrinking the gauge, and it makes the static
-    Choi-angular identity ``C_FS_stat(x) = C_joint(x)/sqrt(N)`` exact rather
-    than an inequality.  For the traceless case-study structures this changes
-    nothing.
+    Structures are projected to their traceless parts (the trace part is a
+    global phase and does not change the fidelity).
+
+    Parameters
+    ----------
+    Hhat_lists : sequence of p lists of tau ndarrays, shape (N, N)
+        Per-structure, per-interval perturbation structures.
+    dt :
+        Interval length Delta.
+
+    Returns
+    -------
+    JointGauge
     """
     return JointGauge(grams=interval_grams(Hhat_lists, make_traceless=True), dt=dt)
 
 
 @dataclass
 class AngularGauge(PathGauge):
-    """The static Choi-angular gauge: the strongest zero-evaluation
-    static region in the paper.
+    """Static angular gauge C^stat_FS and its certified region.
 
-    A constant displacement is a trajectory, so the exact Choi-speed
-    certificate applies with the signed static gauge
-    ``C_FS(x) = dt sum_k sqrt(x^T Q^(k) x)``, where
-    ``Q^(k)_ij = Re Tr(Hbar_i^(k) Hbar_j^(k))/N`` are the traceless
-    interval Gram matrices, and the budget is the fidelity ANGLE
-    ``arccos F_T - arccos F_nu``.  The region contains the joint
-    Lipschitz gauge region of :class:`JointGauge` (full-gauge
-    dominance: ``C_FS(x) <= C_joint(x)/sqrt(N)`` and the angle budget
-    dominates ``surplus/sqrt(1-F_T^2)``), is insensitive to identity
-    components (pure global phase), convex, centrally symmetric about
-    the centre before intersection with the admissible domain, and
-    second-order-cone representable.
-
-    The gauge arithmetic lives in
-    :class:`qrobustness.lengthspace.PathGauge` (master-lemma case
-    (a-ii), traceless normalised grams); this class binds the angle
-    budget.
+    ``C^stat_FS(x) = Delta sum_k sqrt(x^T Q^(k) x)`` with ``Q^(k) = P^(k)/N``.
+    The region ``C^stat_FS(x) <= arccos F_T - arccos F_nu`` about a safe point nu
+    is certified and contains the :class:`JointGauge` region. Gauge arithmetic is
+    inherited from :class:`qrobustness.lengthspace.PathGauge`.
     """
 
     @staticmethod
     def budget(F_nu: float, FT: float) -> float:
+        """Angle budget ``arccos F_T - arccos F_nu``."""
         return angle_budget(F_nu, FT)
 
     def contains(self, x, F_nu: float, FT: float) -> bool:
+        """True if displacement ``x`` lies in the region about a point of fidelity ``F_nu``."""
         return self.C(x) <= self.budget(F_nu, FT)
 
     def boundary_radius(self, d, F_nu: float, FT: float) -> float:
+        """Certified radius along ``d``: budget / C^stat_FS(d) (``inf`` if zero)."""
         return self.radius(d, self.budget(F_nu, FT))
 
     def inradius_certified(self, F_nu: float, FT: float) -> float:
-        """Certified Euclidean inradius from the Cauchy-Schwarz bound
-        ``C_FS(d) <= sqrt(t_f * d^T (sum_k dt Q^(k)) d)``."""
+        """Certified Euclidean inradius of the region (see ``PathGauge.inradius``)."""
         return self.inradius(self.budget(F_nu, FT))
 
 
 def angular_gauge(Hhat_lists: Sequence[HList], dt: float) -> AngularGauge:
-    """Assemble the static Choi-angular gauge (traceless interval Grams)."""
+    """Build the static angular gauge C^stat_FS.
+
+    Parameters
+    ----------
+    Hhat_lists : sequence of p lists of tau ndarrays, shape (N, N)
+        Per-structure, per-interval perturbation structures.
+    dt :
+        Interval length Delta.
+
+    Returns
+    -------
+    AngularGauge
+    """
     return AngularGauge(
         grams=interval_grams(Hhat_lists, make_traceless=True, normalise=True), dt=dt
     )

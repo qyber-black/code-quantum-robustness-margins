@@ -1,120 +1,167 @@
-# Repository layout
+# Repository layout and results files
 
-## Policy
+## Tree
 
 | Path | Contents |
-|------|----------|
-| `data/controllers/<id>/` | Non-reproducible inputs (Hamiltonians + controller CSV). Paper set is frozen. |
-| `results/lipschitz-margin-matlab/` | Full paper deliverables from MATLAB. |
-| `results/lipschitz-margin-python/` | Full paper deliverables from Python. |
-| `results/lipschitz-margin-octave/` | Full paper deliverables from Octave. |
-| `results/synth-matlab/` | Regenerable synthesised controllers (MATLAB). |
-| `results/synth-python/` | Regenerable synthesised controllers (Python). |
-| `results/synth-*-margins/` | Margin analysis of a synth set (local / regenerable). |
-| `results/bench-margin-solvers/` | Optional solver benchmark CSV (gitignored). |
-| `results/time-bandwidth-bound-matlab/` | Supplementary Kosut et al. bound comparison (MATLAB). |
-| `results/time-bandwidth-bound-python/` | Supplementary Kosut et al. bound comparison (Python). |
-| `results/time-bandwidth-bound-octave/` | Supplementary Kosut et al. bound comparison (Octave peer). |
-| `results/multiparameter-margin-python/` | xQRM Scenario J: joint static margins, gauge regions, slice scans, trajectory brackets. |
-| `results/time-bandwidth-bound-python/` | xQRM Scenario T as well: universal-bound comparison, adversarial validity sweeps, budget sweep, Berberich comparison. |
-| `results/single-qubit-python/` | xQRM single-qubit case against analytic truth. |
-| `results/cnot-python/` | xQRM CNOT transfer: margins, duration sweep, robustified-vs-nominal selection study. |
-| `results/scaling-python/` | xQRM four-qubit scaling demonstration. |
-| `results/lindblad-margin-python/` | xQRM Scenario D: Lindblad rate margins, amplitude damping, threshold sweep, mixed coherent-dissipative, coherent-through-open comparison. |
-| `results/verification-python/` | xQRM certificate verification harness: every theorem probed over the ensemble. |
-| `results/paper-xqrm/` | Generated xQRM paper artefacts (tables, figures, macros), copied to the paper repository by `make sync-xQRM`. |
-| `build/` | Regenerable scratch (compare logs, smoke). Gitignored. |
-| `docs/` | Theory (what is computed + accuracy), API contract, time-bandwidth bound, layout, margin-solver notes. |
+| :--- | :--- |
+| `python/src/qrobustness/` | Python package (reference implementation) |
+| `matlab/+qrobustness/` | MATLAB/Octave peer package; `matlab/examples/` drivers, `matlab/tests/` unit tests |
+| `python/tests/` | Python unit tests |
+| `scripts/` | experiment drivers (`run_*.py`), paper-artefact generators (`gen_paper_xqrm_*.py`), reproduction and consistency checks |
+| `data/controllers/<id>/` | frozen inputs: problem definition and controller CSV (see each README) |
+| `results/<method>-<engine>/` | committed results, one tree per method and engine |
+| `results/paper-xqrm/` | generated xQRM tables, figures and macros, copied to the paper by `make sync-xQRM` |
+| `results/synth-*/` | regenerable synthesised controller sets (not committed) |
+| `build/` | scratch (smoke tests, scratch reproduction); not committed |
 
-All `results/lipschitz-margin-*` trees correspond to controller set `problem9_tf15_K32_quasi-newton`.
-The xQRM trees above are Python-only: the peers implement the paper-1
-certificates, not the joint, Choi-trajectory and Lindblad extensions. The one
-exception is the universal-bound comparison. The peers cover all three of
-its invocations: the angular default, `absorption='additive'`, and
-`uncertainty='trajectory'` for the sup-norm trajectory class M^K_tv. Both
-peer trees therefore carry the same three CSVs as the Python tree, and
-`make test-parity` compares them. Which driver
-writes each file is recorded in `scripts/_paper.py` and checked against the
-Makefile by `test_paper_driver_map_matches_the_makefile`.
-Synthesis writes new ensembles under `results/synth-*` and never overwrites `data/controllers/`.
+Result trees are named after the method. They are not named after the paper.
+The paper-specific part of the build is the `PAPER_*` / `XPAPER_*` block at
+the top of the `Makefile`. `scripts/_paper.py` records which driver writes
+each results file, and the tests check that record against the Makefile.
+Driver flags are defined once, in `scripts/_invocations.py`.
 
-Python is the reference implementation and produces the manuscript
-figures; MATLAB and Octave are peers, held to it by `make test-parity
-ENGINE=matlab` / `ENGINE=octave` and by each engine's consistency test,
-which computes live and compares against the other engine's committed
-results table. Sources and documentation are
-ASCII, with mathematical symbols in LaTeX-like notation. Prose uses British
-spelling; identifiers keep the spelling they are declared with.
+## Papers and publication
 
-Octave figures are rendered with the qt toolkit when a display is available and
-with gnuplot otherwise, so Octave PNGs are not byte-identical across
-environments. Only the CSV tables are compared between engines
-(`make test-parity ENGINE=octave`), so this does not affect any gate.
+The papers are sibling repositories. By default they are `../paper-QRM`
+(QRM, `PAPER_ROOT`) and `../paper-xQRM` (xQRM, `XPAPER_ROOT`), relative to
+this repository. `make sync-QRM` copies the QRM figures. `make sync-xQRM`
+regenerates the xQRM tables, figures and macros from `results/` and copies
+them. Only the Python trees are published. The MATLAB and Octave trees are
+compared with them in the parity stage of `make test`. `make verify`
+reports a paper whose copies differ from the generated artefacts. It does
+not change the paper.
 
-Result trees are named after the **method** they implement (`lipschitz-margin`,
-`time-bandwidth-bound`), not after the paper that happens to publish them. The
-only paper-aware part of the build is the `PAPER_*` block at the top of the
-`Makefile`: which analysis a given paper publishes, where its figures go, and
-which LaTeX source `verify_paper_consistency` reads. The `sync-*` and
-`check-*` targets use it. A second paper is a new block there, not a code
-change.
+## Results files (Python trees; columns by group)
 
-Papers live in **sibling repositories**, not inside this one:
+`<FT>` is the threshold, `0.999` throughout. Margins are in units of the
+perturbation parameter (relative errors for multiplicative structures).
 
-```
-QRM/
-  code-robustness-margins/          # this repository
-  paper-QRM/                        # paper 1 (PAPER_ROOT)
-  paper-xQRM/                       # paper 2 (XPAPER_ROOT)
-```
+**`lipschitz-margin-*` (QRM; also MATLAB and Octave)**
 
-Publishing therefore copies results across a repository boundary. The targets
-are named after the **paper**, not the language: `sync-QRM` pushes the Python
-PNGs into `$(PAPER_ROOT)/figures/`, and `sync-xQRM` regenerates paper 2's
-tables and figures from this tree into `$(XPAPER_ROOT)/`. Python is the
-reference implementation and the only published tree;
-MATLAB and Octave are peers, compared (`make test-parity ENGINE=matlab` /
-`ENGINE=octave`) but never published. Both paths are Make variables -- pass `PAPER_ROOT=` or
-`XPAPER_ROOT=` for a different checkout.
+- `margins_table_<FT>.csv`: per controller `fid`, `err` (eps_0), and per
+  structure `H0`, `H1`, `H2`: `M_*`, `Mm_*`, `Mp_*` (margin and the two
+  rays), `zeta_*` (sensitivity).
+- `focal_tests_<FT>.csv`: rank statistics of M_j against \|zeta_j\| (Spearman,
+  Kendall, Holm-corrected p).
+- `correlations_<FT>.tex`, `H*_all.png`, `robustness_margins_*.png`: QRM
+  table and figures; `verify_paper.md`: consistency report of the tree.
 
-The flow is one-way. `make check` reads nothing outside this repository:
-publication is a copy out of it, so a paper checkout can sit behind these
-results, and a check against a stale manuscript would fail on the sync rather
-than on a wrong number.
+**`time-bandwidth-bound-*` (Kosut comparison; also MATLAB and Octave)**
 
-## Lipschitz-margin deliverables (each of `results/lipschitz-margin-matlab/`, `results/lipschitz-margin-python/`, `results/lipschitz-margin-octave/`)
+- `kosut_comparison_<FT>.csv` (additive absorption),
+  `..._angular.csv` (angular absorption, the default),
+  `..._angular_tv.csv` (trajectory class): per structure `M_*`, `KM_*`
+  (M^K or M^{K,tri}_tv), `ratio_*`, `KTOb_*` (T Omega_bnd), `Kflb_*` (F_lb),
+  `wunc_*`, `wavg_*`, `wdev_*`.
+- `validity_<FT>.csv`, `validity_<FT>_tv.csv`, `validity_witness_<FT>.csv`:
+  adversarial minimum fidelity at budgets m and 1.05 m on the control grid
+  and its x4, x16 refinements (`Fmin_*`), `violated`, trajectory measures
+  `omega_*`.
+- `fs_validity_<FT>.csv`: the same attack at r_FS (`speed` = s).
+- `budget_sweep_ctrl16_H1.csv`: minimum fidelity against budget m.
+- `berberich_comparison_<FT>.csv`: `MB_ind` (M^B_tv), `MB_sys` (M^B),
+  `gamma_*`, `magnus_ok`, `Fmin_attack`.
+- `kosut_vs_lipschitz_*.png`: comparison figures.
 
-- `H0_all.png`, `H1_all.png`, `H2_all.png`
-- `robustness_margins_fid_err.png`
-- `robustness_margins_sensitivity.png`
-- `correlations_0.999.tex` (Table I source; upper triangle Pearson \(r\), lower triangle Spearman \(\rho\), both descriptive)
-- `focal_tests_0.999.csv` (rank-statistic cross-check on \(M_j\) vs \(|\zeta_j|\): Spearman \(\rho\) and Kendall \(\tau_b\), each with Holm-corrected two-sided \(p\). Not a paper claim -- it confirms the descriptive reading of Table I does not depend on the rank statistic chosen.)
-- `margins_table_0.999.csv` (compared by `make test-parity`)
-- `verify_paper.md` (consistency report for that tree)
+**`multiparameter-margin-python`**
 
-## Synthesis deliverables (`results/synth-matlab/`, `results/synth-python/`)
+- `multiparam_<FT>.csv` (Lipschitz step) and `..._angular.csv` (angular
+  step): `L_H*`, polytope radii `poly_r_H*`, inradii, `r0_*`, and per
+  direction (`+e0` ... `diagppp`) `M_*`, `Mupper_*`, `nev_*` (evaluations,
+  both rays of the direction).
+- `joint_gauge_<FT>.csv`: diagonal and inradius gains of the joint and
+  angular gauges over the cross-polytope, trajectory box gains.
+- `tv_bracket_<FT>.csv`: per controller and structure `r0`, `r_fs`,
+  `M_const`, `M_const_upper`, `m_adv`, `F_at_adv`, and the constancy-gap
+  interval `gap_lower`, `gap_upper` (bounds on M_const - M_tv).
+- `slice_ctrl1_<FT>.npz`: fidelity scan of a two-parameter slice.
 
-- `problem9.mat` (copy of the paper problem / \(U_f\))
-- `controllers.csv` (all optimised runs; same schema as the paper CSV)
-- `meta.json` (seed, \(N_{\mathrm{opt}}\), method, error stats)
+**`single-qubit-python`**: `single_qubit_<FT>.csv`: per structure `M`,
+`M_upper`, analytic `delta_star`, `r0`, `r_fs`, `m_adv`, `KM`, `KM_tv`.
 
-## Reproduction
+**`cnot-python`**
 
-`make help` lists every target with its current name. The ones that decide
-what lands where, with `PAPER` one of `QRM`, `xQRM` and `ENGINE` one of
-`python` (the reference implementation), `matlab`, `octave`:
+- `cnot_margins_<FT>.csv`: per structure `M_*`, `r0_*`, `rfs_*`, `KM_*`,
+  `KMtv_*`; inradii; dephasing `M_gamma`, `r0_gamma`, `gamma_star`.
+- `duration_sweep_<FT>.csv`: the same against `tf`.
+- `robust_vs_nominal_<FT>.csv`: per controller `kind` (nominal/robust),
+  `seed`, angle budget `budget`, pulse areas `area_X*`, per structure `M_*`,
+  `Mupper_*`, `rfs_*`, adversarial `madv_*` with re-evaluated fidelity
+  `madvF_*`, toggling-frame integral norms `cancel_*`, `inradius_gauge`.
 
-```bash
-make paper-PAPER ENGINE=E   # compute that paper's results from that engine
-make reproduce-PAPER        # recompute into a scratch tree and compare
-make check-PAPER            # falsifiable property checks on the results
-make test ENGINE=E          # lint, unit tests, synthesis smoke, parity
-make sync-PAPER             # copy the generated artefacts into the paper repo
-make clean | distclean      # remove build/ | build/ and .venv/
-make maintainer-clean       # also every generated result, to start over
-```
+**`scaling-python`**: `scaling4q_margins_<FT>.csv`: as `cnot_margins` for
+five structures, with evaluation and step counts.
 
-There are no golden fixtures. The committed `results/` trees are the
-reference: each engine's consistency test computes live and compares
-against the *other* engine's committed table, and `git diff` reports any
-numeric change across a regeneration. See `docs/theory.md`.
+**`lindblad-margin-python`**
+
+- `open_margins_<FT>.csv` (dephasing), `open_amp_<FT>.csv` (amplitude
+  damping and the joint diagonal), `open_coherent_<FT>.csv` (coherent
+  structure through the open-system constant): F^pro_0, constants `L_*`,
+  margins, one-step radii, bisected reference `*_star` (a safe endpoint of
+  the final bracket), ratios, evaluations.
+- `open_threshold_sweep.csv`, `open_threshold_cohort.csv`: ratios against
+  F_T and the controllers eligible at each threshold.
+- `mixed_ctrl1.npz`: mixed coherent-dissipative region data.
+- `dnorm_certificates.csv`: per generator the solver optimum `raw`, the
+  verified `certified` value, `gap`, `rel_inflation`, `feas_shift`, solver
+  status and name, and for the closed-form families the deviation from 2n.
+
+**`verification-python`**: `verification_<FT>.csv`: per check `n` probes,
+`min_slack`, `tol`, `passed`, `max_fraction_of_bound`.
+
+**`state-examples-python`** (xQRM state appendix)
+
+- `ghz_detuning_<FT>.csv`: per n, state and Choi speeds of the hold, the
+  one-step state radius and its analytic crossing, the fidelity there, the
+  gate radius and gate crossing, and the margin with detuning during
+  preparation and hold (`M_all`, `M_upper_all`, `n_evals_all`).
+- `tfim_preparation_<FT>.csv`: per chain length `L` and field `h0`, the gap,
+  C_prep by finite differences, sigma/gamma, half-spread/gamma, the one-step
+  radius, and per direction the margin, evaluations and resolved crossing.
+- `ghz_dephasing_<FT>.csv`: D/2, one-step radius, margin, analytic crossing.
+- `state_variance_<FT>.csv`: integrated sigma_t against C^st and the Choi
+  speed per controller, structure and initial state.
+- `closed_limit.csv`: exact spread, verified closed form, SDP and
+  solver-free diamond norms of the chain structures.
+
+**`algorithm-tests-python`**
+
+- `crosstalk_<FT>.csv`: per controller and coupling `kappa`, the Gram
+  correlation, radii and gains of the joint and angular gauges along the
+  cancelling diagonal, the smallest fidelity on the certified boundaries,
+  and the iterated diagonal margin.
+- `rays_<FT>.csv`: per test ray the first unsafe point, `M`, `M_upper`,
+  `reason`, `n_unresolved`, `n_evals`, and checks `prefix_ok`,
+  `witness_ok`.
+
+**`bracket-audit-python`**
+
+- `brackets_<FT>.csv`: per controller, direction, rule (`angular` or the
+  scalar `precursor`) and evaluation band: `M`, `M_upper`, `rel_width`,
+  `reason`, `n_unresolved`, `n_evals` (the `+` ray).
+- `timing_<FT>.csv`, `environment.json`: wall-clock medians and
+  interquartile ranges (`t_*`) of preprocessing, one fidelity evaluation and
+  one directional run (both rays), and the machine and library versions.
+  The `t_*` columns are the only ones the reproduction check does not
+  compare.
+
+**`paper-xqrm`**: `tables/*.tex`, `figures/*.pdf`, `macros.tex`.
+
+## Synthesis output (`results/synth-*`)
+
+`problem9.mat` (problem copy), `controllers.csv` (same schema as the
+frozen set), `meta.json` (seed, number of runs, method, error statistics).
+
+## Regression reference
+
+The committed `results/` trees are the reference. A regeneration that
+changes a number shows in `git status`. `make verify` recomputes into a
+separate tree and compares the numbers. Generated figures are
+byte-deterministic. The SDP solver is named
+(`lindblad.DEFAULT_SDP_SOLVER`), so the open-system numbers do not follow
+whichever solver happens to be installed. The environment is pinned in
+`python/requirements-repro.txt`. `make install` installs that pin.
+`PINS=` installs current releases instead.
+
+Sources and documentation are ASCII. Mathematics is written in LaTeX-like
+notation.

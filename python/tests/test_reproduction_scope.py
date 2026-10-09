@@ -9,7 +9,7 @@
 
 `compare_trees` walks every CSV in a committed tree and demands that the recomputation produced it, so a tree is reproduced whole. Result trees are named after the method rather than the paper, so one tree can hold outputs both papers publish; a driver missing from a paper's list makes that paper's reproduction fail on a file nothing it ran could have written.
 
-The failure is invisible until someone runs the full reproduction, which takes hours, so we assert the agreement here instead."""
+The failure is invisible until someone runs the full reproduction, which takes hours, so the agreement is asserted here instead."""
 
 from __future__ import annotations
 

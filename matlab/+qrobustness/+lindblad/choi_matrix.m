@@ -6,17 +6,10 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function J = choi_matrix(S)
-%CHOI_MATRIX Choi matrix J = sum_ij Phi(E_ij) kron E_ij (output kronecker input).
+%CHOI_MATRIX Choi matrix J = sum_ij Phi(E_ij) kron E_ij (output kron input).
+%   S - column-stacked superoperator; J is an exact reindexing of S
 %
-% Pure reindexing: every entry of J is a stored entry of S, relocated
-%   without arithmetic. With column stacking,
-% Phi(E_ij)(a,b) = S(a + b*N, i + j*N), which the definition places at J(a*N + i, b*N + j), so the whole map is one permutation of
-% the four-index view. That exactness allows the verified bound to be stated about the represented superoperator rather than about a
-% recomputation of it; superop_from_choi inverts it exactly.
-%
-% The earlier form multiplied S by each matrix unit and accumulated, which is arithmetic on floating data.
-%
-% MATLAB counterpart of python/src/qrobustness/lindblad.py:choi_matrix.
+%   Peer of python/src/qrobustness/lindblad.py:choi_matrix.
 
     N = round(sqrt(size(S, 1)));
     J = reshape(permute(reshape(S, [N N N N]), [3 1 4 2]), [N * N, N * N]);

@@ -6,17 +6,29 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Combined-structure gauge region versus the weighted cross-polytope.
+"""The combined-structure gauge region against the weighted cross-polytope.
 
-For every controller of the shipped ensemble, we evaluate the certified
-free region of the joint gauge C_joint(x) = sum_k Delta ||sum_j x_j
-Hhat_j^(k)||_F against the separable cross-polytope: certified radii
-along the eight normalised diagonals (where cancellations between
-structures matter; on the axes the two coincide), and Euclidean
-inradii estimated over a 200-direction sphere design.  Neither side
-involves fidelity evaluations.
+For every controller of the main ensemble, computes the C_joint gauge radii
+against the separable cross-polytope along the eight diagonals, the
+Euclidean inradii (certified, and a sampled estimate over N_SPHERE
+directions), the equal-budget trajectory box of the joint form of r_FS
+against its separable sum, and the angular (C^stat_FS) gains over the joint
+gauge (the xQRM paper, Scenario J, the combined-structure gauge). No
+fidelity evaluations. Options: --FT, --out.
 
-Writes results/multiparameter-margin-python/joint_gauge_<FT>.csv."""
+Writes results/multiparameter-margin-python/joint_gauge_<FT>.csv:
+    controller, fid: instance and nominal fidelity.
+    diag_gain_min, _med, _max: gauge radius over polytope radius on the
+        diagonals.
+    inradius_gauge_est, inradius_gauge_cert, inradius_poly: inradii.
+    inradius_gain_est, inradius_gain_cert: gauge inradius over polytope
+        inradius.
+    traj_box_joint, traj_box_sep, traj_gain: joint and separable
+        equal-budget trajectory box and their ratio.
+    ang_diag_gain, ang_inradius_cert, ang_inradius_gain: median angular over
+        gauge radius on the diagonals; certified angular inradius and its
+        ratio to the certified gauge inradius.
+"""
 
 from __future__ import annotations
 
@@ -36,10 +48,8 @@ OUT_DIR = ROOT / "results/multiparameter-margin-python"
 STRUCTURES = ("H0", "H1", "H2")
 N_PARAMS = len(STRUCTURES)
 
-#: Directions used for the Euclidean inradius. A sampled minimum taken over a
-#: sphere design is an ESTIMATE and is reported as one; that certified
-#: inradius beside it is what any claim rests on. The seed is held fixed so the
-#: estimate is reproducible.
+#: Directions for the sampled inradius estimate (not a certificate; the
+#: certified inradius is reported beside it). Fixed seed.
 N_SPHERE = 200
 SPHERE_SEED = 0
 
@@ -76,8 +86,9 @@ def main() -> None:
         for d in diagonals:
             sep = surplus / float(np.abs(d) @ L)
             diag_gain.append(G.boundary_radius(d, surplus, ft, dim) / sep)
-        # Trajectory class: vertex Gram-gauge against separable budget for
-        # the equal-budget box m = m (1,...,1) (Theorem fs, joint form).
+        # Trajectory class: vertex Gram gauge against the separable sum for
+        # the equal-budget box m (1, ..., 1).
+
         ell, budget = fs_margin_joint(dHs, dt, c["fid"], ft)
         s_sep = sum(fs_margin(dH, dt, c["fid"], ft).speed for dH in dHs)
         m_joint = budget / ell(np.ones(N_PARAMS))

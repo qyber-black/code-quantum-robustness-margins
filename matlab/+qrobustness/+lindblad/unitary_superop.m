@@ -6,9 +6,10 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function S = unitary_superop(U)
-%UNITARY_SUPEROP Superoperator implementing the unitary conjugation U . U'.
+%UNITARY_SUPEROP Superoperator of the conjugation U . U', column-stacked.
+%   U - unitary
 %
-% MATLAB counterpart of python/src/qrobustness/lindblad.py:unitary_superop.
+%   Peer of python/src/qrobustness/lindblad.py:unitary_superop.
 
     S = kron(conj(U), U);
 end

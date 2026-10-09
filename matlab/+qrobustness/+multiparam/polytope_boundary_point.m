@@ -6,9 +6,11 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function mu = polytope_boundary_point(P, d)
-%POLYTOPE_BOUNDARY_POINT Point on the polytope boundary in direction d.
+%POLYTOPE_BOUNDARY_POINT Point on the cross-polytope boundary in direction d.
+%   P - from qrobustness.multiparam.safe_polytope
+%   d - direction
 %
-%   Peer of SafePolytope.boundary_point.
+%   Peer of python/src/qrobustness/multiparam.py:SafePolytope.boundary_point.
 
     d = d(:);
     s = P.surplus / dot(P.L, abs(d));

@@ -6,9 +6,10 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function D = axis_directions(p)
-%AXIS_DIRECTIONS The 2p signed coordinate directions, one direction per row.
+%AXIS_DIRECTIONS The 2p signed coordinate directions, one per row.
+%   p - number of parameters
 %
-% MATLAB counterpart of python/src/qrobustness/multiparam.py:axis_directions.
+%   Peer of python/src/qrobustness/multiparam.py:axis_directions.
 
     I = eye(p);
     D = [I; -I];

@@ -5,11 +5,11 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""A paper stage requests files; it does not run a driver.
+"""A run stage requests files; it does not run a driver.
 
-`paper-PAPER-EXPNAME` is a phony target, so its recipe runs whenever it is named. A recipe that invokes a driver there therefore recomputes on every `make paper`, however current the results are -- which is how two stages of paper 1 came to rerun a 61-controller case study and three time-bandwidth comparisons on a tree that needed neither.
+`run-PAPER-EXPNAME` is a phony target, so its recipe runs whenever it is named. A recipe that invokes a driver there therefore recomputes on every `make run`, however current the results are -- which is how two stages of paper 1 came to rerun a 61-controller case study and three time-bandwidth comparisons on a tree that needed neither.
 
-The fix is structural: the python branch delegates to a file set, and the file rules decide. We assert that shape, because timing the build would not: a stale-looking recomputation is indistinguishable from a slow one."""
+The fix is structural: the python branch delegates to a file set, and the file rules decide. That shape is asserted here, because timing the build would not: a stale-looking recomputation is indistinguishable from a slow one."""
 
 from __future__ import annotations
 
@@ -18,9 +18,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
-#: One paper stage: paper-QRM-margins, paper-xQRM-open. `paper-QRM` and
-#: `paper-xQRM` are aggregates that merely name other targets.
-STAGE = re.compile(r"^(paper-[A-Za-z]+-[a-z0-9-]+):[^\n]*\n((?:\t[^\n]*\n)*)", re.M)
+#: One run stage: run-QRM-margins, run-xQRM-open. `run-QRM` and
+#: `run-xQRM` are aggregates that merely name other targets.
+STAGE = re.compile(r"^(run-[A-Za-z]+-[a-z0-9-]+):[^\n]*\n((?:\t[^\n]*\n)*)", re.M)
 
 #: A Python driver invocation. The peers are invoked via MRUN/ORUN and
 #: have no file rules, so they lie outside this check.
@@ -33,7 +33,7 @@ PYTHON_BRANCH = 'test "$(ENGINE)" = python'
 def _stages():
     text = (ROOT / "Makefile").read_text()
     found = STAGE.findall(text)
-    assert found, "no paper-PAPER-EXPNAME targets found; did the naming change?"
+    assert found, "no run-PAPER-EXPNAME targets found; did the naming change?"
     return found
 
 
@@ -47,8 +47,8 @@ def test_no_stage_runs_a_python_driver_in_its_own_recipe():
             if DRIVER.search(line):
                 offenders.append(f"{name}: {line.strip()}")
     assert not offenders, (
-        "these paper stages invoke a driver directly, so they recompute on "
-        "every make paper:\n  " + "\n  ".join(offenders)
+        "these run stages invoke a driver directly, so they recompute on "
+        "every make run:\n  " + "\n  ".join(offenders)
     )
 
 
@@ -58,6 +58,6 @@ def test_every_stage_delegates_to_a_file_set():
     for name, recipe in _stages():
         if "$(MAKE) $(FILES_" not in recipe:
             missing.append(name)
-    assert not missing, (
-        "these paper stages never ask make for a file set: " + ", ".join(missing)
+    assert not missing, "these run stages never ask make for a file set: " + ", ".join(
+        missing
     )

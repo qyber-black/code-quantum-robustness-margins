@@ -1,9 +1,5 @@
 function test_compat_graphics()
-% Graphics compatibility helpers operate on both engines.
-%
-% Octave prefers the qt toolkit over gnuplot and has not implemented the 'best' legend location. The helpers select qt when it is
-% available and ask for the location Octave would substitute anyway, so neither warning is
-% emitted during a figure-producing run.
+% Graphics compatibility helpers work on both engines without toolkit or legend-location warnings.
 
     loc = qrobustness.compat.legend_location();
     assert(ischar(loc) && ~isempty(loc), 'legend_location must return a string');
@@ -28,8 +24,7 @@ function test_compat_graphics()
         assert(isempty(toolkit), 'setup_graphics is a no-op on MATLAB');
     end
 
-    % Exporting through the compat layer must not raise the toolkit advisory or the legend-location substitution. Octave emits
-    % unrelated warnings from its own internals, so we match on those two subjects only.
+    % Exporting must not raise the toolkit advisory or the legend-location warning; other Octave warnings are ignored.
     lastwarn('');
     fig = figure('Visible', 'off');
     plot(1:3, 1:3);
@@ -46,9 +41,8 @@ function test_compat_graphics()
     assert(exist(tmp, 'file') == 2, 'export_figure wrote no file');
     delete(tmp);
 
-    % An axis name other than x or y is an error, not a silent
-    % fallback to x. Peer of the Python
-    % test_log10_axis_rejects_an_unknown_axis.
+    % An axis name other than x or y is an error.
+    % Peer of the Python test_log10_axis_rejects_an_unknown_axis.
     f2 = figure('Visible', 'off');
     c = onCleanup(@() close(f2));
     assert_error(@() qrobustness.log10_axis(gca, 'z', [1e-3, 1]), ...

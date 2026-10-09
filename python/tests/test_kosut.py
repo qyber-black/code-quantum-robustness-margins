@@ -192,3 +192,16 @@ def test_margin_stable_in_commuting_limit():
     # The margin must not exceed the analytic constant crossing value
     # delta* = (2/pi) arccos(FT) for the pi-pulse amplitude error.
     assert m <= 2.0 / np.pi * np.arccos(0.999)
+
+
+def test_samples_follow_the_capped_grid():
+    """n_dev_max below the requested density is reported on the grid that was used."""
+    H = [0.5 * np.array([[1.0, 0.0], [0.0, -1.0]], dtype=complex)]
+    dH = [np.eye(2, dtype=complex)]
+    rates = uncertainty_rates(
+        H, dH, 1.0, n_dev=3, n_dev_max=4, dev_samples_per_cycle=50.0, adaptive_dev=False
+    )
+    # Eigenvalue range 1, so one cycle is 2*pi. The cap leaves 4 points, 3 steps.
+    assert rates.n_dev_used == 4
+    assert rates.dev_samples_per_cycle == pytest.approx(6 * np.pi)
+    assert rates.dev_resolved is False

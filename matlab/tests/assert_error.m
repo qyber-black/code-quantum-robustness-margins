@@ -1,12 +1,8 @@
 function assert_error(fh, identifier, what)
-%ASSERT_ERROR Assert that a call fails with a given error identifier. ASSERT_ERROR(FH, IDENTIFIER, WHAT) calls FH() and requires it
-% to raise an error whose identifier is IDENTIFIER. WHAT names the condition under
-%   test and appears in the failure message.
-%
-% The identifier is what matters. A bare try/catch passes when the call fails for ANY reason -- a renamed function, a typo in the
-% test, a missing path -- which is precisely the regression such a test is meant to catch, so it reports green exactly when it
-% should report red. The Python peers assert on the exception type and message for the same
-%   reason.
+%ASSERT_ERROR Assert that a call fails with a given error identifier.
+%   fh         - function handle called with no arguments
+%   identifier - required error identifier
+%   what       - description of the condition, used in the failure message
 %
 %   See also ERROR.
 

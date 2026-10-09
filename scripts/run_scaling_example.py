@@ -6,29 +6,29 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Closed-system certificates at N = 16, as a four-qubit scaling example.
+"""Closed-system certificates for a four-qubit chain (N = 16).
 
-System: 4-qubit Ising chain carrying symmetry-breaking local detunings,
+Synthesises up to N_KEEP controllers with grape_ensemble (deterministic
+seeds) on a four-qubit Ising chain with local detunings DETUNE (which break
+the global spin-flip symmetry), drives X_1..X_4, a fixed Haar-random target
+(seed TARGET_SEED), t_f = 24, tau = 96, and computes per controller, for the
+p = 5 multiplicative structures H0, X1..X4, M, r_0, r_FS, M^K, M^{K,tri}_tv,
+the joint polytope l2 inradius, and the off-nominal fidelity evaluations
+each certificate costs (the xQRM paper, Numerical evaluation, transfer and
+scaling). Options: --FT, --out, --maxiter (GRAPE iterations).
 
-    H0 = 2 pi J sum_q Z_q Z_{q+1} + 2 pi sum_q d_q Z_q,
-    J = 0.5,  d = (0.11, -0.07, 0.05, -0.13)
-
-(absent those detunings the global spin flip X^{ox4} commutes with every
-generator and generic targets remain unreachable), individually
-addressable x drives X_1..X_4 (p = 5 structures: multiplicative drift
-together with the four controls), a fixed Haar-random target (seed 20260801),
-t_f = 24, tau = 96.  We synthesise controllers
-in-repository (grape_ensemble, deterministic seeds).
-
-For each controller and structure we record: the iterated margin M with its bracket,
-uniform time-varying radii r_0 and r_FS, universal-bound margins
-M^K / M^K_tv (angular absorption), joint 5-parameter polytope inradii,
-and the off-nominal fidelity evaluations each certificate class costs --
-the point of the example, and the one cost measure that does not move
-with machine load.
-
-Writes results/scaling-python/scaling4q_margins_<FT>.csv and
-data/controllers/chain4q_tf24_K96_lbfgs/controllers.csv."""
+Writes results/scaling-python/scaling4q_margins_<FT>.csv:
+    controller, seed, fid, err: instance and nominal fidelity / error.
+    M_<s>, r0_<s>, rfs_<s>, KM_<s>, KMtv_<s>: M, r_0, r_FS, M^K, M^{K,tri}_tv
+        for s in H0, X1..X4.
+    inradius_l2: l2 inradius of the joint safe polytope.
+    n_evals_iter, n_steps_iter: evaluations and steps of M over all
+        structures.
+    n_evals_fs, n_evals_kosut: evaluations of r_FS and M^K (always 0).
+Writes the ensemble to data/controllers/chain4q_tf24_K96_lbfgs/
+(controllers.csv: seed, fid, err, u<j>_<k>; problem.npz), or under --out
+when one is given.
+"""
 
 from __future__ import annotations
 
@@ -65,14 +65,13 @@ DATA_DIR = ROOT / "data/controllers/chain4q_tf24_K96_lbfgs"
 NQ = 4
 DIM = 2**NQ
 
-#: Ising coupling and the Haar seed of the target, both quoted in the docstring
-#: above and used once each below.
+#: Ising coupling J and the Haar seed of the target.
 J_COUPLING = 0.5
 TARGET_SEED = 20260801
 
 
 def local(op, q):
-    """We embed a single-qubit operator on qubit ``q`` of the chain."""
+    """Embed a single-qubit operator on qubit ``q`` of the chain."""
     mats = [EYE2] * NQ
     mats[q] = op
     M = mats[0]
@@ -100,7 +99,7 @@ STRUCTURES = ("H0",) + tuple(f"X{q + 1}" for q in range(NQ))
 
 
 def main() -> None:
-    """We synthesise the four-qubit ensemble and certify each structure."""
+    """Synthesise the four-qubit ensemble and certify each structure."""
     ap = base_parser(OUT_DIR, description=__doc__)
     ap.add_argument("--maxiter", type=int, default=3000)
     args = ap.parse_args()
@@ -123,11 +122,8 @@ def main() -> None:
     if not ens:
         raise SystemExit("no controller reached the error threshold")
 
-    # The synthesised ensemble is an input artefact rather than a result, so it
-    # normally lands in data/. A scratch run (--out) is forbidden from touching the
-    # committed ensemble: check_reproducible rejects drivers that lack --out
-    # specifically to protect the reference tree, and a write outside --out
-    # defeated that guard. We anchor the ensemble to --out whenever one is given.
+    # The ensemble is an input artefact and lands in data/, except under
+    # --out, so a scratch run never overwrites the committed ensemble.
     data_dir = DATA_DIR if args.out == OUT_DIR else args.out / DATA_DIR.name
     data_dir.mkdir(parents=True, exist_ok=True)
     with (data_dir / "controllers.csv").open("w", newline="") as f:
@@ -183,9 +179,7 @@ def main() -> None:
                 margin_tol=MARGIN_TOL,
                 return_diagnostics=True,
             )
-            # A deterministic cost measure. The evaluation counter is constructed
-            # unconditionally inside iterative_margin, so a request for it
-            # changes what we report and does not change what is computed.
+            # Evaluation counts: a deterministic cost measure.
             n_evals_iter += res.n_evals
             n_steps_iter += res.n_steps
             fs = fs_margin(dH, DT, F0, ft)
@@ -202,11 +196,9 @@ def main() -> None:
             row[f"KMtv_{tag}"] = KMtv
         P = mp.safe_polytope(np.zeros(len(L)), L, F0, ft)
         row["inradius_l2"] = P.inradius_l2
-        # Off-nominal fidelity evaluations form the reproducible cost
-        # measure. No wall-clock is stored: it depends on machine load,
-        # so it is not reproducible and the paper quotes none of it.
-        # The geometric certificate and the universal-bound measures require
-        # none: both have closed form in the structure constants.
+        # Cost in off-nominal evaluations (no wall-clock: not reproducible).
+        # r_FS and M^K are closed-form and need none.
+
         row["n_evals_iter"] = n_evals_iter
         row["n_steps_iter"] = n_steps_iter
         row["n_evals_fs"] = 0

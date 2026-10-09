@@ -1,16 +1,21 @@
 function res = optimize_controller(H0, H1, H2, Uf, tf, tau, varargin)
-%OPTIMIZE_CONTROLLER Maximize gate fidelity through fminunc (quasi-Newton) + GRAPE.
+%OPTIMIZE_CONTROLLER Maximise gate fidelity with fminunc (quasi-Newton) and GRAPE gradients.
+%   H0, H1, H2 - drift and control Hamiltonians
+%   Uf         - target gate
+%   tf, tau    - gate time and number of intervals
+%   res        - struct with fields u1, u2, fid, error, fid_init, n_iter,
+%                success, message
 %
-%   Name-value:
-%     'u1_init','u2_init'  initial pulses (default: N(0,sigma^2))
-%     'sigma'              init std (default 1)
-%     'seed'               RNG seed for init (default [])
-% 'method' 'exact' (default) or 'quadrature' for the segment derivative 'n_quad' quadrature nodes, applied only under 'quadrature'
-% (default 32)
-%     'maxiter'            fminunc MaxIterations (default 500)
-% 'ftol' scale on StepTolerance / OptimalityTolerance (default 1e-12)
+%   Name-value options:
+%     'u1_init', 'u2_init' - initial controls (default sigma*randn)
+%     'sigma'              - initial standard deviation (default 1)
+%     'seed'               - RNG seed (default [])
+%     'method'             - 'exact' (default) or 'quadrature'
+%     'n_quad'             - Gauss-Legendre nodes for 'quadrature' (default 32)
+%     'maxiter'            - maximum iterations (default 500)
+%     'ftol'               - step and optimality tolerance (default 1e-12)
 %
-%   Peer of python/src/qrobustness/optimize.py.
+%   Peer of python/src/qrobustness/optimize.py:optimize_controller.
 
     p = inputParser;
     addParameter(p, 'u1_init', []);
@@ -50,8 +55,7 @@ function res = optimize_controller(H0, H1, H2, Uf, tf, tau, varargin)
 
     obj = @(x) error_and_grad(x, H0, H1, H2, Uf, dt, tau, dU_opts);
 
-    % Octave includes fminunc in core but omits optimoptions, so we build the option struct with optimset there. The same
-    % quasi-Newton objective+gradient path is used; only the option spelling differs, so no toolbox or package is required.
+    % Octave has fminunc but not optimoptions, so use optimset there.
     if qrobustness.compat.is_octave()
         opts = optimset( ...
             'GradObj', 'on', ...

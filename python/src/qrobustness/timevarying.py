@@ -5,34 +5,14 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Certified margins for time-varying structured uncertainty.
+"""Certified and empirical margins for time-varying structured uncertainty.
 
-The trajectory Lipschitz lemma certifies every measurable perturbation
-trajectory delta(t) with ``sum_j L_j ||delta_j||_inf <= F - F_T``; the
-certified uniform radius therefore equals the *first* Lipschitz step of the
-scalar iteration,
-
-    r_0 = (F - F_T) / sum_j L_j,
-
-and is returned by :func:`uniform_margin`.  Certificate semantics here
-differ from the iterated margin of :func:`qrobustness.iterative_margin`:
-the latter certifies constant (more generally, fixed-direction)
-perturbations only, and always satisfies ``M >= r_0``.
-
-:func:`fs_margin` supplies a second, geometric uniform certificate
-``r_fs`` in closed form (Fubini-Study angle budget over the integrated
-half-spread of the structure). The dominance theorem yields ``r_fs >= r_0``
-whenever both are built from the same structure, so ``r_fs`` is the
-certified uniform radius and ``r_0`` remains the baseline that
-theorem quantifies. ``FSMargin.r`` still reports ``max(r_0, r_fs)``, which
-equals that same number under dominance and stays correct if a caller supplies
-an ``r_0`` computed from a different structure.
-
-Error control follows the usual pattern: the certified radius is a
-lower bound on the true uniform time-varying margin ``M_tv``, and
-:func:`adversarial_upper_bound` yields an empirical upper bound by
-optimising a piecewise-constant trajectory that violates the threshold,
-so ``M_tv`` is bracketed by ``[r_fs, m_adv]``."""
+The Lipschitz radius r_0 is :func:`uniform_margin`. The Choi-Fubini-Study
+radius r_FS is :func:`fs_margin` and :func:`fs_margin_joint`. An adversarial
+search, :func:`adversarial_upper_bound`, returns the heuristic upper end
+m_adv of the bracket on M_tv. r_0 and r_FS certify every measurable
+trajectory. The iterated margin M certifies constant perturbations only.
+"""
 
 from __future__ import annotations
 
@@ -65,14 +45,24 @@ __all__ = [
 
 
 def uniform_margin(L, F: float, FT: float) -> float:
-    """Certified uniform margin against time-varying structured uncertainty.
+    """Lipschitz radius ``r_0 = (F - F_T) / sum_j L_j`` for time-varying perturbations.
 
-    Every measurable trajectory ``delta_j(t)`` with
-    ``sum_j L_j ||delta_j||_inf <= F - F_T`` is certified to hold the
-    fidelity at or above ``F_T``; in particular, for a single structure,
-    every ``|delta(t)| <= r_0`` with ``r_0`` the returned value.  This is
-    the first Lipschitz step of the scalar iteration; the iterated margin
-    is larger but certifies constant perturbations only.
+    Every measurable trajectory with ``sum_j L_j ||delta_j||_inf <= F - F_T``
+    keeps ``F >= F_T``.
+
+    Parameters
+    ----------
+    L : array_like, shape (p,)
+        Per-structure Lipschitz constants L_j.
+    F :
+        Nominal fidelity; must exceed ``FT``.
+    FT :
+        Fidelity threshold F_T.
+
+    Returns
+    -------
+    float
+        r_0.
     """
     L = np.atleast_1d(np.asarray(L, dtype=float))
     if not (F > FT):
@@ -87,13 +77,27 @@ def tv_fidelity_and_gradient(
     dt: float,
     Uf: Array,
 ) -> Tuple[float, Array]:
-    """Fidelity and the exact gradient for a piecewise-constant trajectory.
+    """Fidelity and exact gradient for a piecewise-constant trajectory ``delta``.
 
-    The perturbed interval Hamiltonians are
-    ``H^(k) + delta_k Hhat^(k)``; the gradient is ``dF/ddelta_k``,
-    evaluated with the closed-form interval derivative (one Hermitian
-    eigendecomposition per interval, as in
-    :func:`qrobustness.fidelity_and_gradient`).
+    Interval Hamiltonians are ``H^(k) + delta_k Hhat^(k)``.
+
+    Parameters
+    ----------
+    H_list, Hhat_list : lists of tau ndarrays, shape (N, N)
+        Nominal interval Hamiltonians and structures.
+    delta : array_like, shape (tau,)
+        Perturbation value on each interval.
+    dt :
+        Interval length Delta.
+    Uf : ndarray, shape (N, N)
+        Target unitary.
+
+    Returns
+    -------
+    F : float
+        Gate fidelity.
+    g : ndarray, shape (tau,)
+        ``dF/ddelta_k``.
     """
     delta = np.asarray(delta, dtype=float).ravel()
     tau = len(H_list)
@@ -139,19 +143,41 @@ def adversarial_fidelity(
     seed: Optional[int] = None,
     maxiter: int = 200,
     starts: str = "legacy",
-) -> Tuple[float, Array]:
-    """Minimise the fidelity over trajectories satisfying ``||delta||_inf <= m``.
+) -> Tuple[float, Array, int]:
+    """Heuristic minimum of the fidelity over trajectories with ``||delta||_inf <= m``.
 
-    Piecewise-constant trajectories on the control grid suffice for an
-    upper bound on the worst case.  Returns the smallest fidelity found and
-    the minimising trajectory; multi-start L-BFGS-B with exact gradients.
+    Multi-start L-BFGS-B over piecewise-constant trajectories with exact
+    gradients; a local search, so the result is not the true minimum.
 
-    ``starts`` selects the initialisation set: ``"legacy"`` uses the two
-    sign-saturated trajectories plus uniform random interior points;
-    ``"mixed"`` replaces half of the random points with sign-modulated
-    boundary trajectories ``m * (+-1, ..., +-1)`` -- the known worst-case
-    family for margins derived from coherent time averages, which uniform
-    interior starts rarely reach.
+    Parameters
+    ----------
+    H_list, Hhat_list : lists of tau ndarrays, shape (N, N)
+        Nominal interval Hamiltonians and structures.
+    dt :
+        Interval length Delta.
+    Uf : ndarray, shape (N, N)
+        Target unitary.
+    m :
+        Sup-norm budget.
+    n_starts :
+        Number of starts, including the two constant trajectories ``+-m``.
+    seed :
+        Seed for random starts.
+    maxiter :
+        L-BFGS-B iteration limit per start.
+    starts :
+        ``"legacy"``: the two constant trajectories plus uniform random
+        interior points. ``"mixed"``: half the random points replaced by
+        random sign trajectories ``m * (+-1, ..., +-1)``.
+
+    Returns
+    -------
+    F_min : float
+        Smallest fidelity found.
+    delta : ndarray, shape (tau,)
+        Trajectory attaining it.
+    nfev : int
+        Fidelity evaluations inside the search.
     """
     tau = len(H_list)
     rng = np.random.default_rng(seed)
@@ -162,6 +188,7 @@ def adversarial_fidelity(
 
     best_F = np.inf
     best_delta = np.zeros(tau)
+    nfev = 0
     start_list = [m * np.ones(tau), -m * np.ones(tau)]
     n_rand = max(n_starts - 2, 0)
     if starts == "mixed":
@@ -180,33 +207,33 @@ def adversarial_fidelity(
             bounds=[(-m, m)] * tau,
             options={"maxiter": maxiter},
         )
+        nfev += int(getattr(res, "nfev", 0) or 0)
         if res.fun < best_F:
             best_F = float(res.fun)
             best_delta = np.asarray(res.x)
-    return best_F, best_delta
+    return best_F, best_delta, nfev
 
 
 @dataclass
 class TVBracket:
-    """Bracket around the uniform time-varying margin ``M_tv``.
+    """Bracket ``r0 <= M_tv <= m_adv`` on the uniform time-varying margin.
 
-    ``r0 <= M_tv <= m_adv``: ``r0`` is certified (Theorem tv); ``m_adv`` is a
-    sup-norm budget at which the adversary produced ``F < F_T`` (empirical,
-    an upper bound on the true worst-case margin, and not necessarily the
-    least such budget -- the inner minimisation is a heuristic local search
-    and the bisection assumes a monotonicity it cannot guarantee).
-    ``F_at_adv`` is the violating fidelity found there.
-
-    The name is ``m_adv`` and not ``m_ub`` on purpose, here as in the
-    manuscript: ``M_upper`` is the certified threshold bracket of
-    Algorithm 1, and an "upper bound" spelling made this heuristic witness
-    read as the same kind of object.
-
-    ``delta_adv`` is the violating trajectory itself, one value per
-    interval, so the witness can be re-evaluated through an independent
-    propagator route rather than trusted on the search's own arithmetic.
-    It is ``None`` exactly when no violation was found, which is also the
-    case in which the entry is not a witness.
+    Attributes
+    ----------
+    r0 : float
+        Certified lower end.
+    m_adv : float
+        Sup-norm budget at which the adversary found ``F < F_T``; a heuristic
+        search result (an evaluated witness, not a certified bound, and not
+        necessarily the least violating budget). If no violation was found it
+        is the search ceiling and not a witness.
+    F_at_adv : float
+        Fidelity of the violating trajectory (or smallest fidelity seen).
+    n_evals : int
+        Fidelity evaluations inside the adversarial searches.
+    delta_adv : ndarray, shape (tau,) or None
+        Violating trajectory, for independent re-evaluation; ``None`` when
+        no violation was found.
     """
 
     r0: float
@@ -226,41 +253,77 @@ def adversarial_upper_bound(
     m_hi: float,
     rel_tol: float = 1e-2,
     seed: Optional[int] = None,
+    n_starts: int = 4,
+    starts: str = "legacy",
+    maxiter: int = 200,
 ) -> TVBracket:
-    """Bracket ``M_tv`` by bisection on the adversary's sup-norm budget.
+    """Bracket M_tv by bisection on the adversary's sup-norm budget.
 
-    Starts from ``[r0, m_hi]`` and returns the refined bracket. ``r0`` is a
-    certified lower end. ``m_hi`` is a search ceiling and not a bound:
-    the theory orders ``r0 <= M_tv <= M_const`` and ``M <= M_const``, which
-    says nothing about ``M`` against ``M_tv``, so a multiple of the constant
-    margin is a heuristic starting point that becomes an upper witness only
-    once a violating trajectory is exhibited at it.
+    Parameters
+    ----------
+    H_list, Hhat_list : lists of tau ndarrays, shape (N, N)
+        Nominal interval Hamiltonians and structures.
+    dt :
+        Interval length Delta.
+    Uf : ndarray, shape (N, N)
+        Target unitary.
+    FT :
+        Fidelity threshold F_T.
+    r0 :
+        Certified lower end (e.g. r_0 or r_FS).
+    m_hi :
+        Search ceiling (heuristic, not a bound).
+    rel_tol :
+        Stop when ``(hi - lo)/hi <= rel_tol``.
+    seed :
+        Seed for the adversarial starts.
+    n_starts, starts, maxiter :
+        Passed to :func:`adversarial_fidelity`.
 
-    If the adversary never violates the threshold at ``m_hi``, the bracket
-    is returned unrefined with ``m_adv = m_hi`` and ``F_at_adv`` the
-    smallest fidelity seen; that entry is not a witness, and the caller must
-    treat it as such.
+    Returns
+    -------
+    TVBracket
+        If no violation is found at ``m_hi``, returned unrefined with
+        ``m_adv = m_hi`` and ``delta_adv = None`` (not a witness).
     """
     lo, hi = r0, m_hi
-    F_hi, d_hi = adversarial_fidelity(H_list, Hhat_list, dt, Uf, hi, seed=seed)
-    n = 1
+    nfev = 0
+    F_hi, d_hi, n_hi = adversarial_fidelity(
+        H_list,
+        Hhat_list,
+        dt,
+        Uf,
+        hi,
+        n_starts=n_starts,
+        seed=seed,
+        maxiter=maxiter,
+        starts=starts,
+    )
+    nfev += n_hi
     if F_hi >= FT:
-        # No violation at the ceiling, so there is no witness to retain.
-        return TVBracket(r0=r0, m_adv=hi, F_at_adv=F_hi, n_evals=n)
+        return TVBracket(r0=r0, m_adv=hi, F_at_adv=F_hi, n_evals=nfev)
     F_at, d_at = F_hi, d_hi
     while (hi - lo) / max(hi, 1e-300) > rel_tol:
         mid = 0.5 * (lo + hi)
-        F_mid, d_mid = adversarial_fidelity(H_list, Hhat_list, dt, Uf, mid, seed=seed)
-        n += 1
+        F_mid, d_mid, n_mid = adversarial_fidelity(
+            H_list,
+            Hhat_list,
+            dt,
+            Uf,
+            mid,
+            n_starts=n_starts,
+            seed=seed,
+            maxiter=maxiter,
+            starts=starts,
+        )
+        nfev += n_mid
         if F_mid < FT:
-            # The upper end moves only to a budget at which a
-            # violating trajectory was exhibited, so d_at always attaches
-            # to the returned m_adv.
+            # hi moves only to a budget with an exhibited violation.
             hi, F_at, d_at = mid, F_mid, d_mid
         else:
             lo = mid
     return TVBracket(
-        r0=r0, m_adv=hi, F_at_adv=F_at, n_evals=n, delta_adv=np.asarray(d_at)
+        r0=r0, m_adv=hi, F_at_adv=F_at, n_evals=nfev, delta_adv=np.asarray(d_at)
     )
 
 
@@ -271,17 +334,28 @@ def tv_bracket(*args, **kwargs) -> TVBracket:
 
 @dataclass
 class FSMargin:
-    """Fubini-Study trajectory certificate.
+    """Choi-Fubini-Study trajectory certificate.
 
-    ``r_fs`` certifies every measurable trajectory
-    ``||delta||_inf <= r_fs`` (Theorem fs of the paper); ``r`` is
-    ``max(r0, r_fs)`` when the first-order radius ``r0`` is supplied
-    (both are valid certificates, and ``r_fs >= r0`` holds by the
-    dominance theorem whenever both use the same structure).
-    ``speed`` is the exact Choi-state Fubini-Study path length per unit
-    ``||delta||_inf``: ``dt sum_k ||Hhatbar^(k)||_F / sqrt(N)`` with
-    ``Hhatbar`` the traceless part.  ``speed_halfspread`` is the weaker
-    half-spread constant we retain for diagnostics.
+    Attributes
+    ----------
+    r_fs : float
+        r_FS: every measurable trajectory with ``||delta||_inf <= r_fs``
+        keeps ``F >= F_T``.
+    r0 : float
+        Lipschitz radius r_0 as supplied (0 if not).
+    r : float
+        ``max(r0, r_fs)``.
+    speed : float
+        Path-length constant ``s = Delta sum_k ||Hbar^(k)||_F / sqrt(N)``.
+    theta_0 : float
+        ``arccos F0``.
+    theta_T : float
+        ``arccos F_T``.
+    F0 : float
+        Nominal fidelity.
+    speed_halfspread : float
+        Weaker constant ``Delta sum_k ||Hhat^(k)||_c`` from the half spread
+        ||X||_c, for diagnostics.
     """
 
     r_fs: float
@@ -309,39 +383,27 @@ def fs_margin(
     FT: float,
     r0: float = 0.0,
 ) -> FSMargin:
-    """Closed-form uniform time-varying margin through the Fubini-Study angle.
+    """Choi-Fubini-Study radius ``r_FS = (arccos F_T - theta_0) / s`` for one structure.
 
-    The perturbed propagator relative to the nominal one,
-    ``W(t) = U_S(t)' U(t)``, obeys ``dW/dt = -i delta(t) Htil(t) W``
-    exactly.  The normalised Choi state of ``W`` remains maximally
-    entangled, so its Fubini-Study speed is not merely bounded but
-    EXACT: the energy variance of ``G = delta Htil`` in that state is
-    ``Tr(Gbar^2)/N`` with ``Gbar`` the traceless part, whence
+    ``s = Delta sum_k ||Hbar^(k)||_F / sqrt(N)`` with ``Hbar`` the traceless
+    part; ``r_FS = inf`` if ``s = 0``.
 
-        v_FS(t) = |delta(t)| ||Hhatbar^(k)||_F / sqrt(N)
+    Parameters
+    ----------
+    Hhat_list : list of tau ndarrays, shape (N, N)
+        Structure on each interval.
+    dt :
+        Interval length Delta.
+    F0 :
+        Nominal fidelity; ``FT < F0 <= 1``.
+    FT :
+        Fidelity threshold F_T, ``0 < FT <= 1``.
+    r0 :
+        Optional Lipschitz radius r_0 to combine into ``r``.
 
-    on interval ``k`` (Frobenius norm and trace are invariant under the
-    isospectral conjugation).  With ``theta(U, V) = arccos(|Tr(U'V)|/N)``
-    the Fubini-Study angle (a metric, cf. the nominal-error absorption
-    lemma), the path-length bound and the triangle inequality give, for
-    every measurable trajectory with ``||delta||_inf <= m``,
-
-        theta(Uf, U(T)) <= theta_0 + m s,
-        s = dt sum_k ||Hhatbar^(k)||_F / sqrt(N),
-
-    hence ``F(delta) >= cos(min(theta_0 + m s, pi/2))`` and the
-    certified radius
-
-        r_fs = (arccos FT - arccos F0) / s.
-
-    Exact closed form: no sampling, no expansion; identity components
-    of the structure (global phase) contribute exactly zero; the
-    nominal deficit enters as the angle ``theta_0 = arccos F0``, the
-    same mechanism as the angular absorption of the time-bandwidth
-    comparison.  Dominance: ``r_fs >= r0`` always, since
-    ``theta_T - theta_0 >= (F0 - FT)/sqrt(1 - FT^2)`` and
-    ``||Hhatbar||_F <= ||Hhat||_F`` while ``L = B_T C`` charges
-    ``sqrt((1 - FT^2)/N) dt sum_k ||Hhat^(k)||_F``.
+    Returns
+    -------
+    FSMargin
     """
     if not (0.0 < FT <= 1.0) or not (0.0 < F0 <= 1.0):
         raise ValueError("Require 0 < FT, F0 <= 1")
@@ -367,25 +429,22 @@ def fs_margin(
 
 
 def toggling_frame_integral(H_list: HList, dHhat_list: HList, dt: float) -> Array:
-    """``int_0^{t_f} U_S(t)' dHbar(t) U_S(t) dt`` along the nominal evolution.
+    """Toggling-frame integral ``int_0^{t_f} U_S(t)' Hbar(t) U_S(t) dt`` of a structure.
 
-    First-order response of the propagator to a *constant* offset of
-    one structure is this integral: a coherent sum over the gate in the
-    toggling frame, which a well-shaped pulse can shrink by
-    cancellation between intervals. The Frobenius norm of that integral is therefore the
-    quantity a static robustification objective is implicitly driving
-    down, and it is not what the free path-length certificates charge --
-    they charge ``int ||dHbar(t)|| dt``, which cancellation cannot reduce.
-    Recording both separates "the pulse arranged cancellation" from "the
-    pulse used more amplitude".
+    Exact for piecewise-constant Hamiltonians (eigenbasis divided differences).
 
-    Exact for piecewise-constant controls. On interval ``k`` with
-    ``H^(k) = V L V'``, the inner integral is a divided difference in the
-    eigenbasis: element ``(a, b)`` of ``V' dHbar V`` picks up
-    ``int_0^dt exp(1j (L_a - L_b) s) ds``, evaluated as
-    ``dt exp(1j X) sinc(X)`` with ``X = dt (L_a - L_b)/2``, which is
-    stable because the exponent is purely imaginary and only ``X == 0``
-    needs masking.
+    Parameters
+    ----------
+    H_list : list of tau ndarrays, shape (N, N)
+        Nominal interval Hamiltonians.
+    dHhat_list : list of tau ndarrays, shape (N, N)
+        Structure on each interval; its traceless part is used.
+    dt :
+        Interval length Delta.
+
+    Returns
+    -------
+    ndarray, shape (N, N)
     """
     if len(H_list) != len(dHhat_list):
         raise ValueError("H_list and dHhat_list must have the same length")
@@ -412,21 +471,30 @@ def fs_margin_joint(
     F0: float,
     FT: float,
 ) -> tuple:
-    """Joint trajectory certificate for ``p`` structures through the exact
-    Choi speed.
+    """Joint Choi-Fubini-Study trajectory certificate for p structures.
 
-    On interval ``k`` the speed of the combined generator
-    ``G = sum_j delta_j Htil_j`` is
-    ``sqrt(delta^T Q^(k) delta)`` with Gram matrix
-    ``Q^(k)_ij = Tr(Hhatbar_i^(k) Hhatbar_j^(k)) / N`` (invariant under
-    the common conjugation).  For box bounds ``|delta_j(t)| <= m_j``
-    the worst case over the box is attained at a sign vertex (convex
-    maximisation), enumerated exactly.  Returns
-    ``(ell(m), certified)`` as a callable path-length gauge
-    ``ell(m) = dt sum_k max_sigma sqrt((sigma m)^T Q^(k) (sigma m))``
-    together with the certificate: every measurable trajectory with
-    ``|delta_j(t)| <= m_j`` and ``ell(m) <= arccos FT - arccos F0``
-    keeps ``F >= FT``.
+    Every measurable trajectory with ``|delta_j(t)| <= m_j`` and
+    ``ell(m) <= budget`` keeps ``F >= F_T``, where ``ell`` is the box bound
+    of the path gauge ``Delta sum_k sqrt(x^T Q^(k) x)``.
+
+    Parameters
+    ----------
+    Hhat_lists : sequence of p lists of tau ndarrays, shape (N, N)
+        Per-structure, per-interval structures.
+    dt :
+        Interval length Delta.
+    F0 :
+        Nominal fidelity.
+    FT :
+        Fidelity threshold F_T.
+
+    Returns
+    -------
+    ell : callable
+        ``ell(m)`` for box half-widths ``m`` of shape (p,)
+        (``PathGauge.C_box``).
+    budget : float
+        ``arccos F_T - theta_0``.
     """
     gauge = PathGauge(
         grams=interval_grams(Hhat_lists, make_traceless=True, normalise=True), dt=dt

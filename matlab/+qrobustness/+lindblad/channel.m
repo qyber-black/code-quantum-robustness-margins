@@ -6,8 +6,12 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function S = channel(G_list, dt)
-%CHANNEL Ordered product of piecewise-constant Lindblad propagators. MATLAB counterpart of
-% python/src/qrobustness/lindblad.py:channel.
+%CHANNEL Ordered product of the piecewise-constant Lindblad propagators.
+%   G_list - cell array of interval generators (superoperators)
+%   dt     - interval length
+%   S      - expm(dt G^(tau)) * ... * expm(dt G^(1))
+%
+%   Peer of python/src/qrobustness/lindblad.py:channel.
 
     if isempty(G_list)
         error('qrobustness:lindblad:channel', 'G_list must not be empty.');

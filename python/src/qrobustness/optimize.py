@@ -5,7 +5,12 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Fidelity-maximising controller synthesis (GRAPE plus quasi-Newton)."""
+"""Gate-fidelity maximisation for two-control piecewise-constant controllers.
+
+The module packs the control vector, returns the gate fidelity with its
+GRAPE gradient, and synthesises a controller by L-BFGS-B from a random or
+a given start.
+"""
 
 from __future__ import annotations
 
@@ -31,7 +36,18 @@ Array = np.ndarray
 
 
 def pack_controls(u1: Array, u2: Array) -> Array:
-    """Interleave (u1_k, u2_k) so as to match CSV / load_controllers Fortran reshape."""
+    """Interleave two control arrays into one vector (u1_1, u2_1, u1_2, u2_2, ...).
+
+    Parameters
+    ----------
+    u1, u2 : (tau,) arrays
+        Control amplitudes per interval.
+
+    Returns
+    -------
+    (2 tau,) array
+        Packed vector, column-major as read by ``load_controllers``.
+    """
     u1 = np.asarray(u1, dtype=float).ravel()
     u2 = np.asarray(u2, dtype=float).ravel()
     if u1.size != u2.size:
@@ -40,10 +56,19 @@ def pack_controls(u1: Array, u2: Array) -> Array:
 
 
 def unpack_controls(x: Array, tau: int) -> Tuple[Array, Array]:
-    """Split a packed control vector back into the two amplitude arrays.
+    """Split a packed control vector into the two amplitude arrays.
 
-    Column-major, matching the MATLAB peer's ``reshape(x, 2, tau)``, so both
-    engines read the same controller files.
+    Parameters
+    ----------
+    x : (2 tau,) array
+        Packed vector as produced by ``pack_controls``.
+    tau : int
+        Number of intervals.
+
+    Returns
+    -------
+    u1, u2 : (tau,) arrays
+        Control amplitudes per interval.
     """
     u = np.asarray(x, dtype=float).ravel().reshape((2, tau), order="F")
     return u[0].copy(), u[1].copy()
@@ -61,11 +86,29 @@ def fidelity_and_gradient(
     *,
     method: str = "exact",
 ) -> Tuple[float, Array, Array]:
-    r"""Gate fidelity and the GRAPE gradients \partial F/\partial u_1, \partial F/\partial u_2.
+    """Gate fidelity F and its gradients with respect to both control arrays.
 
-    method='exact' (default) uses one eigendecomposition per interval for the
-    propagator and both control derivatives; 'quadrature' uses Gauss-Legendre
-    with n_quad nodes.  n_quad is unused under 'exact'.
+    Parameters
+    ----------
+    H0, H1, H2 : (N, N) arrays
+        Drift and the two control Hamiltonians.
+    u1, u2 : (tau,) arrays
+        Control amplitudes per interval.
+    Uf : (N, N) array
+        Target gate.
+    dt : float
+        Interval length.
+    n_quad : int
+        Gauss-Legendre nodes for ``method='quadrature'``; unused for ``'exact'``.
+    method : str
+        ``'exact'`` (one eigendecomposition per interval) or ``'quadrature'``.
+
+    Returns
+    -------
+    F : float
+        Gate fidelity |tr(Uf^dag U)|/N; must be positive.
+    g1, g2 : (tau,) arrays
+        dF/du1_k and dF/du2_k.
     """
     if method not in DU_METHODS:
         raise ValueError(f"Unknown method={method!r}; expected one of {DU_METHODS}")
@@ -122,11 +165,20 @@ def fidelity_and_gradient(
 
 @dataclass
 class OptimizeResult:
-    """One synthesis run: the controls found and how the optimiser ended.
+    """Result of one synthesis run.
 
-    ``fid_init`` is the fidelity at the random start, kept so a run can be
-    distinguished from a lucky initialisation, and ``success``/``message`` are the
-    optimiser's own verdict rather than an inference from the fidelity.
+    Attributes
+    ----------
+    u1, u2 : (tau,) arrays
+        Optimised controls.
+    fid, error : float
+        Final gate fidelity (clamped to [0, 1]) and 1 - fid.
+    fid_init : float
+        Fidelity at the starting controls.
+    n_iter : int
+        Optimiser iterations.
+    success, message :
+        The optimiser's own termination status and message.
     """
 
     u1: Array
@@ -155,7 +207,33 @@ def optimize_controller(
     maxiter: int = 500,
     ftol: float = 1e-12,
 ) -> OptimizeResult:
-    """Maximise gate fidelity via L-BFGS-B with analytic GRAPE gradient."""
+    """Maximise the gate fidelity by L-BFGS-B, using the analytic GRAPE gradient.
+
+    Parameters
+    ----------
+    H0, H1, H2 : (N, N) arrays
+        Drift and the two control Hamiltonians.
+    Uf : (N, N) array
+        Target gate.
+    tf : float
+        Gate time T; the interval length is tf/tau.
+    tau : int
+        Number of intervals.
+    u1_init, u2_init : (tau,) arrays, optional
+        Starting controls; drawn from N(0, sigma^2) when omitted.
+    sigma : float
+        Standard deviation of random starting controls.
+    seed : int, optional
+        Seed for the random start.
+    n_quad, method :
+        Passed to ``fidelity_and_gradient``.
+    maxiter, ftol :
+        L-BFGS-B options.
+
+    Returns
+    -------
+    OptimizeResult
+    """
     dt = tf / tau
     rng = np.random.default_rng(seed)
     if u1_init is None:
@@ -177,7 +255,6 @@ def optimize_controller(
         F, g1, g2 = fidelity_and_gradient(
             H0, H1, H2, u1, u2, Uf, dt, n_quad=n_quad, method=method
         )
-        # minimise error = 1 - F
         return 1.0 - F, -pack_controls(g1, g2)
 
     res = minimize(

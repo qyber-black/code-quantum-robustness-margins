@@ -1,6 +1,5 @@
 function run_smoke_case_study()
-%RUN_SMOKE_CASE_STUDY Quick paper-driver smoke (2 controllers, no heavy sweeps). Writes under build/smoke/ so it does not clobber
-% paper artefacts.
+%RUN_SMOKE_CASE_STUDY Run run_lipschitz_margin_case_study on 2 controllers without sweeps, writing to build/smoke/.
     this_dir = fileparts(mfilename('fullpath'));
     root = fileparts(fileparts(this_dir));
     smoke = fullfile(root, 'build', 'smoke');

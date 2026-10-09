@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import ast
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -69,3 +70,20 @@ def test_paper_driver_map_matches_the_makefile():
         "scripts/_paper.py DRIVERS disagrees with the Makefile "
         f"(file: mapped -> actual): {wrong}"
     )
+
+
+def test_bench_and_theorem_help_name_the_new_options():
+    bench = subprocess.run(
+        [sys.executable, str(ROOT / "scripts/bench_margin_solvers.py"), "--help"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    theorem = subprocess.run(
+        [sys.executable, str(ROOT / "scripts/run_theorem_verification.py"), "--help"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert "--out" in bench.stdout
+    assert "Numerical verification" in theorem.stdout

@@ -8,141 +8,94 @@
 >
 > SPDX-License-Identifier: AGPL-3.0-or-later
 
-Notable changes to this project are recorded here. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
+Notable changes to this project are listed here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version numbers follow
 [semantic versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.1.0]
 
-## [1.1.0] - 2026-09-05
-
-Minor release. The toolbox now exports the extended certificate library --
-the multiparameter, trajectory, open-system and comparison-bound layers --
-rather than leaving it reachable only as submodules, and the MATLAB/Octave
-peers gain the trajectory uncertainty class. Several certificates were
-wrong or over-conservative and are corrected; where a published number moves,
-it is said so below. Some result-file columns are renamed, which is the
-only change that can break a reader of the CSVs.
-
-### Changed
-
-- **Result columns renamed.** An `_ub` suffix was used for two different
-  kinds of quantity, so the name hid which one a column held. The
-  adversarial witness -- a budget at which a violating trajectory was
-  found, not a bound anything proves -- is now `m_adv` (`madv_X1`,
-  `madv_X2`); the certified upper end of a margin bracket is now
-  `M_upper` (`Mupper_+e1`, `M_gamma_upper`). `TVBracket` fields follow
-  (`m_adv`, `F_at_adv`). Existing CSVs in `results/` carry the new headers.
-- **Cost is reported in fidelity evaluations, not seconds.** Wall-clock
-  timings are no longer recorded anywhere: they moved by a factor of two
-  between runs on the same machine, which made `tab_scaling` irreproducible.
-  The evaluation count is deterministic, and the geometric certificate takes
-  zero off-nominal evaluations, which is the stronger statement anyway.
-- **Reference threshold crossings are reported as the lower end of the
-  final bracket** -- a value at which the fidelity was evaluated and met the
-  threshold. It is therefore a guaranteed safe point and a lower bound on
-  the crossing, where the bracket midpoint would be an estimate; every
-  conservatism ratio quoted against one is a lower bound in the same sense.
-- **BLAS threads are pinned for every driver.** Measured on the
-  61-controller sweeps: `run_open_system_case_study` 3h30m to 1m17s,
-  `run_open_amplitude_damping` 3h52m to 4m53s. Results move by at most
-  5.6e-14.
-- `check-*` targets are now `reproduce-*`, and `check-*` means the
-  falsifiable property checks.
-- MATLAB `dU_dmu_quad` is renamed `dU_dmu_integral`, matching the reference.
-- Acceptance tolerances in `verify` are named in three tiers, and no
-  literal tolerance remains at a call site in either language.
+Not released. Changes since 1.0.2.
 
 ### Added
 
-- The package exports the extended library alongside the paper-1 API:
-  `lengthspace`, `multiparam`, `timevarying`, `lindblad`, `synthesis`,
-  `berberich` and `verify`, taking `__all__` from 62 to 107 names.
-  `berberich.margin` is exported as `berberich_margin`, mirroring
-  `kosut_margin`, so the package never exposes an ambiguous `margin`.
-- The MATLAB/Octave peers gained the trajectory uncertainty class:
-  `kosut.select_rates`, the `w_avg_traj` / `w_dev_traj` measures, and an
-  `uncertainty` argument on `kosut.margin`, `time_bandwidth` and
-  `fidelity_bound_at`, matching the reference to ten significant digits.
-- `lindblad.rate_lipschitz` (both engines), the constant-rate case of
-  `open_structure_constants`, and `lindblad.local_ops` /
-  `local_dephasing_ops`, which had been copied into five drivers.
-- `make check-xQRM-synth`: the certificate harness run on freshly
-  synthesised controllers, which the frozen ensemble cannot test. It
-  immediately found that every certificate assumes nominal fidelity above
-  the threshold, and that the harness raised instead of skipping when it
-  was not.
-- `make rebase-legacy-reference`, which rebases the regression reference in
-  `data/legacy/` on the current margins table. Needed because the drivers
-  now refine the certified bracket, which lifts every margin by about 5e-4
-  relative, and the pre-toolbox reference could no longer be matched.
-- `make lint` and `make lint-matlab`, running exactly what CI runs: `ruff`
-  for the reference and `miss_hit` for the peers.
-- `make test` now runs every stage -- lint, unit tests, synthesis smoke and
-  cross-engine parity -- whatever the ones before it did, and ends with a
-  single tally of passed, failed and skipped across all of them. Stopping at
-  the first failure said only that something was broken, not how much. The
-  stages are targets in their own right (`test-lint`, `test-unit`,
-  `test-synth`, `test-parity`), and the MATLAB/Octave suite likewise runs
-  all its tests and reports them together instead of raising on the first.
-- `help qrobustness` and `help qrobustness.<subpackage>`: every MATLAB
-  package carries a `Contents.m`, kept in step with the file list by a test.
-- Tests that the documentation stays usable: every `make` command named in
-  the README, in `docs/` or in a test's failure advice is a target that
-  exists; every document is reachable from the README; every relative link
-  resolves; every source file carries its SPDX header.
+- Certificate layers `lengthspace`, `multiparam`, `timevarying`, `lindblad`,
+  `synthesis`, `berberich` and `verify`, exported with the QRM API.
+  `berberich_margin` sits beside `kosut_margin`. `states` and `openstates`
+  are submodules only.
+- `lindblad.rate_lipschitz`, `local_ops`, `local_dephasing_ops`,
+  `adversarial_fidelity` and `toggling_frame_integral`.
+- MATLAB/Octave peers, including the Kosut trajectory class and the state
+  certificates (`states_parity.json`).
+- `hamiltonian_part` and `hamiltonian_dnorm`: a Rump-verified bound. The
+  diamond norm of `-1j[B, .]` is `lambda_max(B) - lambda_min(B)`, with no
+  SDP. `open_speed(..., exact_hamiltonian=True)` uses it.
+- xQRM drivers for state examples, continuation checks and the bracket audit.
+  `run_robust_vs_nominal` records per-structure upper brackets, pulse areas
+  and angle budgets.
+- `MarginResult.n_evals_minus` and `n_evals_plus`.
+- `make install`, `test`, `run`, `verify` and `sync` replace `venv`,
+  `paper-*`, `reproduce-*` and `check-*`. Those names are gone. `run` no
+  longer copies artefacts into the paper. `clean`, `distclean` and
+  `maintainer-clean` remain. `test` lints, then runs the unit suite,
+  synthesis smoke and parity; `ENGINE=` selects one engine.
+- `make verify-xQRM-synth` runs the certificate harness on a freshly
+  synthesised ensemble.
+- Each MATLAB package has a `Contents.m`. Tests check that every documented
+  `make` target exists, every document is linked, every relative link
+  resolves, and every source file carries its SPDX header.
+
+### Changed
+
+- CSV columns: an adversarial witness is `m_adv` (`madv_*`); the certified
+  upper end of a bracket is `M_upper` (`Mupper_*`, `M_gamma_upper`).
+  `TVBracket` fields are `m_adv` and `F_at_adv`. Existing CSVs use the new
+  headers.
+- Cost is a fidelity-evaluation count. The bracket audit also records
+  wall-clock time on a named machine; its `t_*` columns are the only ones
+  `verify` skips.
+- A reference threshold crossing is the lower end of the final bracket, a
+  point that was evaluated and met the threshold. A ratio quoted against it
+  is a lower bound.
+- BLAS threads are pinned. Closed-system drivers use `margin_tol=1e-8`.
+- MATLAB `dU_dmu_quad` is `dU_dmu_integral`.
+- Docs are `docs/api.md`, `docs/layout.md` and `docs/verification.md`.
+- With `eval_tol = 0` a point is safe when `F >= F_T`. With `eval_tol > 0`
+  it is safe only when `F > F_T + eval_tol`. Continuation and bracket use
+  that test. `TVBracket.n_evals` counts fidelity evaluations.
+  `adversarial_upper_bound` takes `n_starts`, `starts` and `maxiter`.
+  Kosut samples per cycle come from the grid left after `n_dev_max`.
+  `open_structure_constants` takes one `dt` per interval. The trajectory
+  check includes the perturbed propagator in its tolerance.
+  `state_angular_margin` uses `atan2`. Plot ranges widen only outside the
+  QRM limits. `bench_margin_solvers.py` has `--out`.
 
 ### Fixed
 
-- MATLAB `iterative_margin` lacked the certified-promotion rule, so with a
-  nonmonotone fidelity it could report an *optimistic* margin, against the
-  guarantee in its own header. Ported from the reference; the shipped
+- MATLAB `iterative_margin` promotes only a certified safe point. With a
+  nonmonotone fidelity it could report an optimistic margin. The shipped
   ensemble is unaffected.
-- `verify.fidelity_cross_check` compared a computation against itself. It
-  promised two independent propagator routes, but `core.propagator` already
-  is the `expm` loop and the second route repeated it, so the discrepancy
-  was identically zero and the returned allowance was the unitarity defect
-  alone. The second route now uses the eigendecomposition path.
-- A `CheckReport` that ran no probe reported `passed=True`, since
-  `min_slack` stays at `+inf` when every probe is skipped. It now requires
-  `n_checks > 0`.
-- `run_robust_vs_nominal` computed closed-system margins at
-  `margin_tol=1e-6`, the open-system value, where every other closed-system
-  driver uses `1e-8`, so its margins were certified to a looser bracket than
-  the ones they are compared against.
-- `lengthspace.traceless` was a second, unvalidated copy of
-  `core.traceless`, and it was the one the joint and angular gauges used;
-  the two engines also disagreed on what counts as Hermitian. Both now use
-  the reference's validating definition and elementwise test.
-- `lengthspace.refine` validated nothing while its peer checked both
-  `q >= 1` and equal list lengths; unequal inputs returned lists that no
-  longer corresponded, so a caller could propagate a wrong grid rather than
-  fail.
-- MATLAB `kendall_tau_b` had the tie term of the asymptotic variance at a
-  quarter of SciPy's, so any tie made the p-value too small.
-- MATLAB `run_open_system_case_study` took the Lipschitz constant from
-  controller 1 and applied it to all. Latent only because the shipped
-  ensemble is uniformly `t_f = 15`.
-- MATLAB `log10_axis` treated any axis name that was not `'y'` as `'x'`, so
-  a typo silently formatted the wrong axis; it now raises, as the reference
-  does.
-- `berberich.margin` returned a silent `nan` for an out-of-range
-  `nominal_error` where `kosut.effective_threshold` rejects it.
-- Three production `assert`s, which `python -O` strips, including the
-  analytic cross-check that is the point of `run_single_qubit_example`.
-- `run_cnot_case_study` and `run_scaling_example` wrote their synthesised
-  ensembles into `data/` regardless of `--out`, defeating the guard that
-  protects the reference tree; `run_slice_scan` accepted `--FT` and then
-  read the 0.999 table.
-- `lindblad.generator` and `plotting.plot_fidelity_error_sweeps` zipped
-  independently supplied sequences without a length check, silently dropping
-  a dissipator or a curve.
-- `tv_bracket_<FT>.csv`, `kosut_comparison_<FT>.csv`,
-  `kosut_comparison_<FT>_angular_tv.csv` and `validity_<FT>_tv.csv` were
-  read by the paper but produced by no Make recipe, so they were never
-  regenerated; `validity_<FT>_tv.csv` still carried a schema three weeks out
-  of date. `make reproduce` could not pass at all, because it compared
-  wall-clock columns.
+- `eval_tol` applies to the continuation and to the bracket. A zero angular
+  gauge is unchanged dynamics. MATLAB `iterative_margin` reports
+  `unresolved` and `n_unresolved`.
+- The fidelity cross-check uses the eigendecomposition route. An empty
+  `CheckReport` does not pass. Each bracket point is evaluated once.
+- Gauges use `core.traceless`. `refine` checks `q` and the list lengths.
+  MATLAB `kendall_tau_b` matches SciPy. The MATLAB open-system Lipschitz
+  constant is taken per controller.
+- `run_cnot_case_study` and `run_scaling_example` honour `--out`.
+  `run_slice_scan` honours `--FT`. The paper CSVs have Make recipes.
+- MATLAB `log10_axis` rejects an unknown axis. `berberich.margin` rejects a
+  bad `nominal_error`, and a systematic margin when the Magnus condition
+  fails. Three production asserts stay present under
+  `python -O`. `lindblad.generator` and `plot_fidelity_error_sweeps` check
+  sequence lengths. The quoted `tab:tvbracket` ranges match the printed
+  table. `__all__` lists `traceless` once.
+
+### Removed
+
+- `docs/theory.md`, `docs/time-bandwidth-bound.md` and
+  `docs/margin-solvers-notes.md`.
+- The `data/legacy/` comparison and `rebase-legacy-reference`.
 
 ## [1.0.2] - 2026-08-03
 

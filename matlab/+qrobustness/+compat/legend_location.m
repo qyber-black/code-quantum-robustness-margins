@@ -1,8 +1,7 @@
 function loc = legend_location()
-%LEGEND_LOCATION Portable 'Location' value for legend. loc = LEGEND_LOCATION() returns 'best' under MATLAB and 'northeast' under
-% Octave, which does not implement 'best' and substitutes 'northeast' with a warning. Requesting the substitute directly gives the
-% same placement
-%   without the warning.
+%LEGEND_LOCATION Portable 'Location' value for legend.
+%   Returns 'best' under MATLAB and 'northeast' under Octave, which does not
+%   implement 'best'.
 
     if qrobustness.compat.is_octave()
         loc = 'northeast';

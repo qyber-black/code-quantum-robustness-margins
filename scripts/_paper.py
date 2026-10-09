@@ -6,14 +6,10 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Shared input handling for the three paper-artefact generators.
+"""Input handling for the gen_paper_xqrm_* generators.
 
-The tables, figures and macros generators each held a private copy of
-this, and those copies had drifted: tables raised a message naming the
-driver that produces the missing file, macros raised a plainer one, and
-figures had lost the existence check altogether, so a missing input
-surfaced as a bare FileNotFoundError that --allow-missing could not
-cover. A single copy is how that stops recurring."""
+Locates results files, reads CSVs, and on a missing input names the driver
+that produces it; --allow-missing skips an artefact instead of failing."""
 
 from __future__ import annotations
 
@@ -23,12 +19,8 @@ from pathlib import Path
 
 import numpy as np
 
-#: Which driver produces each results file. Indexed by filename, not by
-#: results tree: several drivers write into that same tree, so a tree-keyed
-#: map named the wrong driver for at least six inputs -- it directed you to
-#: run_time_bandwidth_bound_comparison.py for fs_validity_0.999.csv, a file which
-#: run_fs_validity.py writes. Acting on that advice leaves the file still
-#: missing. test_paper_driver_map keeps this aligned with the Makefile.
+#: Results file name -> the driver that writes it (several drivers share a
+#: results tree). test_paper_driver_map keeps this aligned with the Makefile.
 DRIVERS = {
     "berberich_comparison_0.999.csv": "run_berberich_comparison.py",
     "budget_sweep_ctrl16_H1.csv": "run_budget_sweep.py",
@@ -49,13 +41,21 @@ DRIVERS = {
     "open_margins_0.999.csv": "run_open_system_case_study.py",
     "dnorm_certificates.csv": "run_dnorm_certificates.py",
     "open_threshold_sweep.csv": "run_open_threshold_sweep.py",
-    # Cohort membership per threshold, recorded beside the sweep by the
-    # same driver: only controllers nominally above that threshold are
-    # eligible for it, and a summary must state how many it covers.
+    # Controllers nominally above each threshold of the sweep.
     "open_threshold_cohort.csv": "run_open_threshold_sweep.py",
     "robust_vs_nominal_0.999.csv": "run_robust_vs_nominal.py",
     "scaling4q_margins_0.999.csv": "run_scaling_example.py",
     "single_qubit_0.999.csv": "run_single_qubit_example.py",
+    "ghz_detuning_0.999.csv": "run_state_examples.py",
+    "tfim_preparation_0.999.csv": "run_state_examples.py",
+    "ghz_dephasing_0.999.csv": "run_state_examples.py",
+    "state_variance_0.999.csv": "run_state_examples.py",
+    "closed_limit.csv": "run_state_examples.py",
+    "crosstalk_0.999.csv": "run_algorithm_tests.py",
+    "rays_0.999.csv": "run_algorithm_tests.py",
+    "brackets_0.999.csv": "run_bracket_audit.py",
+    "timing_0.999.csv": "run_bracket_audit.py",
+    "environment.json": "run_bracket_audit.py",
     "slice_ctrl1_0.999.npz": "run_slice_scan.py",
     "tv_bracket_0.999.csv": "run_multiparameter_case_study.py",
     "validity_0.999.csv": "run_kosut_validity.py",
@@ -109,14 +109,9 @@ def have(path: Path, target: Path | None = None) -> bool:
 def read(path: Path, required: bool = True) -> list:
     """Rows of a results CSV.
 
-    A missing input fails, even under --allow-missing, unless the caller
-    passes ``required=False`` to say it can proceed with no rows. That
-    default is intentional: returning [] unconditionally converted a one-line
-    diagnostic into an IndexError three lines later at every one of the
-    thirty-odd unguarded call sites, because almost all of them index
-    rows[0] or take a median. --allow-missing is respected by have(),
-    which skips a whole artefact and removes its stale target; that is
-    the intended path, and a bare read() is not on it.
+    A missing input fails, even under --allow-missing, unless
+    ``required=False``, in which case [] is returned under --allow-missing.
+    Use have() to skip a whole artefact.
     """
     if not path.exists():
         if _ALLOW_MISSING and not required:

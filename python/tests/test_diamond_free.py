@@ -7,7 +7,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The solver-free diamond norm: an upper bound, and a tight one.
 
-The check that matters is against the ANALYTIC value 2n of the paper's lem:2n, not against cvxpy: agreement with another implementation only shows that the two agree. We use cvxpy as a second opinion where no closed form is available, and there the requirement is one-sided -- the solver-free value must not drop below it by more than the solver's own accuracy, because a robustness constant must over-estimate."""
+The check that matters is against the analytic value 2n of the paper's lem:2n. Agreement with cvxpy only shows that the two implementations agree. Where no closed form is available, cvxpy is a second opinion, and the requirement is one-sided: the solver-free value must not drop below it by more than the solver's own accuracy, because a robustness constant must over-estimate."""
 
 from __future__ import annotations
 
@@ -77,7 +77,7 @@ def test_dominates_the_closed_form_start():
 def test_agrees_with_cvxpy_where_available(seed):
     """Second opinion where no closed form exists: the solver-free value may exceed the SDP optimum but must never drop below it.
 
-    We assert tightness on ``raw``, the floating objective at the repaired feasible point. ``value``/``value_certified`` is that same point bounded upward by Gershgorin discs with the rounding enclosures, which is rigorous and correspondingly looser; the one-sided check below holds for it as well."""
+    Tightness is asserted on ``raw``, the floating objective at the repaired feasible point. ``value``/``value_certified`` is that same point bounded upward by Gershgorin discs with the rounding enclosures, which is rigorous and correspondingly looser. The one-sided check below holds for it as well."""
     cp = pytest.importorskip("cvxpy")  # noqa: F841
     from qrobustness.lindblad import diamond_norm
 

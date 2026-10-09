@@ -6,10 +6,27 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-r"""Full paper case study in Python -> results/lipschitz-margin-python/.
+"""The single-parameter case study on the main ensemble.
 
-Computes margins and \zeta, writes the margins CSV + correlations tex, and paper-style plots
-(including H*_all sweeps when --sweep is set; Makefile always passes --sweep).
+Computes, per controller and structure H0, H1, H2, the iterated margin M
+(and its arms M^- and M^+) and the differential sensitivity zeta_j, the
+correlation table of nominal error, M_j and |zeta_j|, and rank tests of M_j
+against |zeta_j| with a Holm correction.
+
+Options: --FT, --out, --sweep (fidelity-versus-delta sweeps and H*_all.png;
+the Makefile always passes it), --no-plots, --controller-dir (problem9.mat
+and controllers.csv), --max-error.
+
+Writes results/lipschitz-margin-python/ (or --out):
+    margins_table_<FT>.csv (also build/margins_table_<FT>_python.csv):
+        controller, fid, err: instance and nominal fidelity / error.
+        M_<s>, Mm_<s>, Mp_<s>, zeta_<s>: M, M^-, M^+, zeta for s in H0, H1, H2.
+    correlations_<FT>.tex: tabular, Pearson above and Spearman below the
+        diagonal, over err, M_j and |zeta_j|.
+    focal_tests_<FT>.csv: comparison, n, spearman_rho, p_two_sided, p_holm,
+        kendall_tau_b, kendall_p_two_sided, kendall_p_holm.
+    robustness_margins_fid_err.png, robustness_margins_sensitivity.png, and
+        with --sweep H0_all.png, H1_all.png, H2_all.png.
 """
 
 from __future__ import annotations
@@ -51,11 +68,11 @@ OUT_DIR = ROOT / "results/lipschitz-margin-python"
 BUILD = ROOT / "build"
 
 ETA = DEFAULT_ETA
-#: Bracket refinement, matched to the remaining drivers.
+#: Relative bracket tolerance, as in the other drivers.
 MARGIN_TOL = 1e-8
 STRUCTURES = ("H0", "H1", "H2")
-#: Fidelity-vs-delta sweep: slightly past the wider margin arm, on a fixed
-#: grid, with a fallback span for any controller whose margin is degenerate.
+#: Fidelity-vs-delta sweep: slightly past the wider margin arm, with a
+#: fallback span when the margin is zero.
 SWEEP_SPAN_FACTOR = 1.05
 SWEEP_SPAN_FALLBACK = 1e-3
 SWEEP_POINTS = 401
@@ -67,10 +84,7 @@ XLIMS = {
 }
 
 
-#: The three margin-versus-sensitivity comparisons of interest. This paper
-#: reports Table I in descriptive form (Pearson and Spearman); the rank tests below
-#: are a code-level cross-check that the descriptive reading holds, with a
-#: Holm correction across the family so the multiplicity is fixed beforehand.
+#: The three M_j versus |zeta_j| comparisons tested in focal_tests.
 FOCAL_PAIRS = tuple((f"M_H{j}", f"zeta_H{j}") for j in range(3))
 
 
@@ -87,14 +101,8 @@ def holm(pvals: Sequence[float]) -> list[float]:
 
 
 def focal_tests(rows: list[dict]) -> list[dict]:
-    """Rank correlations and two-sided tests for M_j vs |zeta_j|.
-
-    A cross-check, not a paper claim: Table I is reported descriptively.
-    Spearman's rho matches Table I's lower triangle; Kendall's tau_b is the
-    other standard rank statistic and is computed beside it to confirm the
-    reading does not depend on which one is used. Each carries its own Holm
-    correction across the same family of three.
-    """
+    """Spearman rho and Kendall tau_b, with two-sided and Holm-adjusted
+    p-values, for each pair in FOCAL_PAIRS."""
     out = []
     for j, (mkey, zkey) in enumerate(FOCAL_PAIRS):
         M = np.array([r[mkey] for r in rows], dtype=float)
@@ -118,10 +126,9 @@ def focal_tests(rows: list[dict]) -> list[dict]:
 
 
 def write_focal_tests(rows: list[dict], path: Path) -> list[dict]:
-    """Emit the focal inference so the paper prose is generated, not typed by hand."""
+    """Write focal_tests(rows) to path as CSV and return the records."""
     recs = focal_tests(rows)
-    # lineterminator="\n": every other CSV in the tree uses LF, and csv.writer
-    # defaults to CRLF.
+    # LF line endings, as in every other CSV in the tree.
     with path.open("w", newline="") as f:
         w = csv.writer(f, lineterminator="\n")
         w.writerow(
@@ -153,12 +160,10 @@ def write_focal_tests(rows: list[dict], path: Path) -> list[dict]:
 
 
 def write_correlation_tex(rows: list[dict], path: Path) -> None:
-    """Emit Table I: Pearson above the diagonal, Spearman rho below it."""
-    # M_j = min(M_j-, M_j+) is unchanged under reversal of the parameter
-    # coordinate, while zeta_j changes sign, so |zeta_j| remains the
-    # orientation-invariant local comparator: correlating with signed
-    # zeta can hide a relationship by mixing the two signs. This table
-    # hence uses |zeta_j|, matching plot_margins_vs_sensitivity (Fig. 3).
+    """Write the correlation tabular: Pearson above the diagonal, Spearman
+    rho below it."""
+    # |zeta_j|, not zeta_j: M_j is invariant under reversing the parameter
+    # sign while zeta_j changes sign.
     vars_ = ["err", "M_H0", "M_H1", "M_H2", "zeta_H0", "zeta_H1", "zeta_H2"]
     absolute = {"zeta_H0", "zeta_H1", "zeta_H2"}
     labels = [
@@ -178,9 +183,7 @@ def write_correlation_tex(rows: list[dict], path: Path) -> None:
             for v in vars_
         ]
     )
-    # Pearson (upper) / Spearman rho (lower): linear and monotone rank
-    # association placed side by side, both descriptive. Reporting the pair shows a
-    # result is not an artefact of linear scaling alone or of outlying points.
+    # Pearson (upper) and Spearman rho (lower).
     P = np.corrcoef(X, rowvar=False)
 
     n_vars = len(vars_)
@@ -303,7 +306,8 @@ def main() -> None:
     fields = list(rows[0].keys())
     for dest in (out / csv_name, BUILD / f"margins_table_{ft:g}_python.csv"):
         with dest.open("w", newline="") as f:
-            # lineterminator: match the MATLAB peer, which emits LF.
+            # LF line endings, as the MATLAB peer writes.
+
             w = csv.DictWriter(f, fieldnames=fields, lineterminator="\n")
             w.writeheader()
             w.writerows(rows)
@@ -347,6 +351,9 @@ def main() -> None:
                 ft,
                 xlabel=rf"Perturbation strength $\delta_{tag[-1]}$",
                 xlim=XLIMS[tag],
+                # The H0 sweep leaves [1e-7, 1.2e-3]. Keep the limits the
+                # committed QRM figures were drawn with.
+                ylim=(1e-7, 1.2e-3),
                 out_path=out / f"{tag}_all.png",
             )
     print(f"Published paper deliverables to {out}")

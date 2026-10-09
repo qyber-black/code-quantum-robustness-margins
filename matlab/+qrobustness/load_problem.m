@@ -1,10 +1,10 @@
 function problem = load_problem(mat_path)
-%LOAD_PROBLEM Load problem9-style MAT file.
-%   Returns struct with fields H0, H1, H2, Uf, n_qubits, dim.
+%LOAD_PROBLEM Load a problem definition from a MAT file.
+%   mat_path - MAT file holding a struct 'problem' with fields H, UT, N
+%   problem  - struct with fields H0, H1, H2, Uf, n_qubits (the file's N)
+%              and dim = 2^n_qubits
 %
-% problem.N in the MAT file is the qubit count; the Hilbert space dimension is 2^N. Both are returned under unambiguous names.
-%
-%   Peer of python/src/qrobustness/core.py.
+%   Peer of python/src/qrobustness/core.py:load_problem.
 
     if nargin < 1 || isempty(mat_path)
         error('qrobustness:load_problem:Path', 'mat_path is required.');

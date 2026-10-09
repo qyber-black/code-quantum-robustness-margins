@@ -1,71 +1,74 @@
 function result = iterative_margin(fidelity_fn, L, FT, varargin)
-%ITERATIVE_MARGIN Certified / exploratory robustness margin in 1-D.
+%ITERATIVE_MARGIN Robustness margin of a scalar perturbation parameter mu.
 %
-% Calling form: result = qrobustness.iterative_margin(fidelity_fn, L, FT, ...)
+%   result = qrobustness.iterative_margin(fidelity_fn, L, FT, ...)
 %
-% The preferred certified default is method='algorithm1' (Lipschitz + bisection). Lipschitz steps rarely overshoot, so Brent/TOMS748
-% (fzero) polish does not meaningfully cut fidelity evals versus bisection; keep them as optional polish only. Aggressive advance
-% (doubling / newton_probe) can cut evals but drops the full segment certificate unless F is monotone on the ray.
-%   See docs/margin-solvers-notes.md.
+%   Walks from mu0 in both directions until the fidelity F(mu) drops to the
+%   threshold F_T and returns the margin M = min(M_minus, M_plus), a lower
+%   bound on the distance from mu0 to the nearest point with F < F_T.
+%
+%   Inputs:
+%     fidelity_fn - handle mu -> F(mu)
+%     L           - Lipschitz constant of F in mu (e.g. L_j), > 0
+%     FT          - fidelity threshold F_T, with F_T < F(mu0)
 %
 %   Name-value options:
-%     'mu0'               (default 0)
-%     'eta'               (default 1e-6)
-%     'omega'             (default [-Inf, Inf])  domain [mu_min, mu_max]
-%     'k_max'             (default 10000)
-%     'method'            (default 'algorithm1')
-% 'algorithm1' -- paper Alg. 1: Lipschitz plus bisection (default) 'lipschitz_brent' -- Lipschitz plus fzero/Brent polish (full
-% certificate;
-%                                little speed gain when overshoot is rare)
-% 'lipschitz_toms748' -- same as lipschitz_brent in MATLAB (fzero) 'doubling' -- geometric probe beyond Lip radius plus bracket
-% 'newton_probe' -- Newton-sized probe via zeta_fn plus bracket
-%     'root_solver'       (default 'toms748')  'brent'|'toms748'|'bisection'
-% (MATLAB maps brent/toms748 onto fzero; ignored for algorithm1) 'zeta_fn' (default []) required for method='newton_probe'
-% 'return_diagnostics'(default false) add n_evals, n_steps fields 'margin_tol' (default []) if set, certify the margin to this
-%                         relative precision (see ERROR CONTROL below)
-% 'safe_radius_fn' (default []) pluggable rule for a certified safe radius
-%                         r(F); the default [] reproduces the Lipschitz
-%                         surplus rule (F - FT)/L exactly. The Choi-angular
-% rule; qrobustness.multiparam supplies its own.
+%     'mu0'                - nominal parameter value (default 0)
+%     'eta'                - fidelity stopping band (default 1e-6)
+%     'omega'              - domain [mu_min, mu_max] (default [-Inf, Inf])
+%     'k_max'              - evaluated trial points per direction (default 10000)
+%     'method'             - (default 'algorithm1')
+%                            'algorithm1': Lipschitz steps plus bisection
+%                            'lipschitz_brent', 'lipschitz_toms748': Lipschitz
+%                              steps plus fzero polish
+%                            'doubling': geometric probes, then bracket
+%                            'newton_probe': probes sized via zeta_fn, then bracket
+%     'root_solver'        - 'toms748' (default), 'brent' or 'bisection'; brent
+%                            and toms748 both use fzero; ignored for algorithm1
+%     'zeta_fn'            - handle mu -> zeta(mu); required for newton_probe
+%                            (default [])
+%     'return_diagnostics' - add evaluation counts (default false)
+%     'margin_tol'         - if set, refine the bracket [M, M_upper] until
+%                            (M_upper - M)/M <= margin_tol (default [])
+%     'safe_radius_fn'     - handle F -> certified safe radius; default []
+%                            uses (F - F_T)/L
+%     'eval_tol'           - evaluation band (default 0); continuation treats
+%                            a point as safe only above FT + eval_tol, and a
+%                            probe within the band is unresolved
 %
-%   result fields:
-%     M_minus, M_plus, M, converged_minus, converged_plus,
-%     mu_minus, mu_plus, method, certificate,
-% Fields status_minus, status_plus, safeguard_minus, safeguard_plus, M_upper_minus, M_upper_plus, M_upper, margin_uncertainty,
-%     reason_minus, reason_plus
-%     [, n_evals, n_steps]
+%   Output result fields:
+%     M_minus, M_plus, M    - margins below, above mu0 and their minimum
+%     mu_minus, mu_plus     - endpoints reached
+%     converged_minus, converged_plus - false if the iteration limit was
+%                            reached
+%     status_minus, status_plus - stopping rule: 'eta_band',
+%                            'domain_truncated' or 'iteration_limit'
+%     safeguard_minus, safeguard_plus - true if the bisection safeguard fired
+%     method                - method used
+%     certificate           - 'segment' (every point from mu0 to the endpoint
+%                            has F >= F_T; algorithm1, lipschitz_*) or
+%                            'endpoint' (only the endpoint; doubling,
+%                            newton_probe)
+%     M_upper_minus, M_upper_plus, M_upper - upper bounds M_upper (Inf
+%                            without margin_tol)
+%     margin_uncertainty    - M_upper - M (Inf without margin_tol)
+%     reason_minus, reason_plus - margin_tol outcome: 'bracketed' (width at
+%                            tolerance), 'partial' (rigorous, wider than
+%                            tolerance), 'unresolved' (halted at an
+%                            unresolved probe), 'boundary' (domain edge
+%                            reached while safe; M_upper = Inf), 'exhausted'
+%                            (no unsafe point found); 'unknown' without
+%                            margin_tol
+%     n_unresolved          - probes within eval_tol of F_T
+%     n_evals, n_steps      - fidelity evaluations and steps (with
+%                            return_diagnostics)
+%     n_evals_minus, n_evals_plus - evaluations per direction (with
+%                            return_diagnostics)
 %
-% 'status_*' reports which Algorithm 1 stopping rule fired in that direction -- 'eta_band', 'domain_truncated' or 'iteration_limit'
-% -- and is always populated, independently of margin_tol. A 'domain_truncated' result certifies only that the margin is at least
-% the distance to the edge of omega, so it must not be read as a resolved margin; 'converged_*' cannot distinguish the two and is
-% retained for backward compatibility. 'safeguard_*' is true if the bisection safeguard fired. 'reason_*' is a different quantity:
-% the margin_tol bracket outcome.
+%   A 'domain_truncated' status only bounds the margin by the distance to the
+%   edge of omega.
 %
-% In the absence of margin_tol the bracket fields carry sentinels: M_upper* and margin_uncertainty are Inf and reason_* is
-% 'unknown'.
-%
-%   ERROR CONTROL
-% M is always the distance to a point with F >= FT, hence a lower bound on the true margin: the reported margin is conservative and
-% never optimistic.
-%
-% 'eta' is a fidelity band rather than a margin band. The induced uncertainty in mu is ~eta/|zeta|, which grows without bound as
-% zeta -> 0, i.e. exactly for the flat, highly robust controllers of interest. On the paper case study the default eta=1e-6 leaves
-% about 5e-4 relative error in M.
-%
-% Set 'margin_tol' to turn that into a margin statement: the safe/unsafe bracket is refined until (M_upper - M)/M <= margin_tol, so
-% the true margin lies in [M, M_upper]. M itself is tightened in the process. margin_tol=1e-10 costs about 90 extra fidelity
-% evaluations per controller and reaches 1e-10, subject to the fp64 floor.
-%
-% 'certificate' equals 'segment' if every point between mu0 and the endpoint is certified F >= FT (algorithm1, lipschitz_*), and
-% 'endpoint' if only the endpoint is (doubling, newton_probe probe beyond the Lipschitz radius, so a dip below FT in between is not
-% excluded).
-%
-% 'reason_*' equals 'bracketed' (an unsafe point was found and the bracket refined to margin_tol), 'partial' (a rigorous bracket
-% wider than margin_tol, returned when safe-radius continuation stalls below a pointwise-safe sample), 'boundary' (the domain edge
-% was reached while still safe -- the margin is a domain truncation, M_upper = Inf), or 'exhausted'. The set matches the Python
-% reference implementation.
-%
-%   Peer of python/src/qrobustness/core.py.
+%   Peer of python/src/qrobustness/core.py:iterative_margin.
 
     p = inputParser;
     addParameter(p, 'mu0', 0);
@@ -78,7 +81,9 @@ function result = iterative_margin(fidelity_fn, L, FT, varargin)
     addParameter(p, 'return_diagnostics', false);
     addParameter(p, 'margin_tol', []);
     addParameter(p, 'safe_radius_fn', []);
+    addParameter(p, 'eval_tol', 0);
     parse(p, varargin{:});
+    eval_tol = p.Results.eval_tol;
     margin_tol = p.Results.margin_tol;
     mu0 = p.Results.mu0;
     eta = p.Results.eta;
@@ -89,7 +94,7 @@ function result = iterative_margin(fidelity_fn, L, FT, varargin)
     zeta_fn = p.Results.zeta_fn;
     safe_radius_fn = p.Results.safe_radius_fn;
     if isempty(safe_radius_fn)
-        % Default: we reproduce the Lipschitz surplus rule exactly.
+        % Default: the Lipschitz surplus rule, reproduced exactly.
         safe_radius_fn = @(F) (F - FT) / L;
     end
     return_diagnostics = logical(p.Results.return_diagnostics);
@@ -121,10 +126,16 @@ function result = iterative_margin(fidelity_fn, L, FT, varargin)
             'Require FT < F(mu0); got FT=%g, F=%g.', FT, F0);
     end
 
+    % Continuation accepts a point as safe only above the evaluation band.
+    FT_safe = FT + eval_tol;
+    n0 = n_evals;
     [M_minus, conv_minus, mu_minus, steps_m, status_m, guard_m] = dispatch_one_direction( ...
-        counted_fn, L, FT, mu0, eta, omega, k_max, 1, method, root_solver, zeta_fn, safe_radius_fn);
+        counted_fn, L, FT_safe, mu0, eta, omega, k_max, 1, method, root_solver, zeta_fn, safe_radius_fn, eval_tol > 0);
+    n_m = n_evals - n0;
+    n0 = n_evals;
     [M_plus, conv_plus, mu_plus, steps_p, status_p, guard_p] = dispatch_one_direction( ...
-        counted_fn, L, FT, mu0, eta, omega, k_max, 2, method, root_solver, zeta_fn, safe_radius_fn);
+        counted_fn, L, FT_safe, mu0, eta, omega, k_max, 2, method, root_solver, zeta_fn, safe_radius_fn, eval_tol > 0);
+    n_p = n_evals - n0;
 
     result = struct();
     result.M_minus = M_minus;
@@ -153,13 +164,20 @@ function result = iterative_margin(fidelity_fn, L, FT, varargin)
     result.margin_uncertainty = Inf;
     result.reason_minus = 'unknown';
     result.reason_plus = 'unknown';
+    result.n_unresolved = 0;
 
     if ~isempty(margin_tol)
         if ~(margin_tol > 0)
             error('qrobustness:margin:margin_tol', 'margin_tol must be positive.');
         end
-        [lo_m, up_m, why_m] = certify_direction(counted_fn, mu0, mu_minus, FT, 1, omega, margin_tol, L, safe_radius_fn);
-        [lo_p, up_p, why_p] = certify_direction(counted_fn, mu0, mu_plus, FT, 2, omega, margin_tol, L, safe_radius_fn);
+        n0 = n_evals;
+        [lo_m, up_m, why_m, unres_m] = certify_direction(counted_fn, mu0, mu_minus, FT, 1, omega, margin_tol, L, ...
+                                                         safe_radius_fn, eval_tol);
+        n_m = n_m + n_evals - n0;
+        n0 = n_evals;
+        [lo_p, up_p, why_p, unres_p] = certify_direction(counted_fn, mu0, mu_plus, FT, 2, omega, margin_tol, L, ...
+                                                         safe_radius_fn, eval_tol);
+        n_p = n_p + n_evals - n0;
         % The refined safe ends form tighter lower bounds than the eta-based ones.
         result.M_minus = max(result.M_minus, lo_m);
         result.M_plus = max(result.M_plus, lo_p);
@@ -170,10 +188,13 @@ function result = iterative_margin(fidelity_fn, L, FT, varargin)
         result.margin_uncertainty = result.M_upper - result.M;
         result.reason_minus = why_m;
         result.reason_plus = why_p;
+        result.n_unresolved = unres_m + unres_p;
     end
 
     if return_diagnostics
         result.n_evals = n_evals;
+        result.n_evals_minus = n_m;
+        result.n_evals_plus = n_p;
         result.n_steps = steps_m + steps_p;
     end
 
@@ -184,21 +205,16 @@ function result = iterative_margin(fidelity_fn, L, FT, varargin)
 
 end
 
-function [M_refined, M_upper, reason] = certify_direction(fidelity_fn, mu0, mu_end, FT, ell, omega, margin_tol, L, safe_radius_fn)
-%CERTIFY_DIRECTION Bracket the first component boundary along the ray. mu_end is the terminus of safe-radius continuation from mu0,
-% so |mu0-mu_end| is a certified lower bound on the ray margin of the NOMINAL safe component. This routine (i) probes outward for an
-% unsafe point, which is a rigorous upper witness because the first boundary precedes
-%   it, and (ii) refines the bracket.
-%
-% Certified-promotion rule: the certified lower end advances to a pointwise-safe candidate only if the gap from the current
-% certified end is covered by that candidate's own safe radius, |cand - mu_cert| <= safe_radius_fn(F(cand)); the segment then lies
-% in the safe set and joins the candidate to the nominal component. When the gap is larger, continuation steps bridge as far as they
-% certify. Without this rule a pointwise-safe island beyond the first boundary is promoted directly and the reported margin becomes
-% OPTIMISTIC, which contradicts the guarantee in the header of this file. Python is the reference implementation
-% (core._certify_direction); this mirrors it.
-%
-% reason equals 'bracketed' (width at tolerance), 'partial' (rigorous bracket, width above tolerance), 'boundary' (domain edge
-% reached while certified safe) or 'exhausted' (no unsafe point found).
+function [M_refined, M_upper, reason, n_unresolved] = certify_direction(fidelity_fn, mu0, mu_end, FT, ell, omega, margin_tol, ...
+                                                                       L, safe_radius_fn, eval_tol)
+%CERTIFY_DIRECTION Bracket the first boundary along one direction.
+%   mu_end is the endpoint of safe-radius continuation from mu0. Probes
+%   outward for an unsafe point, then refines the bracket. The certified end
+%   advances to a safe candidate only if |cand - mu_cert| <=
+%   safe_radius_fn(F(cand)); otherwise continuation bridges the gap, so a safe
+%   point beyond the first boundary is never promoted.
+%   Returns [M_refined, M_upper, reason, n_unresolved]; reason as in
+%   ITERATIVE_MARGIN.
 
     if nargin < 8 || isempty(L)
         L = 0.0;
@@ -209,6 +225,10 @@ function [M_refined, M_upper, reason] = certify_direction(fidelity_fn, mu0, mu_e
     if isempty(safe_radius_fn) && L > 0.0
         safe_radius_fn = @(F) (F - FT) / L;
     end
+    if nargin < 10 || isempty(eval_tol)
+        eval_tol = 0;
+    end
+    n_unresolved = 0;
 
     sign_step = (-1)^ell;
     mu_lo = omega(1);
@@ -229,17 +249,25 @@ function [M_refined, M_upper, reason] = certify_direction(fidelity_fn, mu0, mu_e
             reason = 'boundary';
             return
         end
-        if fidelity_fn(cand) < FT
+        F_cand = fidelity_fn(cand);
+        if F_cand < FT - eval_tol
             mu_unsafe = cand;
             break
         end
-        if promote_ok(fidelity_fn, cand, mu_cert, FT, safe_radius_fn)
+        if eval_tol > 0 && abs(F_cand - FT) <= eval_tol
+            % Neither safe nor unsafe within the evaluation band: probe further out.
+            n_unresolved = n_unresolved + 1;
+            frontier = cand;
+            step = step * 2;
+            continue
+        end
+        if promote_ok(fidelity_fn, cand, mu_cert, FT, safe_radius_fn, eval_tol)
             mu_cert = cand;
         else
-            % A stall below a pointwise-safe sample leaves the boundary between mu_cert and cand; we keep probing for an unsafe
+            % A stall below a pointwise-safe sample leaves the boundary between mu_cert and cand. Keep probing for an unsafe
             % witness.
             mu_cert = continue_toward(fidelity_fn, mu_cert, cand, FT, ...
-                                      sign_step, safe_radius_fn);
+                                      sign_step, safe_radius_fn, eval_tol);
         end
         frontier = cand;
         step = step * 2;
@@ -251,9 +279,8 @@ function [M_refined, M_upper, reason] = certify_direction(fidelity_fn, mu0, mu_e
         return
     end
 
-    % Refine: unsafe midpoints always tighten the upper witness; safe midpoints advance the certified end only through the promotion
-    % rule or
-    % bridged continuation.
+    % Refine: unsafe midpoints tighten the upper witness; safe midpoints advance the certified end only through the promotion rule
+    % or bridged continuation.
     target = max(margin_tol * max(abs(mu_cert - mu0), 1e-300), ...
                  1e-16 * max(1, abs(mu_cert)));
     for i = 1:200
@@ -264,15 +291,24 @@ function [M_refined, M_upper, reason] = certify_direction(fidelity_fn, mu0, mu_e
         if mid == mu_cert || mid == mu_unsafe
             break   % fp64 floor
         end
-        if fidelity_fn(mid) < FT
+        F_mid = fidelity_fn(mid);
+        if F_mid < FT - eval_tol
             mu_unsafe = mid;
             continue
         end
-        if promote_ok(fidelity_fn, mid, mu_cert, FT, safe_radius_fn)
+        if eval_tol > 0 && abs(F_mid - FT) <= eval_tol
+            % An unresolved midpoint moves neither end: the bracket is rigorous, wider than requested.
+            n_unresolved = n_unresolved + 1;
+            M_refined = abs(mu0 - mu_cert);
+            M_upper = abs(mu0 - mu_unsafe);
+            reason = 'unresolved';
+            return
+        end
+        if promote_ok(fidelity_fn, mid, mu_cert, FT, safe_radius_fn, eval_tol)
             mu_cert = mid;
         else
             reached = continue_toward(fidelity_fn, mu_cert, mid, FT, ...
-                                      sign_step, safe_radius_fn);
+                                      sign_step, safe_radius_fn, eval_tol);
             if reached == mu_cert
                 % Continuation stalled: rigorous bracket, wider than tolerance.
                 M_refined = abs(mu0 - mu_cert);
@@ -292,10 +328,17 @@ function [M_refined, M_upper, reason] = certify_direction(fidelity_fn, mu0, mu_e
     end
 end
 
-function ok = promote_ok(fidelity_fn, cand, cert, FT, safe_radius_fn)
+function ok = promote_ok(fidelity_fn, cand, cert, FT, safe_radius_fn, eval_tol)
 %PROMOTE_OK Whether the certified end may advance to cand in a single step.
     F = fidelity_fn(cand);
-    if F < FT
+    % eval_tol == 0 keeps F == FT safe. A positive band is closed, so
+    % F == FT + eval_tol stays unresolved and is not promoted.
+    if eval_tol > 0
+        below = F <= FT + eval_tol;
+    else
+        below = F < FT;
+    end
+    if below
         ok = false;
         return
     end
@@ -307,7 +350,7 @@ function ok = promote_ok(fidelity_fn, cand, cert, FT, safe_radius_fn)
     ok = abs(cand - cert) <= safe_radius_fn(F);
 end
 
-function cert = continue_toward(fidelity_fn, cert, target_pt, FT, sign_step, safe_radius_fn)
+function cert = continue_toward(fidelity_fn, cert, target_pt, FT, sign_step, safe_radius_fn, eval_tol)
 %CONTINUE_TOWARD Safe-radius continuation starting at cert and heading toward target_pt.
 %   Returns the furthest certified point reached.
     if isempty(safe_radius_fn)
@@ -315,8 +358,13 @@ function cert = continue_toward(fidelity_fn, cert, target_pt, FT, sign_step, saf
     end
     for i = 1:64
         F = fidelity_fn(cert);
-        if F < FT
-            return   % cannot happen for a certified point
+        if eval_tol > 0
+            below = F <= FT + eval_tol;
+        else
+            below = F < FT;
+        end
+        if below
+            return
         end
         step_r = safe_radius_fn(F);
         if step_r <= abs(target_pt - cert) * 1e-15 + 1e-300
@@ -324,7 +372,8 @@ function cert = continue_toward(fidelity_fn, cert, target_pt, FT, sign_step, saf
         end
         nxt = cert + sign_step * min(step_r, abs(target_pt - cert));
         if sign_step * (nxt - target_pt) >= 0
-            if fidelity_fn(target_pt) >= FT
+            Ft = fidelity_fn(target_pt);
+            if (eval_tol > 0 && Ft > FT + eval_tol) || (eval_tol == 0 && Ft >= FT)
                 cert = target_pt;
             end
             return
@@ -334,38 +383,37 @@ function cert = continue_toward(fidelity_fn, cert, target_pt, FT, sign_step, saf
 end
 
 function [M, converged, mu_end, n_steps, status, guard] = dispatch_one_direction( ...
-        fidelity_fn, L, FT, mu0, eta, omega, k_max, ell, method, root_solver, zeta_fn, safe_radius_fn)
-% Execute one direction under the chosen method. ell = 0 walks the
-%   negative side and ell = 1 the positive one.
+        fidelity_fn, L, FT, mu0, eta, omega, k_max, ell, method, root_solver, zeta_fn, safe_radius_fn, strict)
+% Run one direction under the chosen method; ell = 1 walks the negative side, ell = 2 the positive one.
     guard = false;
     switch method
         case 'algorithm1'
             [M, converged, mu_end, n_steps, status, guard] = one_direction_lipschitz( ...
-                fidelity_fn, L, FT, mu0, eta, omega, k_max, ell, 'bisection', safe_radius_fn);
+                fidelity_fn, L, FT, mu0, eta, omega, k_max, ell, 'bisection', safe_radius_fn, strict);
         case 'lipschitz_brent'
             [M, converged, mu_end, n_steps, status, guard] = one_direction_lipschitz( ...
-                fidelity_fn, L, FT, mu0, eta, omega, k_max, ell, 'brent', safe_radius_fn);
+                fidelity_fn, L, FT, mu0, eta, omega, k_max, ell, 'brent', safe_radius_fn, strict);
         case 'lipschitz_toms748'
-            % MATLAB has no TOMS748; we use fzero (Brent-like) under the same API name.
+            % MATLAB has no TOMS748. fzero (Brent-like) is used under the same API name.
             [M, converged, mu_end, n_steps, status, guard] = one_direction_lipschitz( ...
-                fidelity_fn, L, FT, mu0, eta, omega, k_max, ell, 'toms748', safe_radius_fn);
+                fidelity_fn, L, FT, mu0, eta, omega, k_max, ell, 'toms748', safe_radius_fn, strict);
         case 'doubling'
             rs = root_solver;
             if strcmp(rs, 'bisection'); rs = 'toms748'; end
             [M, converged, mu_end, n_steps, status, guard] = one_direction_doubling( ...
-                fidelity_fn, L, FT, mu0, eta, omega, k_max, ell, rs, safe_radius_fn);
+                fidelity_fn, L, FT, mu0, eta, omega, k_max, ell, rs, safe_radius_fn, strict);
         case 'newton_probe'
             rs = root_solver;
             if strcmp(rs, 'bisection'); rs = 'toms748'; end
             [M, converged, mu_end, n_steps, status, guard] = one_direction_newton_probe( ...
-                fidelity_fn, L, FT, mu0, eta, omega, k_max, ell, rs, zeta_fn, safe_radius_fn);
+                fidelity_fn, L, FT, mu0, eta, omega, k_max, ell, rs, zeta_fn, safe_radius_fn, strict);
         otherwise
             error('qrobustness:margin:method', 'Unknown method=%s.', method);
     end
 end
 
 function [M, converged, mu_end, n_steps, status, guard] = one_direction_lipschitz( ...
-        fidelity_fn, L, FT, mu0, eta, omega, k_max, ell, root_solver, safe_radius_fn)
+        fidelity_fn, L, FT, mu0, eta, omega, k_max, ell, root_solver, safe_radius_fn, strict)
 % Algorithm 1 along one direction: advance by the certified safe radius, so every point between mu0 and the endpoint is certified.
     sign_step = (-1)^ell;
     mu_lo = omega(1);
@@ -382,13 +430,13 @@ function [M, converged, mu_end, n_steps, status, guard] = one_direction_lipschit
     while true
         mu_next = min(max(mu + sign_step * safe_radius_fn(Fmu), mu_lo), mu_hi);
         F_next = fidelity_fn(mu_next);
-        if F_next < FT
+        if ~is_safe(F_next, FT, strict)
             guard = true;
             [mu_next, F_next] = bracket_root_safe( ...
-                fidelity_fn, mu, mu_next, FT, eta, root_solver);
+                fidelity_fn, mu, mu_next, FT, eta, root_solver, strict);
         end
         [done, converged, M, status] = stop_one_direction( ...
-            mu0, mu_next, F_next, FT, eta, mu_lo, mu_hi, k, k_max);
+            mu0, mu_next, F_next, FT, eta, mu_lo, mu_hi, k, k_max, strict);
         if done
             mu_end = mu_next;
             return
@@ -401,7 +449,7 @@ function [M, converged, mu_end, n_steps, status, guard] = one_direction_lipschit
 end
 
 function [M, converged, mu_end, n_steps, status, guard] = one_direction_doubling( ...
-        fidelity_fn, L, FT, mu0, eta, omega, k_max, ell, root_solver, safe_radius_fn)
+        fidelity_fn, L, FT, mu0, eta, omega, k_max, ell, root_solver, safe_radius_fn, strict)
 % Geometric search in one direction: cheaper, yet only the endpoint is certified, since the doubled step may leap over an unsafe
 % gap.
     sign_step = (-1)^ell;
@@ -416,14 +464,14 @@ function [M, converged, mu_end, n_steps, status, guard] = one_direction_doubling
     k = 1;  % tallies evaluated trial points, so k_max of them are permitted
     guard = false;
 
-    while F_probe >= FT
+    while is_safe(F_probe, FT, strict)
         if on_boundary(mu_probe, mu_lo, mu_hi)
             [~, converged, M, status] = stop_one_direction( ...
-                mu0, mu_probe, F_probe, FT, eta, mu_lo, mu_hi, k, k_max);
+                mu0, mu_probe, F_probe, FT, eta, mu_lo, mu_hi, k, k_max, strict);
             mu_end = mu_probe;
             return
         end
-        if (F_probe - FT >= 0) && (F_probe - FT < eta)
+        if is_safe(F_probe, FT, strict) && (F_probe - FT < eta)
             M = abs(mu0 - mu_probe);
             converged = true;
             mu_end = mu_probe;
@@ -456,7 +504,7 @@ function [M, converged, mu_end, n_steps, status, guard] = one_direction_doubling
     end
 
     [mu_end, ~] = bracket_root_safe( ...
-        fidelity_fn, mu_safe, mu_probe, FT, eta, root_solver);
+        fidelity_fn, mu_safe, mu_probe, FT, eta, root_solver, strict);
     M = abs(mu0 - mu_end);
     converged = true;
     status = 'eta_band';
@@ -464,7 +512,7 @@ function [M, converged, mu_end, n_steps, status, guard] = one_direction_doubling
 end
 
 function [M, converged, mu_end, n_steps, status, guard] = one_direction_newton_probe( ...
-        fidelity_fn, L, FT, mu0, eta, omega, k_max, ell, root_solver, zeta_fn, safe_radius_fn)
+        fidelity_fn, L, FT, mu0, eta, omega, k_max, ell, root_solver, zeta_fn, safe_radius_fn, strict)
 % Slope-guided search in one direction, using zeta_fn to aim the next trial point. Endpoint-certified, as in the doubling search.
     sign_step = (-1)^ell;
     mu_lo = omega(1);
@@ -488,9 +536,9 @@ function [M, converged, mu_end, n_steps, status, guard] = one_direction_newton_p
         step = max(lip_step, newt_step);
         mu_next = min(max(mu + sign_step * step, mu_lo), mu_hi);
         F_next = fidelity_fn(mu_next);
-        if F_next < FT
+        if ~is_safe(F_next, FT, strict)
             [mu_next, F_next] = bracket_root_safe( ...
-                fidelity_fn, mu, mu_next, FT, eta, root_solver);
+                fidelity_fn, mu, mu_next, FT, eta, root_solver, strict);
             M = abs(mu0 - mu_next);
             converged = true;
             mu_end = mu_next;
@@ -499,7 +547,7 @@ function [M, converged, mu_end, n_steps, status, guard] = one_direction_newton_p
             return
         end
         [done, converged, M, status] = stop_one_direction( ...
-            mu0, mu_next, F_next, FT, eta, mu_lo, mu_hi, k, k_max);
+            mu0, mu_next, F_next, FT, eta, mu_lo, mu_hi, k, k_max, strict);
         if done
             mu_end = mu_next;
             return
@@ -509,9 +557,9 @@ function [M, converged, mu_end, n_steps, status, guard] = one_direction_newton_p
             mu_probe = min(max(mu_next + sign_step * step2, mu_lo), mu_hi);
             F_probe = fidelity_fn(mu_probe);
             n_steps = n_steps + 1;
-            if F_probe < FT
+            if ~is_safe(F_probe, FT, strict)
                 [mu_next, F_next] = bracket_root_safe( ...
-                    fidelity_fn, mu_next, mu_probe, FT, eta, root_solver);
+                    fidelity_fn, mu_next, mu_probe, FT, eta, root_solver, strict);
                 M = abs(mu0 - mu_next);
                 converged = true;
                 mu_end = mu_next;
@@ -532,14 +580,14 @@ function [M, converged, mu_end, n_steps, status, guard] = one_direction_newton_p
 end
 
 function [done, converged, M, status] = stop_one_direction( ...
-        mu0, mu_next, F_next, FT, eta, mu_lo, mu_hi, k, k_max)
-% The stopping rules, in the order we test them: the domain edge, the eta band, and the iteration limit. Returns which one fired, so
+        mu0, mu_next, F_next, FT, eta, mu_lo, mu_hi, k, k_max, strict)
+% The stopping rules, tested in this order: the domain edge, the eta band, and the iteration limit. Returns which one fired, so
 % a truncated result is never reported as a resolved one.
     if on_boundary(mu_next, mu_lo, mu_hi) && (F_next - FT >= eta)
         done = true; converged = true; M = abs(mu0 - mu_next);
         status = 'domain_truncated'; return
     end
-    if (F_next - FT >= 0) && (F_next - FT < eta)
+    if is_safe(F_next, FT, strict) && (F_next - FT < eta)
         done = true; converged = true; M = abs(mu0 - mu_next);
         status = 'eta_band'; return
     end
@@ -552,8 +600,7 @@ function [done, converged, M, status] = stop_one_direction( ...
 end
 
 function tf = on_boundary(mu, mu_lo, mu_hi)
-% Whether mu lies on a finite domain edge, to within the floating-point
-%   slack that reaching it by arithmetic leaves.
+% Whether mu lies on a finite domain edge, up to floating-point slack.
     tf = false;
     if isfinite(mu_lo) && abs(mu - mu_lo) <= max(1e-15, 10 * eps * abs(mu_lo))
         tf = true;
@@ -564,31 +611,33 @@ function tf = on_boundary(mu, mu_lo, mu_hi)
 end
 
 function [mu_safe, F_safe] = bracket_root_safe( ...
-        fidelity_fn, mu_safe0, mu_bad, FT, eta, root_solver)
-% Step back from an unsafe point to a safe one inside the bracket. The safeguard: it fires when an under-estimated L let a
-% 'certified'
-%   step overshoot the threshold.
+        fidelity_fn, mu_safe0, mu_bad, FT, eta, root_solver, strict)
+% Step back from an unsafe point to a safe one inside the bracket. The safeguard fires when an under-estimated L let a
+% certified step overshoot the threshold.
     if strcmp(root_solver, 'bisection')
-        [mu_safe, F_safe] = bisect_safe(fidelity_fn, mu_safe0, mu_bad, FT, eta);
+        [mu_safe, F_safe] = bisect_safe(fidelity_fn, mu_safe0, mu_bad, FT, eta, strict);
         return
     end
 
     g = @(mu) fidelity_fn(mu) - FT;
-    if g(mu_safe0) < 0
-        error('qrobustness:margin:bracket', 'mu_safe must satisfy F >= FT');
+    if ~is_safe(fidelity_fn(mu_safe0), FT, strict)
+        error('qrobustness:margin:bracket', 'mu_safe must lie on the safe side of FT');
     end
-    if g(mu_bad) >= 0
+    if is_safe(fidelity_fn(mu_bad), FT, strict)
         mu_safe = mu_safe0;
         F_safe = fidelity_fn(mu_safe0);
+        return
+    end
+
+    if ~(g(mu_safe0) > 0 && g(mu_bad) < 0)
+        [mu_safe, F_safe] = bisect_safe(fidelity_fn, mu_safe0, mu_bad, FT, eta, strict);
         return
     end
 
     xtol = max(eta / 10, 1e-14 * max([1, abs(mu_safe0), abs(mu_bad)]));
     a = min(mu_safe0, mu_bad);
     b = max(mu_safe0, mu_bad);
-    % fzero is Brent-like; MATLAB uses it for both 'brent' and 'toms748'. TolX must match the Python xtol, otherwise fzero solves to
-    % ~eps while brentq/toms748 solve to eta/10 and the two engines land on different
-    % points at the xtol level.
+    % fzero serves both 'brent' and 'toms748'. TolX matches the Python xtol (eta/10) so both engines stop at the same tolerance.
     root = fzero(g, [a, b], optimset('TolX', xtol));
     toward_safe = sign(mu_safe0 - root);
     if toward_safe == 0
@@ -600,15 +649,15 @@ function [mu_safe, F_safe] = bracket_root_safe( ...
     mu_try = root + toward_safe * xtol;
     mu_try = min(max(mu_try, a), b);
     F_try = fidelity_fn(mu_try);
-    if F_try >= FT
+    if is_safe(F_try, FT, strict)
         mu_safe = mu_try;
         F_safe = F_try;
         return
     end
-    [mu_safe, F_safe] = bisect_safe(fidelity_fn, mu_safe0, mu_bad, FT, eta);
+    [mu_safe, F_safe] = bisect_safe(fidelity_fn, mu_safe0, mu_bad, FT, eta, strict);
 end
 
-function [mu_safe, F_safe] = bisect_safe(fidelity_fn, mu_safe0, mu_bad, FT, eta)
+function [mu_safe, F_safe] = bisect_safe(fidelity_fn, mu_safe0, mu_bad, FT, eta, strict)
     % mu_safe0 has F >= FT (caller invariant); mu_bad has F < FT
     a = mu_safe0;
     b = mu_bad;
@@ -616,7 +665,7 @@ function [mu_safe, F_safe] = bisect_safe(fidelity_fn, mu_safe0, mu_bad, FT, eta)
     for it = 1:60
         mid = 0.5 * (a + b);
         Fm = fidelity_fn(mid);
-        if Fm >= FT
+        if is_safe(Fm, FT, strict)
             a = mid;
             Fa = Fm;
             if (Fa - FT) < eta
@@ -628,6 +677,15 @@ function [mu_safe, F_safe] = bisect_safe(fidelity_fn, mu_safe0, mu_bad, FT, eta)
     end
     mu_safe = a;
     F_safe = Fa;
+end
+
+function tf = is_safe(F, FT, strict)
+% Safe side of FT. A positive band (strict) leaves equality unresolved.
+    if strict
+        tf = F > FT;
+    else
+        tf = F >= FT;
+    end
 end
 
 % SPDX-FileCopyrightText: (C) 2026 F. C. Langbein <frank@langbein.org>

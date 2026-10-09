@@ -6,45 +6,23 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function r = diamond_norm(S, varargin)
-%DIAMOND_NORM Diamond-norm upper bound, with no external SDP solver.
-%
-% r = qrobustness.lindblad.diamond_norm(S) returns a structure with fields value, raw, gap, status, value_certified and feas_shift,
-% mirroring the Python DiamondNorm record. value equals value_certified and is the RIGOROUS upward-bounded number; raw is the tight
-% floating
-%   objective at the same verified feasible point.
+%DIAMOND_NORM Verified diamond-norm upper bound without an SDP solver.
+%   S - column-stacked superoperator
+%   r - struct with fields
+%         value, value_certified - verified upper bound (equal)
+%         raw        - floating Watrous objective at the same feasible point
+%         gap        - value - raw
+%         status     - 'solver_free'
+%         feas_shift - shift used to repair feasibility
 %
 %   Name-value options:
-%     'iters'  (default 600)   maximum refinement steps
-% 'degtol' (default 1e-6) relative tolerance on a degenerate top
-%                              eigenvalue, over which the subgradient is
-%                              averaged
+%     'iters'  - maximum refinement steps (default 600)
+%     'degtol' - relative tolerance on a degenerate top eigenvalue (default 1e-6)
 %
-%   WHY THIS EXISTS. The Watrous program
+%   Verified: bounded by Rump's floating-Cholesky criterion; see the xQRM paper, verified diamond-norm appendix.
+%   Errors if no shift verifies.
 %
-%       dnorm(S) = min 0.5*||Tr_out Y0|| + 0.5*||Tr_out Y1||
-%                  s.t. [[Y0, -J], [-J', Y1]] >= 0
-%
-% is a MINIMISATION, so every feasible point is already an upper bound and no solver is needed to get one -- only to make it tight.
-% We exploit that fact, and it is why the open-system layer needs neither CVX (MATLAB only) nor SDPT3, neither of which ports
-% cleanly to Octave. A robustness constant must over-estimate the diamond norm, so an upper bound is the quantity actually wanted.
-%
-% METHOD. Begin from a closed-form feasible point: with the polar
-%   factors |J'| = (J J')^(1/2) and |J| = (J' J)^(1/2), the block
-%   [[|J'|, -J], [-J', |J|]] is positive semidefinite (write J = W|J| and
-% it is a congruence of [[A,-A],[-A,A]] >= 0), and remains feasible under the scaling (s|J'|, |J|/s), whose objective is smallest at
-% s = sqrt(b/a), giving sqrt(a*b). Then take scaled subgradient steps, restoring feasibility by projecting the constraint block onto
-% the PSD cone (the off-diagonal blocks are pinned to J, so this is alternating projection), with a backtracking step size. Finally
-% repair the iterate to VERIFIED feasibility with a shift -- proved by Rump's floating-Cholesky criterion on the stored repaired
-% block, not by the eigensolver that proposed it -- and bound the objective upward on exactly those stored blocks, so
-% value_certified is an upper bound whatever the iteration did. If no shift verifies, the function errors instead of returning an
-% unproved number.
-%
-% ACCURACY. Relative to the Python cvxpy path on the shipped generators this agrees to five decimals for dissipative and mixed maps
-% and is about 3% conservative for a pure Hamiltonian superoperator, where the subgradient stalls on a degenerate spectrum. On the
-% dephasing family of the case studies it is exact, and it is in fact closer to the
-%   analytic value 2n than the cvxpy result.
-%
-% MATLAB counterpart of python/src/qrobustness/lindblad.py:diamond_norm_free.
+%   Peer of python/src/qrobustness/lindblad.py:diamond_norm_free.
 
     p = inputParser;
     addParameter(p, 'iters', 600);
@@ -84,10 +62,8 @@ function r = diamond_norm(S, varargin)
         end
     end
 
-    % Repair to verified feasibility. The eigensolver only PROPOSES the shift; feasibility is proved by Rump's floating-Cholesky
-    % criterion applied to the block reassembled from the STORED repaired blocks, and the certified objective is evaluated on
-    % exactly those blocks. Nothing assumes that adding a floating shift produced the
-    % mathematical matrix B + eps*I.
+    % Repair to verified feasibility: the eigensolver proposes the shift, the floating-Cholesky check verifies the stored
+    % repaired blocks, and the certified objective is evaluated on those blocks.
     Y0 = (Y0 + Y0') / 2;
     Y1 = (Y1 + Y1') / 2;
     B = [Y0, -J; -J', Y1];
@@ -97,8 +73,7 @@ function r = diamond_norm(S, varargin)
     certified = 0.5 * sum_upward([pt_specnorm_upper(Y0, N), ...
                                   pt_specnorm_upper(Y1, N)]);
 
-    % value/value_certified is the RIGOROUS number (upward-bounded on the verified feasible point); raw is the tight floating
-    % objective at that same point, used only for tightness diagnostics.
+    % value/value_certified is the verified upper bound; raw is the floating objective at the same point.
     r = struct('value', certified, 'raw', value, ...
                'gap', certified - value, ...
                'status', 'solver_free', 'value_certified', certified, ...
@@ -111,25 +86,8 @@ function x = up(x)
 end
 
 function c = chol_error_bound(A)
-%CHOL_ERROR_BOUND A verified c >= ||Delta(A)||_2 for the Cholesky backward error, or -1 when A has a negative diagonal entry and no
-% test is
-%   needed.
-%
-% Theorem 2.3 of Rump bounds the perturbation entrywise by a
-%   non-negative matrix E_ij = alpha_ij*d_i*d_j + M*eta with
-% d_i = sqrt(A_ii/(1 - alpha_ii)). Neither the diagonal inflation nor the underflow term may be omitted from a rigorous claim, so
-% the whole of it is bounded here. With alpha an upper bound on every
-%   alpha_ij, d_i <= sqrt(A_ii/(1 - alpha)) and
-%
-%       E_ij <= alpha/(1 - alpha)*sqrt(A_ii*A_jj) + M*eta,
-%
-% whose first part is symmetric, non-negative and rank one (spectral norm no larger than its maximum row sum) and whose constant
-% part contributes at most n*M*eta. Every operation is rounded upward.
-%
-%   alpha uses k = 8*(n+1): Rump's real coefficients run to
-% gamma_{n+1}, and the factor eight covers the extra roundings of complex arithmetic on the Hermitian path. eta is the smallest
-% positive NORMAL double, over-estimating any underflow unit, and M = 4*(n+1); the underflow term stays below 1e-300 at any
-% dimension of interest, which is why it can be bounded this crudely.
+%CHOL_ERROR_BOUND Verified c >= ||Delta(A)||_2 for the Cholesky backward error, or -1 if A has a negative diagonal entry.
+%   Rump's entrywise bound, evaluated with upward rounding.
     n = size(A, 1);
     u = eps / 2;
     k = 8 * (n + 1);
@@ -158,10 +116,7 @@ function c = chol_error_bound(A)
 end
 
 function [t, ok] = shift_diag_down(a, c)
-%SHIFT_DIAG_DOWN Largest stored double t VERIFIED to satisfy t <= a - c. Round-to-nearest subtraction does not establish that
-% inequality, so the candidate is stepped down until the check passes. The check itself is exact: t remains within a factor two of
-% a, where Sterbenz's
-%   lemma makes a - t exact in binary64.
+%SHIFT_DIAG_DOWN Largest stored double t verified to satisfy t <= a - c.
     t = a - c;
     ok = false;
     for it = 1:8
@@ -174,12 +129,7 @@ function [t, ok] = shift_diag_down(a, c)
 end
 
 function ok = verify_psd(A)
-%VERIFY_PSD Verify A >= 0 exactly for the Hermitian floating matrix A as it is STORED, by Rump's floating-Cholesky criterion.
-% Successful factorisation of the test matrix A_test (off-diagonals left unchanged,
-%   A_test_ii <= A_ii - c) is exact for A_test + Delta with
-%   ||Delta||_2 <= c, so A_test >= -c*I and hence
-%   A = A_test + diag(A_ii - A_test_ii) >= A_test + c*I >= 0.
-%   The eigensolver plays no part in this.
+%VERIFY_PSD Verify A >= 0 for the stored Hermitian matrix A by Rump's floating-Cholesky criterion.
     ok = false;
     if ~all(isfinite(A(:)))
         return
@@ -196,9 +146,7 @@ function ok = verify_psd(A)
         end
         A_test(i, i) = t;
     end
-    % c came from A, not from A_test, which would be circular: A_test is built from c. The bound is non-decreasing in the diagonal
-    % and A_test_ii <= A_ii, so c dominates the bound for A_test -- the route of Corollary 2.4 of Rump. Checked here rather than
-    % argued, so the pair (A_test, c) is verified as a pair after construction.
+    % c is computed from A; since A_test_ii <= A_ii it also bounds A_test. Checked on the constructed pair.
     c_test = chol_error_bound(A_test);
     if c_test < 0 || ~(c_test <= c)
         return
@@ -208,10 +156,8 @@ function ok = verify_psd(A)
 end
 
 function [Y0r, Y1r, epsv] = verified_repair(Y0, Y1, J, shift0, d)
-%VERIFIED_REPAIR Repair (Y0, Y1) to VERIFIED feasibility of the Watrous block, and return the stored repaired blocks and the shift
-% that produced them. On failure it errors rather than returning an unproved number: a diamond norm whose feasibility was not proved
-% is
-%   not a certificate.
+%VERIFIED_REPAIR Shift (Y0, Y1) to verified feasibility of the Watrous block; return the stored blocks and the shift.
+%   Errors if no shift verifies.
     u = eps / 2;
     sc = max(max(abs(J(:))), 1);
     epsv = max(shift0, 0) * (1 + 16 * u);
@@ -249,12 +195,7 @@ function s = sum_upward(v)
 end
 
 function s = pt_specnorm_upper(Y, N)
-%PT_SPECNORM_UPPER A rigorous upper bound on ||Tr_out Y||_2 for Hermitian Y on (output kron input), enclosing the partial-trace
-% summation error. Each entry of M = Tr_out Y is a floating sum of N complex
-%   numbers, so |M_ij - fl(M_ij)| <= (N-1)*u*A_ij with A the partial
-% trace of the entrywise absolute values. Gershgorin row sums are formed over |fl(M)| + (N-1)*u*A, with an extra (1+4u) cushion for
-% the
-%   rounding of complex magnitudes.
+%PT_SPECNORM_UPPER Upper bound on ||Tr_out Y||_2 for Hermitian Y, including partial-trace rounding (Gershgorin).
     u = eps / 2;
     M = tr_out(Y, N);
     A = tr_out(abs(Y), N);
@@ -263,9 +204,7 @@ function s = pt_specnorm_upper(Y, N)
 end
 
 function A = psd_sqrt(A)
-% Principal square root of a Hermitian matrix, with negative eigenvalues clamped to zero: the input is PSD in exact arithmetic and
-% only
-%   rounding can make it otherwise.
+% Principal square root of a Hermitian matrix, negative eigenvalues clamped to zero.
     A = (A + A') / 2;
     [V, D] = eig(A);
     w = max(real(diag(D)), 0);
@@ -283,14 +222,12 @@ function T = tr_out(Y, N)
 end
 
 function v = objective(Y0, Y1, N)
-% The Watrous objective at a feasible point, already an
-%   upper bound on the diamond norm.
+% Watrous objective at a feasible point, an upper bound on the diamond norm.
     v = 0.5 * (norm(tr_out(Y0, N), 2) + norm(tr_out(Y1, N), 2));
 end
 
 function G = subgrad(Y, N, degtol)
-%SUBGRAD Subgradient of 0.5*||Tr_out Y||_2 in Y, averaged over the top eigenspace so a degenerate maximum does not select an
-% arbitrary vector.
+%SUBGRAD Subgradient of 0.5*||Tr_out Y||_2, averaged over the top eigenspace.
     T = tr_out(Y, N);
     T = (T + T') / 2;
     [V, D] = eig(T);
@@ -311,8 +248,7 @@ function G = subgrad(Y, N, degtol)
 end
 
 function [Y0, Y1] = project(Y0, Y1, J, d)
-%PROJECT Alternating projection onto the PSD cone together with the off-diagonal
-%   blocks pinned to -J.
+%PROJECT Alternating projection onto the PSD cone with off-diagonal blocks pinned to -J.
     for r = 1:30
         B = [Y0, -J; -J', Y1];
         B = (B + B') / 2;

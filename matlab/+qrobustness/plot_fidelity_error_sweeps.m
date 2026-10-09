@@ -1,7 +1,18 @@
 function fig = plot_fidelity_error_sweeps(X_cell, Y_cell, FT, varargin)
-%PLOT_FIDELITY_ERROR_SWEEPS Spaghetti plot of fidelity error against delta.
+%PLOT_FIDELITY_ERROR_SWEEPS Plot fidelity error against perturbation for several controllers.
+%   X_cell, Y_cell - cell arrays of perturbation values and fidelity errors
+%   FT             - fidelity threshold F_T
+%   fig            - figure handle
 %
-% Y values are drawn as log10(error) on a linear axis (not YScale=log).
+%   Name-value options:
+%     'Visible'   - figure visibility (default 'off')
+%     'xlabel'    - x-axis label (default 'Perturbation strength \mu')
+%     'xlim'      - x limits (default [] for automatic)
+%     'FontSize'  - font size (default 18)
+%     'NumXTicks' - number of x ticks (default 5)
+%     'ylim'      - y limits; default [1e-7, 1.2e-3], widened if data falls outside
+%
+%   The error is drawn as log10 data on a linear axis.
 
     p = inputParser;
     addParameter(p, 'Visible', 'off');
@@ -9,6 +20,7 @@ function fig = plot_fidelity_error_sweeps(X_cell, Y_cell, FT, varargin)
     addParameter(p, 'xlim', []);
     addParameter(p, 'FontSize', 18);
     addParameter(p, 'NumXTicks', 5);
+    addParameter(p, 'ylim', []);
     parse(p, varargin{:});
 
     fig = figure('Visible', p.Results.Visible, 'Color', [1 1 1]);
@@ -35,13 +47,36 @@ function fig = plot_fidelity_error_sweeps(X_cell, Y_cell, FT, varargin)
     end
     xl = get(ax, 'XLim');
     set(ax, 'XTick', linspace(xl(1), xl(2), p.Results.NumXTicks));
-    qrobustness.log10_axis(ax, 'y', [1e-7, 1.2e-3]);
+    if isempty(p.Results.ylim)
+        ys = thr;
+        for n = 1:nC
+            ys = [ys; Y_cell{n}(:)]; %#ok<AGROW>
+        end
+        yspan = span_limits(ys, [1e-7, 1.2e-3]);
+    else
+        yspan = p.Results.ylim;
+    end
+    qrobustness.log10_axis(ax, 'y', yspan);
     set(ax, 'XScale', 'linear');
     grid(ax, 'on');
     xlabel(ax, p.Results.xlabel);
     ylabel(ax, 'fidelity error');
     set(ax, 'FontName', 'Arial', 'FontSize', p.Results.FontSize);
     qrobustness.apply_plot_style(fig);
+end
+
+function lim = span_limits(values, default_lim)
+    lim = default_lim;
+    values = values(isfinite(values) & values > 0);
+    if isempty(values)
+        return
+    end
+    if min(values) < lim(1)
+        lim(1) = min(values);
+    end
+    if max(values) > lim(2)
+        lim(2) = max(values);
+    end
 end
 
 % SPDX-FileCopyrightText: (C) 2026 F. C. Langbein <frank@langbein.org>

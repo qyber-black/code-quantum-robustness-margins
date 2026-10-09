@@ -1,16 +1,12 @@
 function C = structure_constant(kind, Hhat, dt, tau, controls)
-%STRUCTURE_CONSTANT C_Hhat for uncertainty in the drift or the control.
-%   kind     : 'drift' or 'control'
-%   Hhat     : structure matrix
-%   dt, tau  : pulse length and number of intervals
-% controls : row/column vector f_m^{(k)} (required for the 'control' case)
+%STRUCTURE_CONSTANT Structure constant C_{\hat H} for a drift or control perturbation.
+%   kind     - 'drift' (C = tau dt ||\hat H||_F) or 'control'
+%              (C = dt ||f||_1 ||\hat H||_F)
+%   Hhat     - structure matrix \hat H; its traceless part is used
+%   dt, tau  - interval length and number of intervals
+%   controls - controls f^(k) of the perturbed term (required for 'control')
 %
-% We first centre the structure onto its traceless part: the trace part of a perturbation structure contributes only a global phase
-% to the propagator, which the trace-amplitude fidelity ignores, so removing it leaves the certified margin valid while shrinking
-% ||Hhat||_F (paper, Sec. IV). For traceless structures -- including the case-study H0, H1, H2 -- nothing
-%   changes.
-%
-%   Peer of python/src/qrobustness/core.py.
+%   Peer of python/src/qrobustness/core.py:structure_constant.
 
     nf = norm(qrobustness.traceless(Hhat), 'fro');
     switch lower(kind)

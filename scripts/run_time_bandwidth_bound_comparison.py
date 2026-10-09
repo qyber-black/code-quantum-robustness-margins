@@ -6,20 +6,29 @@
 # SPDX-FileCopyrightText: (C) 2026 E. A. Jonckheere <jonckhee@usc.edu>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""We compare the Lipschitz margin with the Kosut-Lidar-Rabitz bound.
+"""Compare the iterated margin M with the Kosut-Lidar-Rabitz margin M^K.
 
-Supplementary analysis (not part of the paper's main results): for every
-controller and perturbation structure, we compute the certified margin M of
-Algorithm 1 together with the margin implied by Theorem 1 of arXiv:2507.01215,
-specialised to this closed-system coherent perturbation model
-(see qrobustness/kosut.py and README.md).
+For every controller of the main ensemble and structure H0, H1, H2, computes
+M and the margin M^K implied by Theorem 1 of arXiv:2507.01215 specialised to
+this closed-system coherent model (qrobustness.kosut). Peer of
+matlab/examples/run_time_bandwidth_bound_comparison.m with the same columns
+(CSV_HEADERS == qrobustness.compat.kosut_csv_headers), cross-checked by
+scripts/compare_time_bandwidth_bound.py.
 
-Peer of matlab/examples/run_time_bandwidth_bound_comparison.m; both write the same CSV
-columns (CSV_HEADERS below == qrobustness.compat.kosut_csv_headers) so
-scripts/compare_time_bandwidth_bound.py can cross-check them.
+Options: --FT, --out, --controller-dir, --max-error, --absorption (angular
+or additive absorption of the nominal error; additive is not conservative),
+--uncertainty (constant, or trajectory for M^{K,tri}_tv), --literal-theorem
+(F_nom = 1, no absorption), --no-plots.
 
-Writes results/time-bandwidth-bound-python/kosut_comparison_<FT>.csv and, unless
---no-plots, a scatter of both margins per structure."""
+Writes results/time-bandwidth-bound-python/
+kosut_comparison_<FT>[_angular][_tv].csv:
+    controller, fid, err: instance and nominal fidelity / error.
+    M_<s>, KM_<s>, ratio_<s>: M, M^K and M/M^K for s in H0, H1, H2.
+    KTOb_<s>, Kflb_<s>: time-bandwidth product and fidelity lower bound of
+        the reference at M.
+    wunc_<s>, wavg_<s>, wdev_<s>: per-unit-delta uncertainty measures.
+and, unless --no-plots, kosut_vs_lipschitz_<FT><suffix>.png (M^K against M).
+"""
 
 from __future__ import annotations
 
@@ -48,33 +57,26 @@ CTRL = ROOT / "data/controllers/problem9_tf15_K32_quasi-newton"
 OUT_DIR = ROOT / "results/time-bandwidth-bound-python"
 
 ETA = DEFAULT_ETA
-#: Bracket refinement of the certified margin, aligned with the other
-#: drivers. Absent that setting iterative_margin returns its last safe continuation
-#: step: still a valid certified lower bound, yet on this ensemble up to
-#: 5.4e-4 relative below the refined value. That discrepancy was enough to disagree in
-#: the second decimal of M/M^K, which the paper reports both as a table
-#: column (taken from the refined multiparameter margin) and as a prose range
-#: (from this driver) -- 3.04 against 3.03 for H2.
+#: Relative bracket tolerance, as in the other drivers (so M here matches M
+#: from the multiparameter driver).
 MARGIN_TOL = 1e-8
 STRUCTURES = ("H0", "H1", "H2")
 
-#: Scatter figure: we use the same 96 dpi the library's figures use, so the
-#: comparison plot does not become the one PNG in the tree at a different density.
+#: Scatter figure size and dpi (96, as the library's figures).
 FIG_SIZE = (5.2, 4.0)
 FIG_DPI = 96
 
 PER_STRUCTURE = ("M", "KM", "ratio", "KTOb", "Kflb", "wunc", "wavg", "wdev")
-#: We require a match to qrobustness.compat.kosut_csv_headers (MATLAB peer).
+#: Must equal qrobustness.compat.kosut_csv_headers (MATLAB peer).
 CSV_HEADERS = ["controller", "fid", "err"] + [
     f"{f}_{tag}" for tag in STRUCTURES for f in PER_STRUCTURE
 ]
 
 
 def plot_comparison(rows: list[dict], ft: float, out_path: Path) -> None:
-    """We scatter the two margins per structure against the equality line."""
-    # Imported in this function, not at module scope: the backend must be selected
-    # before the first import of pyplot, and a --no-plots run ought not to need
-    # matplotlib at all.
+    """Scatter M^K against M per structure, with the equality line."""
+    # Local import: the backend is set before pyplot is imported, and
+    # --no-plots needs no matplotlib.
     import matplotlib
 
     matplotlib.use("Agg")
@@ -112,14 +114,13 @@ def plot_comparison(rows: list[dict], ft: float, out_path: Path) -> None:
     apply_plot_style(fig)
     fig.tight_layout()
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    # metadata: matplotlib would otherwise stamp its own version into the PNG,
-    # so the same figure regenerates with different bytes.
+    # Fixed metadata so the PNG bytes do not depend on the matplotlib version.
     fig.savefig(out_path, dpi=FIG_DPI, metadata=PNG_METADATA)
     plt.close(fig)
 
 
 def main() -> None:
-    """We tabulate both margins for every controller and structure."""
+    """Tabulate both margins for every controller and structure."""
     ap = base_parser(OUT_DIR, description=__doc__)
     ap.add_argument("--controller-dir", type=Path, default=CTRL)
     ap.add_argument("--max-error", type=float, default=DEFAULT_MAX_ERROR)
@@ -129,7 +130,7 @@ def main() -> None:
         default="angular",
         help="How the nominal error eps_0 is absorbed into the threshold "
         "(angular is the sufficient correction; additive reproduces "
-        "previously published numbers and is not conservative). The "
+        "QRM tables and is not a sufficient condition). The "
         "angular CSV carries an _angular suffix so both can coexist.",
     )
     ap.add_argument(
@@ -203,10 +204,10 @@ def main() -> None:
             row[f"M_{tag}"] = M
             row[f"KM_{tag}"] = KM
             row[f"ratio_{tag}"] = M / KM if KM > 0 else float("inf")
-            # We evaluate the reference bound at the certified Lipschitz margin.
+            # Reference bound evaluated at M.
             row[f"KTOb_{tag}"] = time_bandwidth(rates, M, args.uncertainty)
             row[f"Kflb_{tag}"] = fidelity_bound_at(rates, M, args.uncertainty)
-            # Per-unit-delta uncertainty measures (their Eq. 28).
+            # Per-unit-delta uncertainty measures (arXiv:2507.01215, Eq. 28).
             row[f"wunc_{tag}"] = rates.w_unc
             row[f"wavg_{tag}"] = rates.w_avg
             row[f"wdev_{tag}"] = rates.w_dev
@@ -224,7 +225,8 @@ def main() -> None:
             f"{list(rows[0].keys())!r}"
         )
     with csv_path.open("w", newline="") as f:
-        # lineterminator: we match the MATLAB peer, which writes LF.
+        # LF line endings, as the MATLAB peer writes.
+
         w = csv.DictWriter(f, fieldnames=CSV_HEADERS, lineterminator="\n")
         w.writeheader()
         w.writerows(rows)

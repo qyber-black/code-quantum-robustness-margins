@@ -6,9 +6,17 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function run_multiparameter_case_study(varargin)
-%RUN_MULTIPARAMETER_CASE_STUDY xQRM joint-parameter margin case study. Counterpart of scripts/run_multiparameter_case_study.py. It
-% writes the same CSV schema, with a language-qualified result directory selected by the caller. The angular stepping rule is the
-% default paper protocol.
+%RUN_MULTIPARAMETER_CASE_STUDY Joint margins over drift and both controls; writes multiparam_<FT>[_angular].csv.
+%
+%   Name-value options:
+%     'root'        - repository root (default: detected)
+%     'out'         - output directory (default results/multiparameter-margin-matlab)
+%     'FT'          - fidelity threshold F_T (default 0.999)
+%     'max_error'   - nominal error filter (default 1e-4)
+%     'controllers' - number of controllers (default 0 = all)
+%     'step'        - 'angular' (default) or Lipschitz stepping
+%
+%   Peer of scripts/run_multiparameter_case_study.py.
 
     p = inputParser;
     addParameter(p, 'root', '');
@@ -20,7 +28,7 @@ function run_multiparameter_case_study(varargin)
     parse(p, varargin{:});
     opt = p.Results;
 
-    % Bracket refinement, named to match the Python reference MARGIN_TOL.
+    % Bracket refinement; same value as MARGIN_TOL in the Python driver.
     margin_tol = 1e-8;
 
     if isempty(opt.root)
@@ -42,8 +50,7 @@ function run_multiparameter_case_study(varargin)
         controllers = controllers(1:min(opt.controllers, numel(controllers)));
     end
 
-    % Three uncertainty parameters: drift together with the two controls. Named once here as in the Python peer, which calls it
-    % N_PARAMS.
+    % Three uncertain parameters: drift and the two controls (N_PARAMS in the Python driver).
     n_params = 3;
     directions = [qrobustness.multiparam.axis_directions(n_params); ...
                   qrobustness.multiparam.diagonal_directions(n_params)];
@@ -119,7 +126,7 @@ function F = multiparam_fidelity(problem, controller, dt, mu)
 end
 
 function write_csv(path, headers, values)
-    % Write a numeric table with an LF line terminator and 16 significant digits, matching what the Python peer DictWriter produces.
+    % Write a numeric table with LF line ends and 16 significant digits, as the Python driver does.
     fid = fopen(path, 'w');
     cleaner = onCleanup(@() fclose(fid));
     fprintf(fid, '%s\n', strjoin(headers, ','));

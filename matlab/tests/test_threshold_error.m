@@ -1,6 +1,6 @@
 function test_threshold_error()
-%TEST_THRESHOLD_ERROR A nominal point already below the threshold is an error, not a zero margin. Counterpart of the Python
-% test_threshold_error.
+%TEST_THRESHOLD_ERROR A nominal point below the threshold is an error, not a zero margin.
+%   Peer of the Python test_threshold_error.
     fidelity_fn = @(mu) 0.95;
     assert_error(@() qrobustness.iterative_margin(fidelity_fn, 1.0, 0.99, 'mu0', 0), ...
                  'qrobustness:margin:Threshold', 'FT >= F(mu0)');

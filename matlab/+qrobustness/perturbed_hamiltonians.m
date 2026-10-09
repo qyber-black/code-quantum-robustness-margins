@@ -1,9 +1,12 @@
 function H_list = perturbed_hamiltonians(H0, H1, H2, u1, u2, structure, delta)
-%PERTURBED_HAMILTONIANS Assemble H{k} for a multiplicative structure perturbation.
-%   structure : 'H0', 'H1', or 'H2'
-% delta : mu - mu0 (multiplicative factor applied to the named Hamiltonian)
+%PERTURBED_HAMILTONIANS Interval Hamiltonians H^(k) with one structure scaled by (1 + delta).
+%   H0, H1, H2 - drift and control Hamiltonians
+%   u1, u2     - controls per interval
+%   structure  - 'H0', 'H1' or 'H2'
+%   delta      - perturbation mu - mu0
+%   H_list     - cell array of H^(k)
 %
-%   Peer of python/src/qrobustness/core.py.
+%   Peer of python/src/qrobustness/core.py:perturbed_hamiltonians.
 
     tau = numel(u1);
     if numel(u2) ~= tau

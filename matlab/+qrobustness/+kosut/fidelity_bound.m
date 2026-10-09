@@ -1,9 +1,9 @@
 function F = fidelity_bound(T_omega_bnd)
-%FIDELITY_BOUND F_lb of their Eq. 30 given T*Omega_bnd.
-%   F_lb = max(1 - 0.5*(exp((T*Omega_bnd/2)^2) - 1)^2, 0), clamped to 0 at and
-%   beyond qrobustness.kosut.t_omega_max().
+%FIDELITY_BOUND Lower bound F_lb = max(1 - (exp((T*Omega_bnd/2)^2) - 1)^2/2, 0).
+%   T_omega_bnd - T*Omega_bnd, non-negative; F_lb = 0 at and beyond
+%                 qrobustness.kosut.t_omega_max()
 %
-%   Peer of python/src/qrobustness/kosut.py.
+%   Peer of python/src/qrobustness/kosut.py:fidelity_bound.
 
     if any(T_omega_bnd < 0)
         error('qrobustness:kosut:NegTOb', 'T_omega_bnd must be non-negative.');

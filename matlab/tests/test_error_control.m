@@ -1,9 +1,7 @@
 function test_error_control()
-% Error control: each approximated quantity must carry a usable certificate.
-%
-% Two quantities in the package fail to be exact to roundoff: kosut.uncertainty_rates -> w_dev, a supremum recovered from samples
-% iterative_margin -> M, terminated on a FIDELITY band eta Both must be conservative in a stated direction and reach a requested
-% precision when asked. Mirrors python/tests/test_error_control.py.
+% Error control of the approximated quantities: w_dev of kosut.uncertainty_rates and M of iterative_margin.
+%   Both must be conservative in a stated direction and reach a requested precision.
+%   Peer of python/tests/test_error_control.py.
 
     this_dir = fileparts(mfilename('fullpath'));
     root = fileparts(fileparts(this_dir));

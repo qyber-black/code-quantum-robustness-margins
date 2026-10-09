@@ -18,6 +18,7 @@ matplotlib = pytest.importorskip("matplotlib")
 matplotlib.use("Agg")
 
 from qrobustness.plotting import (  # noqa: E402
+    _span_limits,
     plot_fidelity_error_sweeps,
     plot_margins_vs_index,
     plot_margins_vs_sensitivity,
@@ -75,3 +76,11 @@ def test_sweep_plot_write(tmp_path: Path):
     assert fig.axes[0].xaxis.label.get_fontsize() == 18
     assert fig.axes[0].yaxis.label.get_fontsize() == 18
     assert len(fig.axes[0].get_xticks()) == 5
+
+
+def test_span_limits_keep_the_default_when_data_fits():
+    assert _span_limits([1e-4, 1e-3], (1e-7, 1e-1)) == [1e-7, 1e-1]
+
+
+def test_span_limits_widen_only_outside_the_default():
+    assert _span_limits([1e-8, 2e-1], (1e-7, 1e-1)) == [1e-8, 2e-1]

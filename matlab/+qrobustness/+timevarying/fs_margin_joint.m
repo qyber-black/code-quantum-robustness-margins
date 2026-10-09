@@ -6,8 +6,14 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function [ell, budget] = fs_margin_joint(Hhat_lists, dt, F0, FT)
-%FS_MARGIN_JOINT Exact Choi-speed certificate for a joint box budget. ell(m) is the worst path length over |delta_j(t)| <= m_j.
-% Every m satisfying ell(m) <= budget is certified safe. Counterpart of python/src/qrobustness/timevarying.py:fs_margin_joint.
+%FS_MARGIN_JOINT Choi-speed certificate for a joint box |delta_j(t)| <= m_j.
+%   Hhat_lists - cell{p}{tau} of structure matrices
+%   dt         - interval length
+%   F0, FT     - nominal fidelity and threshold F_T
+%   ell        - handle m -> worst path length over the box
+%   budget     - arccos F_T - arccos F0; m is certified if ell(m) <= budget
+%
+%   Peer of python/src/qrobustness/timevarying.py:fs_margin_joint.
 
     gauge = qrobustness.lengthspace.path_gauge( ...
         qrobustness.lengthspace.interval_grams(Hhat_lists, true, true), dt);

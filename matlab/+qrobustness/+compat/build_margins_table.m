@@ -1,5 +1,9 @@
 function T = build_margins_table(R, nC)
-%BUILD_MARGINS_TABLE Assemble margins structure columns from case-study results R.
+%BUILD_MARGINS_TABLE Assemble margins-table columns from case-study results.
+%   R  - struct with fields H0, H1, H2, each holding fid, error, M, M_minus,
+%        M_plus, zeta per controller
+%   nC - number of controllers
+%   T  - struct with columns controller, fid, err, M_*, Mm_*, Mp_*, zeta_*
     T = struct();
     T.controller = (1:nC)';
     T.fid = R.H0.fid;
