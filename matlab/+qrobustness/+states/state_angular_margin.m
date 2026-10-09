@@ -33,8 +33,14 @@ function result = state_angular_margin(fidelity_fn, C, FT, varargin)
     end
     L = qrobustness.states.state_lipschitz_constant(FT, C);
     if angular
-        thetaT = acos(FT);
-        rest(end + 1:end + 2) = {'safe_radius_fn', @(F) max(0, (thetaT - acos(min(F, 1))) / C)};
+        thetaT = atan2(sqrt(max(0, 1 - FT^2)), FT);
+        rest(end + 1:end + 2) = {'safe_radius_fn', @(F) angular_radius(F, thetaT, C)};
     end
     result = qrobustness.iterative_margin(fidelity_fn, L, FT, rest{:});
+end
+
+function r = angular_radius(F, thetaT, C)
+    % (theta_T - theta(F)) / C with theta = atan2(sqrt(1 - F^2), F), F clipped to [0, 1].
+    Fc = min(max(F, 0), 1);
+    r = max(0, (thetaT - atan2(sqrt(max(0, 1 - Fc^2)), Fc)) / C);
 end

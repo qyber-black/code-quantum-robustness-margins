@@ -75,7 +75,7 @@ tolerance.
 | `multiparam` | `+qrobustness/+multiparam` | `test_multiparam.m` |
 | `timevarying` (certificates) | `+qrobustness/+timevarying` | `test_timevarying.m` |
 | `lindblad` | `+qrobustness/+lindblad` | `test_lindblad.m` |
-| `berberich` | `+qrobustness/+berberich` | no MATLAB/Octave test yet |
+| `berberich` | `+qrobustness/+berberich` | `test_berberich.m` (parity values from Python) |
 | `states`, `openstates` | `+qrobustness/+states`, `+openstates` | `test_states.m`, `test_openstates.m` (parity fixture) |
 | `synthesis`, `verify`, adversarial search | none | Python only |
 
