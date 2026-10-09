@@ -38,7 +38,7 @@ tv_bracket_<FT>.csv (only with --adversary)
     m_adv, F_at_adv, adv_violated: adversarial upper witness m_adv, the
         fidelity found there, and whether a violation was exhibited.
     gap_lower, gap_upper: constancy-gap endpoints (empty if unavailable).
-    n_adversary_calls: adversary evaluations.
+    n_adversary_evals: fidelity evaluations of the adversarial searches.
 """
 
 from __future__ import annotations
@@ -246,7 +246,7 @@ def main() -> None:
                     "adv_violated": int(adv_violated),
                     "gap_lower": "" if gap_lo is None else gap_lo,
                     "gap_upper": "" if gap_hi is None else gap_hi,
-                    "n_adversary_calls": br.n_evals,
+                    "n_adversary_evals": br.n_evals,
                 }
             )
             print(

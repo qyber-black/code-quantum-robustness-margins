@@ -72,8 +72,10 @@ perturbation parameter (relative errors for multiplicative structures).
 - `joint_gauge_<FT>.csv`: diagonal and inradius gains of the joint and
   angular gauges over the cross-polytope, trajectory box gains.
 - `tv_bracket_<FT>.csv`: per controller and structure `r0`, `r_fs`,
-  `M_const`, `M_const_upper`, `m_adv`, `F_at_adv`, and the constancy-gap
-  interval `gap_lower`, `gap_upper` (bounds on M_const - M_tv).
+  `M_const`, `M_const_upper`, `m_adv`, `F_at_adv`, `adv_violated`, the
+  constancy-gap interval `gap_lower`, `gap_upper` (bounds on M_const -
+  M_tv), and `n_adversary_evals` (fidelity evaluations of the adversarial
+  searches).
 - `slice_ctrl1_<FT>.npz`: fidelity scan of a two-parameter slice.
 
 **`single-qubit-python`**: `single_qubit_<FT>.csv`: per structure `M`,

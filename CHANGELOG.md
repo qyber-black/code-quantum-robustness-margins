@@ -48,8 +48,9 @@ Not released. Changes since 1.0.2.
 
 - CSV columns: an adversarial witness is `m_adv` (`madv_*`); the certified
   upper end of a bracket is `M_upper` (`Mupper_*`, `M_gamma_upper`).
-  `TVBracket` fields are `m_adv` and `F_at_adv`. Existing CSVs use the new
-  headers.
+  `TVBracket` fields are `m_adv` and `F_at_adv`. In `tv_bracket_<FT>.csv`
+  `n_adversary_calls` is `n_adversary_evals`, a count of fidelity
+  evaluations. Existing CSVs use the new headers.
 - Cost is a fidelity-evaluation count. The bracket audit also records
   wall-clock time on a named machine; its `t_*` columns are the only ones
   `verify` skips.
