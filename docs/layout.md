@@ -147,7 +147,10 @@ five structures, with evaluation and step counts.
   interquartile ranges (`t_*`) of preprocessing, one fidelity evaluation and
   one directional run (both rays), and the machine and library versions.
   The `t_*` columns are the only ones the reproduction check does not
-  compare.
+  compare. On a desktop with other processes the medians agree to about 10%
+  between runs, but the largest interquartile range does not: over ten runs
+  on an idle CPU it ranged from 0.7% to 9.6%. Run the audit alone on a quiet
+  machine before quoting it.
 
 **`paper-xqrm`**: `tables/*.tex`, `figures/*.pdf`, `macros.tex`.
 
