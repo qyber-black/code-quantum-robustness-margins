@@ -18,6 +18,10 @@ Not released. Changes since 1.0.2.
 
 ### Added
 
+- `multiparam_<FT>_angular.csv` stores `rang_*`, the one-step angular radius
+  per direction. The xQRM figures read it. Paper macros include the quoted
+  settings, the band-on audit percentages and the directional gain over the
+  cross-polytope radius.
 - Certificate layers `lengthspace`, `multiparam`, `timevarying`, `lindblad`,
   `synthesis`, `berberich` and `verify`, exported with the QRM API.
   `berberich_margin` sits beside `kosut_margin`. `states` and `openstates`
@@ -27,44 +31,43 @@ Not released. Changes since 1.0.2.
 - MATLAB/Octave peers, including the Kosut trajectory class and the state
   certificates (`states_parity.json`).
 - `hamiltonian_part` and `hamiltonian_dnorm`: a Rump-verified bound. The
-  diamond norm of `-1j[B, .]` is `lambda_max(B) - lambda_min(B)`, with no
+  diamond norm of `-1j[B, \cdot]` is `lambda_max(B) - lambda_min(B)`, with no
   SDP. `open_speed(..., exact_hamiltonian=True)` uses it.
-- xQRM drivers for state examples, continuation checks and the bracket audit.
-  `run_robust_vs_nominal` records per-structure upper brackets, pulse areas
-  and angle budgets.
+- xQRM drivers for state examples, continuation checks and the bracket
+  audit. `run_robust_vs_nominal` records per-structure upper brackets, pulse
+  areas and angle budgets.
 - `MarginResult.n_evals_minus` and `n_evals_plus`.
 - `make install`, `test`, `run`, `verify` and `sync` replace `venv`,
-  `paper-*`, `reproduce-*` and `check-*`. Those names are gone. `run` no
-  longer copies artefacts into the paper. `clean`, `distclean` and
-  `maintainer-clean` remain. `test` lints, then runs the unit suite,
-  synthesis smoke and parity; `ENGINE=` selects one engine.
-- `make verify-xQRM-synth` runs the certificate harness on a freshly
-  synthesised ensemble.
-- Each MATLAB package has a `Contents.m`. Tests check that every documented
-  `make` target exists, every document is linked, every relative link
-  resolves, and every source file carries its SPDX header.
+  `paper-*`, `reproduce-*` and `check-*`. `run` does not copy artefacts into
+  the paper. `clean`, `distclean` and `maintainer-clean` remain. `test`
+  lints, then runs the unit suite, synthesis smoke and parity. `ENGINE=`
+  selects one engine.
+- `make verify-xQRM-synth`: the certificate harness on a freshly synthesised
+  ensemble.
+- A `Contents.m` in each MATLAB package. Tests check every documented `make`
+  target, every document link, every relative link, and the SPDX header on
+  every source file.
 
 ### Changed
 
-- CSV columns: an adversarial witness is `m_adv` (`madv_*`); the certified
-  upper end of a bracket is `M_upper` (`Mupper_*`, `M_gamma_upper`).
-  `TVBracket` fields are `m_adv` and `F_at_adv`. In `tv_bracket_<FT>.csv`
-  `n_adversary_calls` is `n_adversary_evals`, a count of fidelity
-  evaluations. Existing CSVs use the new headers.
+- An adversarial witness is `m_adv` (`madv_*`). The certified upper end is
+  `M_upper` (`Mupper_*`, `M_gamma_upper`). `TVBracket` fields are `m_adv`
+  and `F_at_adv`. In `tv_bracket_<FT>.csv`, `n_adversary_calls` is
+  `n_adversary_evals` (fidelity evaluations). Existing CSVs use the new
+  headers.
 - Cost is a fidelity-evaluation count. The bracket audit also records
-  wall-clock time on a named machine; its `t_*` columns are the only ones
-  `verify` skips.
-- A reference threshold crossing is the lower end of the final bracket, a
-  point that was evaluated and met the threshold. A ratio quoted against it
-  is a lower bound.
+  wall-clock time on a named machine. `verify` skips only the `t_*` columns.
+- A reference threshold crossing is the lower end of the final bracket: an
+  evaluated point that met the threshold. A ratio quoted against it is a
+  lower bound.
 - BLAS threads are pinned. Closed-system drivers use `margin_tol=1e-8`.
 - MATLAB `dU_dmu_quad` is `dU_dmu_integral`.
 - Docs are `docs/api.md`, `docs/layout.md` and `docs/verification.md`.
-- With `eval_tol = 0` a point is safe when `F >= F_T`. With `eval_tol > 0`
-  it is safe only when `F > F_T + eval_tol`. Continuation and bracket use
-  that test. `TVBracket.n_evals` counts fidelity evaluations.
-  `adversarial_upper_bound` takes `n_starts`, `starts` and `maxiter`.
-  Kosut samples per cycle come from the grid left after `n_dev_max`.
+- `eval_tol = 0`: safe when `F >= F_T`. `eval_tol > 0`: safe only when
+  `F > F_T + eval_tol`. Continuation and the bracket use that test.
+- `TVBracket.n_evals` counts fidelity evaluations.
+  `adversarial_upper_bound` takes `n_starts`, `starts` and `maxiter`. Kosut
+  samples per cycle are the grid left after `n_dev_max`.
   `open_structure_constants` takes one `dt` per interval. The trajectory
   check includes the perturbed propagator in its tolerance.
   `state_angular_margin` uses `atan2`. Plot ranges widen only outside the
@@ -72,25 +75,52 @@ Not released. Changes since 1.0.2.
 
 ### Fixed
 
-- MATLAB `iterative_margin` promotes only a certified safe point. With a
-  nonmonotone fidelity it could report an optimistic margin. The shipped
-  ensemble is unaffected.
-- `eval_tol` applies to the continuation and to the bracket. A zero angular
-  gauge is unchanged dynamics. MATLAB `iterative_margin` reports
+- `iterative_margin` evaluates each point once, on both rays and all phases
+  (both engines). Counts omit repeats.
+- Continuation returns `stalled` when a step makes no progress along the
+  ray (both engines). That includes `eval_tol > 0` with no safe point past
+  the last. The search stops. It does not keep stepping up to `k_max`.
+- `run_single_qubit_example` searches up to `1.05 max(M_upper, r_FS)`,
+  above the constant crossing, and records `adv_violated`.
+  `tab_singlequbit` prints `m_adv` only when a witness was found.
+- With a vanishing gauge, each ray of `directional_margin` is certified to
+  its own end of `omega` (both engines). Both rays had used the nearer end.
+- For `eval_tol > 0`, every safe radius uses `F - eval_tol` (both engines).
+  A radius at the raw `F` could cover an unsafe gap between two points
+  evaluated safe. `eval_tol = 0` is unchanged. Bracket-audit band rows and the
+  algorithm tests are recomputed.
+- Verified diamond norms (both engines). Cholesky underflow follows Rump's
+  Theorem 2.3: `n 3(2n + max a_ii) 2^-1074`. The divisor `1 - alpha` is
+  rounded down. Sums are at most `fl(sum)(1 + 2 gamma_{m-1})`. Complex
+  partial-trace entries are bounded by their real and imaginary parts. The
+  Frobenius term of `hamiltonian_dnorm` is bounded upward. Non-finite or
+  overflowing values fail. The Choi round trip is checked before every SDP.
+  Certified values move in the last digits.
+- The bracket audit uses the fourteen `multiparam` directions. The previous
+  twenty per controller counted six coordinate axes twice.
+- MATLAB `iterative_margin` promotes only a certified safe point. A
+  nonmonotone fidelity could otherwise give an optimistic margin. The
+  shipped ensemble is unaffected.
+- `eval_tol` applies to continuation and to the bracket. A zero angular
+  gauge leaves the dynamics unchanged. MATLAB `iterative_margin` reports
   `unresolved` and `n_unresolved`.
 - The fidelity cross-check uses the eigendecomposition route. An empty
-  `CheckReport` does not pass. Each bracket point is evaluated once.
+  `CheckReport` fails. Each bracket point is evaluated once.
 - Gauges use `core.traceless`. `refine` checks `q` and the list lengths.
-  MATLAB `kendall_tau_b` matches SciPy. The MATLAB open-system Lipschitz
-  constant is taken per controller.
+  MATLAB `kendall_tau_b` matches SciPy. The open-system Lipschitz constant
+  in MATLAB is taken per controller.
 - `run_cnot_case_study` and `run_scaling_example` honour `--out`.
   `run_slice_scan` honours `--FT`. The paper CSVs have Make recipes.
 - MATLAB `log10_axis` rejects an unknown axis. `berberich.margin` rejects a
   bad `nominal_error`, and a systematic margin when the Magnus condition
-  fails. Three production asserts stay present under
-  `python -O`. `lindblad.generator` and `plot_fidelity_error_sweeps` check
-  sequence lengths. The quoted `tab:tvbracket` ranges match the printed
-  table. `__all__` lists `traceless` once.
+  fails. Three production asserts remain under `python -O`.
+  `lindblad.generator` and `plot_fidelity_error_sweeps` check sequence
+  lengths. Quoted `tab:tvbracket` ranges match the printed table. `__all__`
+  lists `traceless` once.
+- `xqAnisotropyMax` is rounded as in `tab_multiparam`. `fig_validity` puts
+  the `M^K` label above the curves; `fig_open` labels every x tick with
+  data. `run_bracket_audit` makes three untimed warm-up calls before each timed
+  measurement and times preprocessing over batches of ten calls.
 
 ### Removed
 
@@ -100,140 +130,107 @@ Not released. Changes since 1.0.2.
 
 ## [1.0.2] - 2026-08-03
 
-Patch release aligning the toolbox with the paper's structure constant and
-making the Algorithm 1 stopping rule observable, plus the rank statistic used
-for Table I. The case-study margins are bit-for-bit unchanged.
+Aligns `structure_constant` with the paper, records which Algorithm 1 stop
+fired, and adds the Table I rank statistic. Case-study margins are
+bit-for-bit unchanged.
 
 ### Changed
 
-- `structure_constant` (both engines) now centres the perturbation structure to
-  its traceless part, \(\overline{\hat{H}}_\mu = \hat{H}_\mu - N^{-1}(\operatorname{Tr}
-  \hat{H}_\mu) I\), before taking the Frobenius norm, as the paper's
-  \(C_{\hat{H}}\) specifies. The trace part contributes only a global phase to
-  the propagator, which the trace-amplitude fidelity ignores, so this is a
-  *tightening*: previously reported margins remain valid but were unnecessarily
-  conservative for non-traceless user structures (e.g. a single-level detuning).
-  The case-study structures \(H_0, H_1, H_2\) are traceless, so every published
-  number is unchanged. The structure is now also validated as square and
-  Hermitian. New `qrobustness.traceless` / `qrobustness.traceless` (MATLAB).
-- `plot_margins_vs_sensitivity` (both engines): legends moved to the top left,
-  where they no longer sit over the data.
+- `structure_constant` (both engines) centres the perturbation on
+  `\overline{\hat{H}}_\mu = \hat{H}_\mu - N^{-1}(\operatorname{Tr} \hat{H}_\mu) I`
+  before the Frobenius norm, as `C_{\hat{H}}` specifies, and requires a
+  square Hermitian matrix. The trace part is a global phase, and the
+  trace-amplitude fidelity ignores it. Earlier margins stay valid.
+  Non-traceless structures tighten, for example a single-level detuning.
+  `H_0`, `H_1` and `H_2` are traceless, so published numbers are unchanged.
+  Adds `qrobustness.traceless` (Python and MATLAB).
+- Legends in `plot_margins_vs_sensitivity` (both engines) sit at the top
+  left, clear of the data.
 
 ### Added
 
-- `MarginResult.status_minus` / `status_plus` (MATLAB: `result.status_*`) report
-  *which* Algorithm 1 stopping rule fired -- `eta_band`, `domain_truncated` or
-  `iteration_limit` -- and are populated on the default path, independently of
-  `margin_tol`. A domain-truncated result certifies only that the margin is at
-  least the distance to the edge of `omega` and must not be read as a resolved
-  margin; the pre-existing `converged_*` flag cannot distinguish the two and is
-  retained for backward compatibility. `safeguard_*` records whether the
-  bisection safeguard fired. `reason_*` keeps its distinct meaning: the outcome
-  of the optional `margin_tol` bracket refinement.
-- `focal_tests_<FT>.csv` and `qrobustness.compat.kendall_tau_b` (MATLAB /
-  Octave): a rank-statistic cross-check for the three margin-versus-sensitivity
-  comparisons \(M_j\) versus \(|\zeta_j|\). Table I stays descriptive --
-  Pearson \(r\) and Spearman \(\rho\), unchanged -- and the paper makes no
-  inferential claim; the CSV records Spearman \(\rho\) and Kendall
-  \(\tau_b\) with Holm-corrected two-sided \(p\) for each, confirming that
-  the descriptive reading (appreciable for \(H_0\), weak for \(H_1\),
-  negligible for \(H_2\)) does not depend on the choice of rank statistic.
-  Both engines share a closed-form asymptotic \(\tau_b\) p-value, so MATLAB,
-  Octave and the SciPy reference agree exactly and the Python and MATLAB CSVs
-  are byte-identical.
+- `status_minus` and `status_plus` (`result.status_*` in MATLAB) name the
+  Algorithm 1 stop: `eta_band`, `domain_truncated` or `iteration_limit`.
+  They are set on the default path, with or without `margin_tol`.
+  `domain_truncated` is the distance to the edge of `omega`, not a resolved
+  margin. `converged_*` cannot separate the two, and remains.
+  `safeguard_*` records the bisection safeguard. `reason_*` remains the
+  optional `margin_tol` outcome.
+- `focal_tests_<FT>.csv` and `qrobustness.compat.kendall_tau_b`
+  (MATLAB/Octave) cross-check `M_j` against `|\zeta_j|`. Table I stays
+  descriptive: Pearson `r` and Spearman `\rho`, with no inferential claim.
+  The CSV adds Spearman `\rho` and Kendall `\tau_b`, each with a
+  Holm-corrected two-sided `p`. Either statistic gives the same reading:
+  appreciable for `H_0`, weak for `H_1`, negligible for `H_2`. MATLAB,
+  Octave and SciPy share one closed-form `\tau_b` p-value, so the Python
+  and MATLAB CSVs are byte-identical.
 
 ### Fixed
 
-- `iterative_margin` (both engines): the step counter now starts at 1 rather
-  than 0, so `k_max` is exactly the number of evaluated trial points per
-  direction instead of one fewer than the number permitted. The paper's
-  Algorithm 1 and both engines now share this convention. Only reachable when
-  the limit actually binds, which no case-study run does (the default is
-  10 000 and every direction terminates in the \(\eta\) band), so no reported
-  value changes.
-- The paper now lives in a sibling repository rather than containing this one,
-  so `PAPER_ROOT` no longer points at the parent directory. The publishing
-  target is named after the paper (`sync-paper-qrm`, aliased `sync-paper`)
-  rather than the engine, and publishes the Python tree. `verify_paper_consistency`
-  resolves the paper via `--paper-source` / `$QRM_PAPER_SOURCE` / the sibling
-  checkout and skips its paper checks on a code-only clone instead of failing.
-- `pip` and `pytest` are invoked as modules, so a moved checkout no longer
-  breaks the venv console scripts.
-- `optimize_controller` now runs under Octave. It called `optimoptions`, which
-  is MATLAB-only, so GRAPE synthesis and `test_optimize_controller` failed on
-  the Octave peer with a misleading "install the optim package" message. Octave
-  ships `fminunc` and `optimset` in core, so the option struct is now built with
-  `optimset` there -- same quasi-Newton objective-and-gradient path, no Octave
-  Forge package and no Optimization Toolbox emulation required. The `output`
-  struct is also read defensively, since Octave supplies no `message` field.
-  The full Octave suite (15/15) now passes.
+- `iterative_margin` (both engines) counts from 1, so `k_max` is the number
+  of trial points per direction, as in Algorithm 1. The limit does not bind
+  on the case study (default 10 000; every direction stops in the `\eta`
+  band), so reported values are unchanged.
+- The paper is a sibling repository. `PAPER_ROOT` points at that checkout.
+  Publishing is `sync-paper-qrm` (alias `sync-paper`) and ships the Python
+  tree.
+  `verify_paper_consistency` takes the paper from `--paper-source`,
+  `$QRM_PAPER_SOURCE` or the sibling checkout, and skips paper checks on a
+  code-only clone.
+- `pip` and `pytest` run as modules, so a moved checkout does not need the
+  venv console scripts.
+- `optimize_controller` runs under Octave via core `optimset` and `fminunc`
+  (same quasi-Newton objective and gradient). No Octave Forge package, and
+  no emulation of the MATLAB Optimization Toolbox. The `output` struct is
+  read without a `message` field. The Octave suite passes 15/15.
 
 ## [1.0.1] - 2026-08-02
 
-Patch release correcting the optional `margin_tol` refinement, the target-gate
-composition in the supplementary Kosut layer, and the correlation analysis used
-for Table I. The default Algorithm 1 path, the controller ensemble, the
-robustness-margin values and the figures are unchanged.
+Corrects optional `margin_tol` refinement, Kosut's target-gate composition,
+and the Table I correlations. The default Algorithm 1 path, the ensemble,
+the margins and the figures are unchanged.
 
 ### Changed
 
-- `correlations_<FT>.tex` (Table I of the paper) and the MATLAB
-  `correlations_<FT>.csv` now correlate against the sensitivity *magnitudes*
-  \(|\zeta_j|\) rather than the signed \(\zeta_j\). The margin
-  \(M_j = \min\{M_{j,-}, M_{j,+}\}\) is invariant under reversal of the
-  parameter coordinate, while \(\zeta_j\) changes sign, so \(|\zeta_j|\) is the
-  orientation-invariant local comparator; mixing signs was masking the
-  relationship, and
-  `robustness_margins_sensitivity.png` (Fig. 3) already plotted \(|\zeta|\).
-  The drift-structure entries change materially -- \(\varepsilon_0\) against
-  \(|\zeta_0|\) rises from 0.44 to 0.69 (Pearson) and \(M_0\) against
-  \(|\zeta_0|\) from -0.35 to -0.58 -- while the control-structure relations
-  remain weak. `margins_table_<FT>.csv` still records the signed \(\zeta_j\)
-  and is bit-for-bit unchanged, as are the margins themselves.
+- Table I (`correlations_<FT>.tex`) and the MATLAB `correlations_<FT>.csv`
+  use `|\zeta_j|`. `M_j` is invariant if the parameter axis is reversed.
+  Signed `\zeta_j` changes sign, and that sign hid the comparison. Fig. 3
+  already plotted `|\zeta|`. Pearson `\epsilon_0` against `|\zeta_0|` rises
+  from 0.44 to 0.69, and `M_0` against `|\zeta_0|` from -0.35 to -0.58.
+  Control-structure correlations stay weak. `margins_table_<FT>.csv` still
+  stores signed `\zeta_j` and is bit-for-bit unchanged, as are the margins.
 
 ### Fixed
 
-- `kosut.margin` / `kosut.threshold_time_bandwidth` (both engines): the nominal
-  fidelity deficit `eps_0` is now absorbed into the threshold through the
-  *angular* relation
-  \(F_{\mathrm{eff}} = \cos(\arccos \mathcal{F}_T - \arccos \mathcal{F}_0)\),
-  exposed as the new `kosut.effective_threshold`. Their Theorem 1 bounds the
-  fidelity to the *achieved* nominal gate, whereas the certificate is stated
-  against the *target*; since `arccos` of the gate fidelity is the angle
-  between the corresponding Choi states, the angles -- not the fidelity
-  deficits -- add. The previous additive form `F_T + eps_0` is looser than the
-  sufficient condition and so was **not** conservative; it remains selectable
-  as `absorption='additive'` (and `--absorption additive` in the drivers) to
-  reproduce pre-1.0.1 numbers. The implied margins `M^K` shrink accordingly,
-  and `docs/time-bandwidth-bound.md` and the README report the recomputed
-  comparison. `effective_threshold` also validates `0 <= nominal_error <= 1`
-  (`1 - eps_0` is a fidelity) rather than clamping impossible inputs, and both
-  engines regression-test the closed form together with the collinear
-  single-qubit rotation that saturates it. The Kosut layer is supplementary and
-  experimental, outside `make reproduce-QRM-margins`, and no paper claim
-  depends on it.
-- `kosut.margin` (both engines): the positive root of `a m^2 + b m = y^2` is
-  now evaluated in the rationalised form `2 y^2 / (b + sqrt(b^2 + 4 a y^2))`,
-  which avoids catastrophic cancellation when `a y^2 << b^2` (structures nearly
-  commuting with the nominal evolution) and removes the `a <= 0` special case.
-- `kosut` documentation now states the scope explicitly: the margin is the
-  *constant structured-parameter* specialisation and is **not** a
-  supremum-norm time-varying margin -- a sign-modulated trajectory within the
+- `kosut.margin` and `kosut.threshold_time_bandwidth` (both engines) absorb
+  `eps_0` by
+  `F_{\mathrm{eff}} = \cos(\arccos \mathcal{F}_T - \arccos \mathcal{F}_0)`,
+  as `kosut.effective_threshold`. Theorem 1 bounds fidelity to the achieved
+  gate. The certificate is against the target. `arccos` of the fidelity is
+  the angle between the Choi states, so the angles add. The old sum
+  `F_T + eps_0` was not conservative. `absorption='additive'` and
+  `--absorption additive` reproduce pre-1.0.1 numbers. Implied `M^K`
+  shrinks. `docs/time-bandwidth-bound.md` and the README give the new
+  comparison. `nominal_error` must lie in `[0, 1]` (`1 - eps_0` is a
+  fidelity). Values outside that interval are rejected, not clamped. Both
+  engines test the closed form and the collinear single-qubit rotation
+  that saturates it. The layer is supplementary, outside
+  `make reproduce-QRM-margins`, and no paper claim depends on it.
+- In `kosut.margin` (both engines) the positive root of
+  `a*m^2 + b*m = y^2` is `2 y^2 / (b + sqrt(b^2 + 4 a y^2))`. This avoids
+  catastrophic cancellation for `a*y^2 << b^2`, where the structure nearly
+  commutes with the nominal evolution, and drops the `a <= 0` branch.
+- The Kosut margin is the constant structured-parameter case, not a
+  supremum-norm time-varying margin. A sign-modulated trajectory inside the
   same budget can defeat the coherent averaging behind `Omega_avg`.
-- `iterative_margin(margin_tol=...)`: the optional safe/unsafe bracket
-  refinement now applies a certified-promotion rule -- a pointwise-safe
-  sample advances the certified lower endpoint only when the gap from the
-  current certified end is covered by that sample's safe radius
-  \((F - F_T)/L_{\hat{H}}\) or bridged by safe-radius continuation.
-  Previously, with a nonmonotone fidelity, the plain bisection could promote
-  a sample from a disconnected safe island beyond the first threshold
-  crossing and report an inflated margin as `'bracketed'`. The bracket now
-  always encloses the *first* boundary of the nominal safe component; when
-  continuation cannot keep pace with bisection the new reason `'partial'`
-  reports a rigorous bracket whose width exceeds `margin_tol`. The default
-  Algorithm 1 path (no `margin_tol`) is unchanged, and the refined case-study
-  margins are bit-for-bit identical (single-crossing rays remain
-  `'bracketed'`); only the general nonmonotone claim needed the fix.
+- With `margin_tol`, a safe sample advances the certified lower end only
+  when `(F - F_T)/L_{\hat{H}}` covers the gap, or continuation bridges it.
+  The bracket is the first boundary of the nominal safe component. The old
+  bisection could promote a later safe island and report the inflated
+  margin as `bracketed`. If continuation falls behind, `partial` is a
+  rigorous bracket wider than `margin_tol`. The default path is unchanged.
+  Refined case-study margins are bit-for-bit identical. Single-crossing
+  rays stay `bracketed`.
 
 ## [1.0.0] - 2026-07-30
 
@@ -241,88 +238,74 @@ Initial release.
 
 ### Core
 
-- Gate propagator and normalised gate fidelity; sensitivity bound and Lipschitz
-  constant \(L_{\hat{H}}\); differential sensitivity \(\zeta\); iterative
-  one-dimensional robustness margin (Algorithm 1, plus optional solvers);
-  GRAPE controller synthesis.
-- Python is the reference implementation; MATLAB and Octave are peers held to it
-  by a shared API contract (`docs/api.md`), cross-engine comparison and golden
-  fixtures in `data/reference/`.
-- Full reproduction of the three-qubit case study of the accompanying paper.
+- Gate propagator and normalised gate fidelity. Sensitivity bound and
+  Lipschitz constant `L_{\hat{H}}`. Differential sensitivity `\zeta`.
+  One-dimensional robustness margin (Algorithm 1, plus optional solvers).
+  GRAPE synthesis.
+- Python is the reference. MATLAB and Octave are peers under `docs/api.md`,
+  with cross-engine comparison and golden fixtures in `data/reference/`.
+- Full reproduction of the three-qubit case study.
 
 ### Segment derivative
 
-- \(\partial U^{(k)}/\partial\mu\) is evaluated in exact closed form in the
-  eigenbasis of \(H^{(k)}\). The controls are piecewise constant, so
-  \(H^{(k)}\) is constant on each interval and the defining integral is a
-  divided difference, exact to roundoff.
-- Gauss-Legendre quadrature is selectable as `method='quadrature'` and serves as
-  a cross-check on the closed form in the test suite. `n_quad` applies only to
-  that path; under the default `method='exact'` it is accepted and unused.
-- On the exact path a single eigendecomposition per interval serves both the
-  propagator and the derivatives, so \(U^{(k)}\) and \(\partial
-  U^{(k)}/\partial\mu\) are exactly consistent. `propagator()` uses `expm`, so
-  fidelities computed the two ways may differ at ~1e-15.
+- `\partial U^{(k)}/\partial\mu` is a divided difference in the eigenbasis of
+  piecewise-constant `H^{(k)}`, exact to roundoff. One eigendecomposition
+  per interval makes `U^{(k)}` and the derivative exactly consistent.
+  `propagator()` uses `expm`, so the two fidelity routes can differ at
+  about `1e-15`.
+- `method='quadrature'` (Gauss-Legendre) cross-checks the closed form.
+  `n_quad` applies only there. `method='exact'` accepts `n_quad` and leaves
+  it unused.
 
 ### Error control
 
-`docs/theory.md` classifies every reported quantity as exact to roundoff or
-approximated with an explicit certificate. Two are approximated:
+As released, `docs/theory.md` classed each quantity as exact to roundoff or
+certified. Two were approximated.
 
-- **Margin \(M\).** \(M\) is the distance to a point at which
-  \(F \ge F_T\) was evaluated, hence a lower bound on the true margin:
-  conservative, never optimistic. `eta` is a fidelity band rather than a margin
-  band, and the induced uncertainty in \(\mu\) is \(\sim\eta/|\zeta|\),
-  which grows without bound as \(\zeta \to 0\), that is for the flat, highly
-  robust controllers of interest; on the case study the default `eta=1e-6`
-  leaves about 5e-4 relative error in \(M\). `margin_tol` refines the
-  safe/unsafe bracket until \((M_{\mathrm{upper}} - M)/M \le\) `margin_tol`
-  and tightens \(M\), reaching 1e-10 in about 90 extra fidelity evaluations.
-  `MarginResult` carries `M_upper*`, `margin_uncertainty`, `reason_*` and
-  `certificate` (`'segment'` for `algorithm1` and `lipschitz_*`, `'endpoint'`
-  for `doubling` and `newton_probe`, which probe beyond the Lipschitz radius).
-  The paper drivers use the default, so the published tables are the `eta`-based
-  values.
-- **Kosut `w_dev`.** \(\Omega_{\mathrm{avg}}^{\mathrm{dev}}\) is a supremum
-  over \(t\). Sampling can only under-estimate a supremum, and a smaller
-  `w_dev` yields a larger implied margin, so the residual error is biased in the
-  optimistic direction. The sampling density is derived from the exactly-known
-  Bohr bandwidth of the interaction-picture operator, candidate maxima are
-  polished with Brent, and the grid is refined until successive sweeps agree to
-  `dev_tol`. Two rigorous certificates are returned: a Lipschitz bound from
-  \(d\tilde{H}/ds = i[H,\tilde{H}]\) and an isospectral bracket from
-  \(\|\tilde{H}(t)\| = \|\hat{H}^{(k)}\|\).
-
-The Kosut time average \(\langle\tilde{H}\rangle\) is closed form, using the
-same divided-difference identity as \(\partial U/\partial\mu\), so `w_avg` is
-exact and `uncertainty_rates` accepts `n_quad` without using it.
+- **`M`.** Distance to an evaluated point with `F >= F_T`: a lower bound,
+  conservative, never optimistic. `eta` is a fidelity band, not a margin
+  band. Uncertainty in `\mu` is of order `\eta/|\zeta|` and grows without
+  bound as `\zeta \to 0` (the flat, highly robust case). On the case study,
+  `eta=1e-6` leaves about `5e-4` relative error in `M`. `margin_tol`
+  refines until `(M_{\mathrm{upper}} - M)/M <= margin_tol`, about `1e-10`
+  after 90 further fidelity evaluations. `MarginResult` carries `M_upper*`,
+  `margin_uncertainty`, `reason_*` and `certificate` (`segment` for
+  `algorithm1` and `lipschitz_*`; `endpoint` for `doubling` and
+  `newton_probe`, which probe beyond the Lipschitz radius). Paper drivers
+  use the default, so published tables are the `eta` values.
+- **Kosut `w_dev`.** `\Omega_{\mathrm{avg}}^{\mathrm{dev}}` is a supremum
+  over `t`. Sampling can only fall short, and a smaller `w_dev` makes the
+  implied margin larger, so the residual is optimistic. The grid follows
+  the Bohr bandwidth of the interaction-picture operator. Brent polishes
+  candidate maxima. Sweeps stop at `dev_tol`. Certificates: a Lipschitz
+  bound from `d\tilde{H}/ds = i[H, \tilde{H}]`, and an isospectral bracket
+  `\|\tilde{H}(t)\| = \|\hat{H}^{(k)}\|`. The average
+  `\langle\tilde{H}\rangle` uses the same divided difference, so `w_avg`
+  is exact. `uncertainty_rates` accepts `n_quad` and leaves it unused.
 
 ### Conventions
 
-- Result trees are named after the method (`results/lipschitz-margin-*`,
-  `results/time-bandwidth-bound-*`). The only paper-aware part of the build is
-  the `PAPER_*` block at the top of the `Makefile` and the `sync-paper-*` and
-  `verify-paper-*` targets that read it.
-- `load_problem` returns `n_qubits` and `dim` (= `2**n_qubits`) as separate
-  fields; `lipschitz_constant` expects the Hilbert space dimension.
-- Sources and documentation are ASCII, with mathematical symbols in LaTeX-like
-  notation. British spelling in prose; identifiers as written. CSV writers emit
-  LF in all three engines.
-- The controller ensemble in `data/controllers/` comes from earlier optimisation
-  runs and is shipped frozen; `optimize_controller` reproduces the synthesis
-  workflow but not that specific run. See the provenance note in `README.md`.
+- Result trees are named for the method (`results/lipschitz-margin-*`,
+  `results/time-bandwidth-bound-*`). The only paper-aware part of the build
+  is the `PAPER_*` block in the `Makefile`, with the `sync-paper-*` and
+  `verify-paper-*` targets.
+- `load_problem` returns `n_qubits` and `dim` (`2**n_qubits`) separately.
+  `lipschitz_constant` expects the Hilbert-space dimension.
+- Sources and docs are ASCII, with LaTeX-like maths. British spelling in
+  prose. Identifiers stay as written. All three engines write CSV with LF.
+- `data/controllers/` is a frozen ensemble from earlier optimisation runs.
+  `optimize_controller` repeats the workflow, not that run. See `README.md`.
 
-### Supplementary (experimental)
+### Supplementary
 
-- A comparison with the Kosut-Lidar-Rabitz time-bandwidth bound
-  ([arXiv:2507.01215](https://arxiv.org/abs/2507.01215)), specialised to the
-  closed-system, purely coherent, scalar structured perturbation model of this
-  toolbox: `python/src/qrobustness/kosut.py`,
-  `matlab/+qrobustness/+kosut/`, the `run_time_bandwidth_bound_comparison`
-  drivers, `scripts/compare_time_bandwidth_bound.py` and the
-  `time-bandwidth-bound*` make targets.
-- It is experimental and sits outside the reproduction gate
-  `make reproduce-QRM-margins`; no claim in the paper depends on it. Agreement between
-  the three engines is a consistency check rather than an accuracy check.
-  `docs/time-bandwidth-bound.md` documents the specialisation, the caveats and
-  the numerical accuracy.
+- Kosut-Lidar-Rabitz time-bandwidth bound
+  ([arXiv:2507.01215](https://arxiv.org/abs/2507.01215)), for a closed
+  system with a purely coherent scalar perturbation:
+  `python/src/qrobustness/kosut.py`, `matlab/+qrobustness/+kosut/`,
+  `run_time_bandwidth_bound_comparison`,
+  `scripts/compare_time_bandwidth_bound.py` and the
+  `time-bandwidth-bound*` targets. Experimental, and outside
+  `make reproduce-QRM-margins`. No paper claim depends on it. Agreement of
+  the three engines is a consistency check, not an accuracy check.
+  `docs/time-bandwidth-bound.md` records the specialisation, the caveats
+  and the numerical accuracy.

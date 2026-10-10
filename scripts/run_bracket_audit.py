@@ -27,6 +27,8 @@ timing_<FT>.csv
     controller, repeats, n_evals_dir: instance and diagonal-run evaluations.
     t_preproc_*, t_eval_*, t_dir_*: median and IQR of preprocessing (constants,
         Grams, gauges), one fidelity evaluation, one angular directional run.
+        Preprocessing and evaluation samples are means over batches of
+        PREPROC_REPEATS and EVAL_REPEATS calls, after WARMUP untimed calls.
     Only the t_* columns vary between runs (volatile in the reproduction
     check).
 environment.json
@@ -63,6 +65,10 @@ BANDS = (0.0, VIOLATION_TOL)
 TIMING_CONTROLLERS = 5
 REPEATS = 7
 EVAL_REPEATS = 50
+#: Preprocessing calls per timed sample (one call takes milliseconds).
+PREPROC_REPEATS = 10
+#: Untimed calls before each timed measurement (first-call costs).
+WARMUP = 3
 
 
 def _setup(problem, c, fT):
@@ -99,7 +105,7 @@ def _setup(problem, c, fT):
 
 def _directions():
     names, dirs = [], []
-    for j, d in enumerate(mp.axis_directions(3)):
+    for j, d in enumerate(np.eye(3)):
         names.append(f"+e{j}")
         dirs.append(d)
         names.append(f"-e{j}")
@@ -175,6 +181,10 @@ def _audit_controller(args):
 
 
 def _timed(fn, repeats):
+    """Wall-clock times of ``repeats`` calls, after WARMUP untimed calls
+    (first-call imports and caches would otherwise inflate the spread)."""
+    for _ in range(WARMUP):
+        fn()
     out = []
     for _ in range(repeats):
         t0 = time.perf_counter()
@@ -187,7 +197,11 @@ def timing(problem, controllers, fT):
     rows = []
     d = mp.diagonal_directions(3)[0]
     for idx, c in enumerate(controllers[:TIMING_CONTROLLERS], start=1):
-        t_pre = _timed(lambda c=c: _setup(problem, c, fT), REPEATS)
+        t_pre = _timed(
+            lambda c=c: [_setup(problem, c, fT) for _ in range(PREPROC_REPEATS)],
+            REPEATS,
+        )
+        t_pre = t_pre / PREPROC_REPEATS
         _, _, _, L, G, A, fid = _setup(problem, c, fT)
         x = np.array([1e-3, -1e-3, 1e-3])
         t_eval = _timed(

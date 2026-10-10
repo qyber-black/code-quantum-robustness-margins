@@ -15,7 +15,7 @@ for the problem and controller files. The MATLAB peer is matlab/+qrobustness."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import (
     Callable,
@@ -45,6 +45,10 @@ MARGIN_METHODS = (
 )
 ROOT_SOLVERS = ("brent", "toms748", "bisection")
 DU_METHODS = ("exact", "quadrature")
+
+#: Phase-2 doublings and phase-3 bisection steps. The MATLAB peer uses the
+#: same cap (``probe_cap`` in ``iterative_margin.m``); the paper quotes it.
+PROBE_CAP = 200
 
 
 def propagator(H_list: HList, dt: float) -> Array:
@@ -454,8 +458,9 @@ class MarginResult:
         Fidelity evaluations and steps (with ``return_diagnostics``).
     status_minus, status_plus :
         Stopping rule: ``'eta_band'``, ``'domain_truncated'`` (certifies only
-        the distance to the domain edge, not a resolved margin) or
-        ``'iteration_limit'``.
+        the distance to the domain edge, not a resolved margin),
+        ``'iteration_limit'`` or ``'stalled'`` (no safe point beyond the last
+        one; possible with ``eval_tol > 0``).
     safeguard_minus, safeguard_plus :
         True if an overshoot (F < F_T after a step) was bisected back.
     M_upper_minus, M_upper_plus, M_upper :
@@ -505,14 +510,18 @@ class MarginResult:
 
 @dataclass
 class _EvalCounter:
-    """Count calls to a fidelity function."""
+    """Evaluate a fidelity function once per point and count the evaluations."""
 
     fn: Callable[[float], float]
     n_evals: int = 0
+    cache: dict = field(default_factory=dict)
 
     def __call__(self, mu: float) -> float:
-        self.n_evals += 1
-        return float(self.fn(mu))
+        key = float(mu)
+        if key not in self.cache:
+            self.n_evals += 1
+            self.cache[key] = float(self.fn(mu))
+        return self.cache[key]
 
 
 def _on_boundary(mu: float, mu_lo: float, mu_hi: float) -> bool:
@@ -623,7 +632,7 @@ def _bracket_root_safe(
 
 
 #: Stopping rules of :func:`iterative_margin`, in the order they are tested.
-MARGIN_STATUS = ("eta_band", "domain_truncated", "iteration_limit")
+MARGIN_STATUS = ("eta_band", "domain_truncated", "iteration_limit", "stalled")
 
 
 class _DirOutcome(NamedTuple):
@@ -699,6 +708,10 @@ def _one_direction_lipschitz(
         )
         if done:
             return _DirOutcome(M, converged, mu_next, n_steps, status, safeguard)
+        if sign_step * (mu_next - mu) <= 4 * np.finfo(float).eps * max(1.0, abs(mu)):
+            # No progress beyond floating-point resolution (no safe point
+            # beyond mu): further steps would repeat it.
+            return _DirOutcome(abs(mu0 - mu), False, mu, n_steps, "stalled", safeguard)
         k += 1
         n_steps += 1
         mu = mu_next
@@ -924,7 +937,7 @@ def _certify_direction(
     frontier = mu_end
     mu_unsafe = None
     step = max(margin_tol * scale, 1e-15)
-    for _ in range(200):
+    for _ in range(PROBE_CAP):
         cand = _clamp(frontier + sign_step * step, mu_lo, mu_hi)
         if cand == frontier:
             return abs(mu0 - mu_cert), float("inf"), "boundary", n_unresolved
@@ -948,10 +961,13 @@ def _certify_direction(
         return abs(mu0 - mu_cert), float("inf"), "exhausted", n_unresolved
 
     # Refinement: safe midpoints are promoted only as in the probe phase.
+    # The second term is the binary64 resolution at the coordinate mu_cert
+    # (bisection cannot resolve below it, wherever mu0 is); on a ray from
+    # mu0 = 0 it is relative to the margin itself.
     target = max(
         margin_tol * max(abs(mu_cert - mu0), 1e-300), 1e-16 * max(1.0, abs(mu_cert))
     )
-    for _ in range(200):
+    for _ in range(PROBE_CAP):
         if abs(mu_unsafe - mu_cert) <= target:
             break
         mid = 0.5 * (mu_cert + mu_unsafe)
@@ -1147,9 +1163,10 @@ def iterative_margin(
         the angular radius ``(arccos F_T - arccos F)/C^stat_FS(d)``.
     eval_tol :
         Evaluation band eps_num of ``fidelity_fn``. Continuation treats a
-        point as safe only above F_T + eps_num, while the safe radius uses
-        the computed fidelity; in the bracket, probes within eps_num of F_T
-        are unresolved and counted in ``n_unresolved``.
+        point as safe only above F_T + eps_num and takes every safe radius
+        at F - eps_num; probes within eps_num of F_T are unresolved and
+        counted in ``n_unresolved``. ``mu0`` must be safe, F(mu0) > F_T +
+        eps_num.
 
     Returns
     -------
@@ -1169,10 +1186,19 @@ def iterative_margin(
 
     counter = _EvalCounter(fidelity_fn)
     F0 = counter(mu0)
-    if not (FT < F0):
-        raise ValueError(f"Require FT < F(mu0); got FT={FT}, F={F0}")
+    if not (FT + eval_tol < F0):
+        raise ValueError(
+            f"Require FT + eval_tol < F(mu0); got FT={FT}, eval_tol={eval_tol}, F={F0}"
+        )
     if safe_radius_fn is None:
         safe_radius_fn = lambda F: (F - FT) / L  # noqa: E731
+    if eval_tol > 0.0:
+        # With evaluation error up to eval_tol the true fidelity may be as low
+        # as F - eval_tol, so every radius is taken there.
+        raw_radius = safe_radius_fn
+
+        def safe_radius_fn(F: float) -> float:
+            return raw_radius(F - eval_tol) if F - eval_tol > FT else 0.0
 
     # Continuation accepts a point as safe only above the evaluation band.
     FT_safe = FT + eval_tol

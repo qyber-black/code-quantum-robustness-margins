@@ -12,15 +12,16 @@ Writes results/paper-xqrm/figures/*.pdf (copied into the paper repository
 by "make sync-xQRM"):
 
   fig_margins       per controller: r_0, r_FS, M, M^K and M^K_tv (structure
-                    H_1), with brackets [r_0, m_adv] for the probed controllers
-                    (multiparam_0.999, kosut_comparison_0.999_angular[_tv],
+                    H_1), with brackets [r_FS, m_adv] for the probed controllers
+                    (multiparam_0.999_angular, kosut_comparison_0.999_angular[_tv],
                     fs_validity, tv_bracket)
-  fig_directions    free-polytope radius against M(d) and its upper bracket
-                    along each probed direction, one controller (multiparam_0.999)
+  fig_directions    free angular and cross-polytope radii against M(d) and its
+                    upper bracket along each probed direction, one controller
+                    (multiparam_0.999_angular)
   fig_single_qubit  analytic fidelity curves of the pi-pulse with every
                     certificate (single_qubit_0.999)
   fig_ratios        M/M^K and r_FS/M^K_tv over the 3-qubit, CNOT and 4-qubit
-                    ensembles (multiparam, kosut_comparison, fs_validity,
+                    ensembles (multiparam angular, kosut_comparison, fs_validity,
                     cnot_margins, scaling4q_margins)
   fig_open          open-system one-step and iterated margins against the
                     reference crossings (open_margins, open_amp)
@@ -53,11 +54,12 @@ PDF_METADATA = {"CreationDate": None}
 # ruff: noqa: E402 -- matplotlib.use('Agg') above must execute before
 # pyplot is imported, so these cannot shift to the top of the file.
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 import numpy as np
 
 from _paper import col, configure, have, read
 
-from _drivers import DEFAULT_FT
+from _drivers import DEFAULT_FT, WITNESS_CONTROLLER, WITNESS_STRUCTURE
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -91,7 +93,7 @@ plt.rcParams.update(
 
 
 def fig_margins(res: Path, out: Path) -> None:
-    mp = read(res / "multiparameter-margin-python/multiparam_0.999.csv")
+    mp = read(res / "multiparameter-margin-python/multiparam_0.999_angular.csv")
     kos = read(res / "time-bandwidth-bound-python/kosut_comparison_0.999_angular.csv")
     kos_tv = read(
         res / "time-bandwidth-bound-python/kosut_comparison_0.999_angular_tv.csv"
@@ -115,11 +117,11 @@ def fig_margins(res: Path, out: Path) -> None:
 
     x = np.arange(len(r0))
     fig, ax = plt.subplots(figsize=(3.45, 2.5))
-    # Adversarial brackets [r0, m_adv] on M_tv for the controllers that were probed.
+    # Adversarial brackets [r_FS, m_adv] on M_tv for the controllers that were probed.
     first = True
     for r in tvb:
         px = pos_of[int(r["controller"])]
-        lo, hi = float(r["r0"]), float(r["m_adv"])
+        lo, hi = float(r["r_fs"]), float(r["m_adv"])
         ax.plot(
             [px, px],
             [lo, hi],
@@ -141,7 +143,7 @@ def fig_margins(res: Path, out: Path) -> None:
         ms=2.2,
         color=PINK,
         zorder=3,
-        label=r"$M^K_{\mathrm{tv}}$ (trajectory)",
+        label=r"$M^{K,\mathrm{tri}}_{\mathrm{tv}}$ (trajectory)",
     )
     ax.plot(
         x,
@@ -172,12 +174,13 @@ def fig_margins(res: Path, out: Path) -> None:
 
 
 def fig_directions(res: Path, out: Path, controller: int = 1) -> None:
-    mp = read(res / "multiparameter-margin-python/multiparam_0.999.csv")
+    mp = read(res / "multiparameter-margin-python/multiparam_0.999_angular.csv")
     row = next(r for r in mp if int(float(r["controller"])) == controller)
     surplus = float(row["fid"]) - FT
     L = np.array([float(row[f"L_H{j}"]) for j in range(3)])
 
     dir_names = [c[2:] for c in row if c.startswith("M_")]
+    rang = np.array([float(row[f"rang_{n}"]) for n in dir_names])
 
     def unit(name):
         if name[1] == "e":  # +e0 etc.
@@ -207,7 +210,8 @@ def fig_directions(res: Path, out: Path, controller: int = 1) -> None:
         label=r"bracket $[M(d), M_{\mathrm{upper}}(d)]$",
     )
     ax.plot(x, Md[order], "o", ms=3.0, color=BLUE, label=r"iterated $M(d)$")
-    ax.plot(x, poly[order], "^", ms=3.0, color=ORANGE, label="free polytope radius")
+    ax.plot(x, rang[order], "s", ms=2.6, color=GREEN, label="free angular radius")
+    ax.plot(x, poly[order], "^", ms=3.0, color=ORANGE, label="cross-polytope radius")
     ax.set_yscale("log")
     ax.set_ylim(top=M_upper.max() * 3.5)  # room for the legend above the data
     ax.set_xticks(x)
@@ -275,10 +279,10 @@ def fig_single_qubit(res: Path, out: Path) -> None:
             lw=1.2,
             label=r"$F(\delta)$" if name == "amplitude" else None,
         )
-        ax.axhline(0.999, color=GRAY, lw=0.8, ls=":")
+        ax.axhline(0.999, color=GRAY, lw=0.8, ls=":")  # F_T; no legend entry
         marks = [
             ("r0", ORANGE, r"$r_0$"),
-            ("KM_tv", PINK, r"$M^K_{\mathrm{tv}}$"),
+            ("KM_tv", PINK, r"$M^{K,\mathrm{tri}}_{\mathrm{tv}}$"),
             ("r_fs", VERMIL, r"$r_{\mathrm{FS}}$"),
             ("KM", GREEN, r"$M^K$"),
             ("M", BLUE, r"$M$"),
@@ -330,7 +334,7 @@ def _direction_label(name: str) -> str:
 def fig_ratios(res: Path, out: Path) -> None:
     """Certificate-to-bound ratios over the three ensembles."""
     data = []  # (ensemble label, M/MK values, rfs/KMtv values)
-    mp_rows = read(res / "multiparameter-margin-python/multiparam_0.999.csv")
+    mp_rows = read(res / "multiparameter-margin-python/multiparam_0.999_angular.csv")
     kos = read(res / "time-bandwidth-bound-python/kosut_comparison_0.999_angular.csv")
     kos_tv = read(
         res / "time-bandwidth-bound-python/kosut_comparison_0.999_angular_tv.csv"
@@ -374,14 +378,21 @@ def fig_ratios(res: Path, out: Path) -> None:
 
     fig, ax = plt.subplots(figsize=(3.45, 2.3))
     rng = np.random.default_rng(0)
+    medians = []
     for i, (_label, mk, rk, mkd, rkd) in enumerate(data):
         for k, (v, drift, color, lab) in enumerate(
             (
                 (mk, mkd, BLUE, r"$M/M^K$ (constant)"),
-                (rk, rkd, VERMIL, r"$r_{\mathrm{FS}}/M^K_{\mathrm{tv}}$ (trajectory)"),
+                (
+                    rk,
+                    rkd,
+                    VERMIL,
+                    r"$r_{\mathrm{FS}}/M^{K,\mathrm{tri}}_{\mathrm{tv}}$ (trajectory)",
+                ),
             )
         ):
-            xs = i + (k - 0.5) * 0.36 + rng.uniform(-0.09, 0.09, v.size)
+            center = i + (k - 0.5) * 0.36
+            xs = center + rng.uniform(-0.09, 0.09, v.size)
             # The drift structure is drawn as an open square.
             ax.plot(
                 xs[~drift],
@@ -391,6 +402,7 @@ def fig_ratios(res: Path, out: Path) -> None:
                 alpha=0.5,
                 color=color,
                 label=lab if i == 0 else None,
+                zorder=3,
             )
             ax.plot(
                 xs[drift],
@@ -401,7 +413,9 @@ def fig_ratios(res: Path, out: Path) -> None:
                 mew=0.6,
                 alpha=0.85,
                 color=color,
+                zorder=3,
             )
+            medians.append((center, float(np.median(v)), color))
         if i == 0:
             # A marker convention spanning both colours, so the key stays neutral.
             ax.plot(
@@ -414,12 +428,15 @@ def fig_ratios(res: Path, out: Path) -> None:
                 color=GRAY,
                 label="drift structure",
             )
-            ax.plot(
-                [i + (k - 0.5) * 0.36 - 0.14, i + (k - 0.5) * 0.36 + 0.14],
-                [np.median(v)] * 2,
-                color=color,
-                lw=1.6,
-            )
+    for center, med, color in medians:
+        ax.plot(
+            [center - 0.16, center + 0.16],
+            [med, med],
+            color=color,
+            lw=2.4,
+            zorder=6,
+            solid_capstyle="butt",
+        )
     ax.axhline(1.0, color=GRAY, lw=0.8, ls=":")
     ax.set_xticks(range(len(data)))
     ax.set_xticklabels([d[0] for d in data])
@@ -487,7 +504,7 @@ def fig_open(res: Path, out: Path) -> None:
             mew=0.8,
             color=VERMIL,
             zorder=4,
-            label=r"one-step, amp. damping ($2\times$)",
+            label=r"one-step, amp. damping",
         )
         ax.plot(
             col(amp, "M_diag"),
@@ -521,6 +538,12 @@ def fig_open(res: Path, out: Path) -> None:
     )
     ax.set_xscale("log")
     ax.set_yscale("log")
+    # Label every tick that carries data; the default log formatter leaves
+    # the amplitude-damping cluster near 8e-5 unlabelled.
+    ticks = [3e-5, 4e-5, 6e-5, 8e-5]
+    ax.set_xticks(ticks)
+    ax.set_xticklabels([rf"${t * 1e5:g}\times10^{{-5}}$" for t in ticks])
+    ax.xaxis.set_minor_formatter(mticker.NullFormatter())
     ax.set_xlabel(r"certified margin")
     ax.set_ylabel(r"reference threshold crossing")
     ax.legend(
@@ -637,7 +660,11 @@ def fig_slice(res: Path, out: Path, controller: int = 1) -> None:
 
 def fig_validity(res: Path, out: Path) -> None:
     """Adversarial min-fidelity against budget for the violating controller."""
-    path = res / "time-bandwidth-bound-python/budget_sweep_ctrl16_H1.csv"
+    path = (
+        res
+        / "time-bandwidth-bound-python"
+        / f"budget_sweep_ctrl{WITNESS_CONTROLLER}_{WITNESS_STRUCTURE}.csv"
+    )
     if not have(path, out / "fig_validity.pdf"):
         return
     lines = path.read_text().splitlines()
@@ -667,16 +694,38 @@ def fig_validity(res: Path, out: Path) -> None:
         )
     ax.axhline(0.999, color="#333333", lw=0.8, ls=":")
     ax.annotate(r"$F_T$", (m[0], 0.99905), fontsize=7)
-    for key, color, lab, y in (
-        ("r0", ORANGE, r"$r_0$", 0.99875),
-        ("KMtv", "#777777", r"$M^K_{\mathrm{tv}}$", 0.99875),
-        ("rfs", VERMIL, r"$r_{\mathrm{FS}}$", 0.99895),
-        ("KM", "#333333", r"$M^K$", 0.99875),
+    for key, color, lab, y, side in (
+        ("r0", ORANGE, r"$r_0$", 0.99908, "right"),
+        ("KMtv", "#777777", r"$M^{K,\mathrm{tri}}_{\mathrm{tv}}$", 0.99868, "left"),
+        ("rfs", VERMIL, r"$r_{\mathrm{FS}}$", 0.99902, "right"),
+        # Above the curves: at the bottom the refined adversaries cross it.
+        ("KM", "#333333", r"$M^K$", 0.99998, "left"),
     ):
         ax.axvline(certs[key], color=color, lw=1.0, ls="--")
-        ax.annotate(lab, (certs[key] * 1.04, y), fontsize=7, color=color)
+        if side == "left":
+            ax.annotate(
+                lab,
+                (certs[key] * 0.96, y),
+                fontsize=6.5,
+                color=color,
+                ha="right",
+                va="top",
+            )
+        else:
+            ax.annotate(lab, (certs[key] * 1.04, y), fontsize=7, color=color)
     ax.set_ylim(0.99865, 1.00005)
     ax.set_xscale("log")
+    ax.set_xticks([5e-4, 1e-3, 2e-3, 5e-3])
+    ax.set_xticklabels(
+        [
+            r"$5\times10^{-4}$",
+            r"$10^{-3}$",
+            r"$2\times10^{-3}$",
+            r"$5\times10^{-3}$",
+        ]
+    )
+    ax.tick_params(axis="x", which="minor", labelbottom=False)
+    ax.xaxis.set_minor_formatter(mticker.NullFormatter())
     ax.set_xlabel(r"sup-norm budget $m$")
     ax.set_ylabel(r"minimum fidelity found")
     ax.legend(

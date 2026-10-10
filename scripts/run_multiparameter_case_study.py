@@ -31,6 +31,8 @@ multiparam_<FT>.csv (multiparam_<FT>_angular.csv with --step angular)
     r0_joint, r0_H0, r0_H1, r0_H2: r_0 jointly and per structure.
     M_<d>, Mupper_<d>, nev_<d>: M, M_upper and evaluation count for d in
         +e0..+e2, -e0..-e2 and diag<ppp..mmm>.
+    rang_<d> (--step angular only): one-step angular radius
+        (arccos F_T - arccos F_0) / C_FS(d) at the nominal point.
 tv_bracket_<FT>.csv (only with --adversary)
     controller, structure, FT: instance.
     r0, r_fs: r_0 and r_FS.
@@ -55,6 +57,7 @@ from qrobustness import (
     make_fidelity_fn,
 )
 from qrobustness import multiparam as mp
+from qrobustness.lengthspace import margin_from
 from qrobustness import timevarying as tv
 
 from _drivers import DEFAULT_FT, DEFAULT_MAX_ERROR, load_ensemble, three_structure_specs
@@ -168,6 +171,10 @@ def main() -> None:
             row[f"M_{name}"] = res.M
             row[f"Mupper_{name}"] = res.M_upper
             row[f"nev_{name}"] = res.n_evals
+            if AG is not None:
+                row[f"rang_{name}"] = margin_from(
+                    float(np.arccos(ft)) - float(np.arccos(min(F0, 1.0))), AG.C(d)
+                )
         rows.append(row)
         print(
             f"controller {ci + 1}/{len(controllers)}  "

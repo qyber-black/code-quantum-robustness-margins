@@ -58,6 +58,10 @@ ROOT = Path(__file__).resolve().parents[1]
 CTRL = ROOT / "data/controllers/problem9_tf15_K32_quasi-newton"
 OUT_DIR = ROOT / "results/time-bandwidth-bound-python"
 
+#: Start count of the production fs_validity run. The Makefile does not
+#: pass --n-starts, and the default scheme is legacy (no sign modulation).
+FS_STARTS = 6
+
 #: Budget multiples probed: at the certificate and 5% above that value.
 BUDGET_FACTORS = (1.0, 1.05)
 
@@ -138,7 +142,7 @@ def main() -> None:
     ap = base_parser(OUT_DIR, description=__doc__)
     ap.add_argument("--controller-dir", type=Path, default=CTRL)
     ap.add_argument("--max-error", type=float, default=DEFAULT_MAX_ERROR)
-    ap.add_argument("--n-starts", type=int, default=6)
+    ap.add_argument("--n-starts", type=int, default=FS_STARTS)
     ap.add_argument("--maxiter", type=int, default=400)
     ap.add_argument("--seed", type=int, default=20260801)
     ap.add_argument(

@@ -39,8 +39,19 @@ DEFAULT_FT = 0.999
 DEFAULT_ETA = 1e-6
 
 #: Magnus refinement levels: sub-steps per control interval of the
-#: piecewise-constant trajectory.
+#: piecewise-constant trajectory. Index 0 is the control grid itself.
 REFINEMENTS = (1, 4, 16)
+
+#: Controller and structure of the constant-margin counterexample, and the
+#: default of the budget-sweep figure. The macro generator emits these only
+#: when the validity file records exactly this one violation.
+WITNESS_CONTROLLER = 16
+WITNESS_STRUCTURE = "H1"
+
+#: Starts per production attack of run_kosut_validity (--starts mixed).
+#: Two are the constant extremes; the rest split evenly into sign-modulated
+#: boundary trajectories and uniform interior draws.
+ATTACK_STARTS = 12
 
 #: Slack below F_T before an adversarial fidelity counts as a violation
 #: (rounding of one fidelity evaluation). Shared by the validity drivers so

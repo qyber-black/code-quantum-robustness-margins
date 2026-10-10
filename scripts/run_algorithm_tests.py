@@ -72,6 +72,10 @@ NOISE_AMP = 1e-9  # bounded evaluation error added to the detuning fidelity
 NOISE_FREQ = 1.0e5
 TOUCH_A = 0.01  # amplitude of the threshold-touching curve
 TOUCH_FT = 0.9
+#: |g'| <= TOUCH_L_OVER_A * A on this interval, which is the Lipschitz
+#: constant passed to the margin on the touching curve.
+TOUCH_OMEGA = (0.0, 3.0)
+TOUCH_L_OVER_A = 4
 
 
 def crosstalk(fT):
@@ -245,16 +249,17 @@ def rays(fT):
         )
 
     # (b) a curve that touches the threshold at mu = 1 and crosses it at
-    # mu = 2: g = FT + A (1 - mu)^2 (2 - mu) / 2, |g'| <= 4 A on [0, 3].
+    # mu = 2: g = FT + A (1 - mu)^2 (2 - mu) / 2, |g'| <= TOUCH_L_OVER_A * A
+    # on TOUCH_OMEGA.
     def touch(mu):
         return TOUCH_FT + TOUCH_A * (1 - mu) ** 2 * (2 - mu) / 2
 
     res = iterative_margin(
         touch,
-        4 * TOUCH_A,
+        TOUCH_L_OVER_A * TOUCH_A,
         TOUCH_FT,
         eta=DEFAULT_ETA,
-        omega=(-0.5, 3.0),
+        omega=TOUCH_OMEGA,
         margin_tol=MARGIN_TOL,
         return_diagnostics=True,
     )

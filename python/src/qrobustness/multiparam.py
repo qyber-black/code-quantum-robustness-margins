@@ -295,8 +295,9 @@ def directional_margin(
         Margins in units of ``s``; the certified excursion is ``M * d``.
         If the gauge vanishes along ``d`` (C^stat_FS(d) = 0 when
         ``angular_gauge`` is given, else ``L_dir == 0``) the whole admissible
-        ray is certified: ``M`` is the distance to the nearer end of
-        ``omega`` (``inf`` if unbounded) and ``method``, ``status_*`` and
+        ray is certified: ``M_minus`` and ``M_plus`` are the distances to the
+        two ends of ``omega`` (``inf`` if unbounded), ``M`` the smaller, and
+        ``method``, ``status_*`` and
         ``reason_*`` are ``'zero_gauge'``.
     """
     d = np.asarray(d, dtype=float)
@@ -309,20 +310,18 @@ def directional_margin(
         angular_gauge.C(d) == 0.0 if angular_gauge is not None else L_dir == 0.0
     )
     if zero_gauge:
-        # The perturbation does not act along d: the whole admissible ray is safe.
+        # The perturbation does not act along d: each ray is safe to its end of omega.
         s_lo, s_hi = kwargs.get("omega", (-np.inf, np.inf))
-        M_zero = min(
-            float("inf") if not np.isfinite(s_lo) else abs(float(s_lo)),
-            float("inf") if not np.isfinite(s_hi) else abs(float(s_hi)),
-        )
+        M_lo = abs(float(s_lo)) if np.isfinite(s_lo) else float("inf")
+        M_hi = abs(float(s_hi)) if np.isfinite(s_hi) else float("inf")
         return MarginResult(
-            M_minus=M_zero,
-            M_plus=M_zero,
-            M=M_zero,
+            M_minus=M_lo,
+            M_plus=M_hi,
+            M=min(M_lo, M_hi),
             converged_minus=True,
             converged_plus=True,
-            mu_minus=-M_zero,
-            mu_plus=M_zero,
+            mu_minus=-M_lo,
+            mu_plus=M_hi,
             method="zero_gauge",
             status_minus="zero_gauge",
             status_plus="zero_gauge",

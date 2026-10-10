@@ -68,7 +68,8 @@ perturbation parameter (relative errors for multiplicative structures).
 - `multiparam_<FT>.csv` (Lipschitz step) and `..._angular.csv` (angular
   step): `L_H*`, polytope radii `poly_r_H*`, inradii, `r0_*`, and per
   direction (`+e0` ... `diagppp`) `M_*`, `Mupper_*`, `nev_*` (evaluations,
-  both rays of the direction).
+  both rays of the direction); the angular run also has `rang_*`, the
+  one-step angular radius at the nominal point.
 - `joint_gauge_<FT>.csv`: diagonal and inradius gains of the joint and
   angular gauges over the cross-polytope, trajectory box gains.
 - `tv_bracket_<FT>.csv`: per controller and structure `r0`, `r_fs`,
@@ -138,8 +139,9 @@ five structures, with evaluation and step counts.
 
 **`bracket-audit-python`**
 
-- `brackets_<FT>.csv`: per controller, direction, rule (`angular` or the
-  scalar `precursor`) and evaluation band: `M`, `M_upper`, `rel_width`,
+- `brackets_<FT>.csv`: per controller, direction (the fourteen of
+  `multiparam`), rule (`angular`, or the scalar `precursor` on the coordinate
+  directions) and evaluation band: `M`, `M_upper`, `rel_width`,
   `reason`, `n_unresolved`, `n_evals` (the `+` ray).
 - `timing_<FT>.csv`, `environment.json`: wall-clock medians and
   interquartile ranges (`t_*`) of preprocessing, one fidelity evaluation and

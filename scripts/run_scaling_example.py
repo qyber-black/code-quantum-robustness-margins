@@ -13,8 +13,8 @@ seeds) on a four-qubit Ising chain with local detunings DETUNE (which break
 the global spin-flip symmetry), drives X_1..X_4, a fixed Haar-random target
 (seed TARGET_SEED), t_f = 24, tau = 96, and computes per controller, for the
 p = 5 multiplicative structures H0, X1..X4, M, r_0, r_FS, M^K, M^{K,tri}_tv,
-the joint polytope l2 inradius, and the off-nominal fidelity evaluations
-each certificate costs (the xQRM paper, Numerical evaluation, transfer and
+the joint polytope l2 inradius, and the fidelity evaluations (the nominal
+one included) each certificate costs (the xQRM paper, Numerical evaluation, transfer and
 scaling). Options: --FT, --out, --maxiter (GRAPE iterations).
 
 Writes results/scaling-python/scaling4q_margins_<FT>.csv:
@@ -196,7 +196,8 @@ def main() -> None:
             row[f"KMtv_{tag}"] = KMtv
         P = mp.safe_polytope(np.zeros(len(L)), L, F0, ft)
         row["inradius_l2"] = P.inradius_l2
-        # Cost in off-nominal evaluations (no wall-clock: not reproducible).
+        # Cost in fidelity evaluations, one nominal per structure included (no
+        # wall-clock: not reproducible).
         # r_FS and M^K are closed-form and need none.
 
         row["n_evals_iter"] = n_evals_iter
@@ -234,8 +235,8 @@ def main() -> None:
         )
     ne = np.array([r["n_evals_iter"] for r in rows])
     print(
-        f"n_evals_iter: median {np.median(ne):.0f} off-nominal fidelity "
-        f"evaluations per controller ({len(STRUCTURES)} structures)"
+        f"n_evals_iter: median {np.median(ne):.0f} fidelity evaluations per "
+        f"controller ({len(STRUCTURES)} structures, nominal included)"
     )
 
 

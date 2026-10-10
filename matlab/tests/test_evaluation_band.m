@@ -24,6 +24,17 @@ function test_evaluation_band()
     fn = @(mu) 0.9 * (abs(mu) <= 1) + (FT + tol) * (abs(mu) > 1);
     r = qrobustness.iterative_margin(fn, 1.0, FT, 'eval_tol', tol, 'omega', [-5, 5]);
     assert(r.M_plus <= 1 && r.M_minus <= 1, 'continuation certified the band edge');
+    assert(strcmp(r.status_plus, 'stalled'), 'continuation stops when no safe point lies beyond');
+
+    % A dip of depth eps/4 below FT at a, read eps high: radii at F - eps stop
+    % at the first crossing instead of jumping over the dip.
+    a0 = 0.3;
+    e = 1e-3;
+    fhat = @(mu) min(1, FT - e / 4 + abs(mu - a0)) + e;
+    for tol = {[], 1e-8}
+        r = qrobustness.iterative_margin(fhat, 1.0, FT, 'eval_tol', e, 'margin_tol', tol{1});
+        assert(r.M_plus <= (a0 - e / 4) * (1 + 1e-12), 'radius taken at the lower fidelity');
+    end
 
     f = @(mu) cos(mu)^2;
     a = qrobustness.iterative_margin(f, 2.0, 0.9, 'margin_tol', 1e-8);
@@ -44,5 +55,6 @@ function test_evaluation_band()
     ag = qrobustness.multiparam.angular_gauge({repmat({Z}, 1, K), repmat({Z}, 1, K)}, dt);
     assert(abs(qrobustness.lengthspace.path_gauge_C(ag, d)) < 1e-15);
     r = qrobustness.multiparam.directional_margin(fid, [1; 1], 0.99, d, 'angular_gauge', ag, 'omega', [-2, 3]);
-    assert(strcmp(r.reason_plus, 'zero_gauge') && r.M == 2, 'zero angular gauge certifies the ray');
+    assert(strcmp(r.reason_plus, 'zero_gauge') && r.M_minus == 2 && r.M_plus == 3 && r.M == 2, ...
+           'zero angular gauge certifies each ray to its own end of omega');
 end

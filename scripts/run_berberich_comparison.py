@@ -22,7 +22,8 @@ Writes results/time-bandwidth-bound-python/berberich_comparison_<FT>.csv:
     controller, structure, fid, err: instance and nominal fidelity / error.
     MB_ind, MB_sys: M^B for sup-norm trajectories and constant perturbations.
     gamma_ind, gamma_sys: the corresponding gamma rates.
-    magnus_ok: 1 if m Delta w_max < pi, required for MB_sys to be valid.
+    magnus_ok: 1 if both margins satisfy m Delta w_max < pi (MB_ind needs
+        it for the error-generator bound, MB_sys for the Magnus remainder).
 
     Fmin_attack: least fidelity the adversary found at MB_ind (NaN if not run).
 """
@@ -171,7 +172,7 @@ def main() -> None:
                         "MB_sys": mb_s.m,
                         "gamma_ind": mb_i.gamma,
                         "gamma_sys": mb_s.gamma,
-                        "magnus_ok": int(mb_s.magnus_ok),
+                        "magnus_ok": int(mb_i.magnus_ok and mb_s.magnus_ok),
                         "Fmin_attack": fmin,
                     }
                 )

@@ -40,7 +40,14 @@ from qrobustness import multiparam as mp
 from qrobustness.lengthspace import refine as refine_lists
 from qrobustness.timevarying import adversarial_fidelity, fs_margin, uniform_margin
 
-from _drivers import REFINEMENTS, base_parser, load_ensemble, three_structure_specs
+from _drivers import (
+    REFINEMENTS,
+    WITNESS_CONTROLLER,
+    WITNESS_STRUCTURE,
+    base_parser,
+    load_ensemble,
+    three_structure_specs,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT_DIR = ROOT / "results/time-bandwidth-bound-python"
@@ -60,8 +67,8 @@ SEED_STRIDE_BUDGET = 100
 def main() -> None:
     """Sweep the budget for one (controller, structure) and store the curves."""
     ap = base_parser(OUT_DIR, description=__doc__)
-    ap.add_argument("--controller", type=int, default=16)
-    ap.add_argument("--structure", default="H1", choices=STRUCTURES)
+    ap.add_argument("--controller", type=int, default=WITNESS_CONTROLLER)
+    ap.add_argument("--structure", default=WITNESS_STRUCTURE, choices=STRUCTURES)
     ap.add_argument("--n-budgets", type=int, default=14)
     ap.add_argument("--n-starts", type=int, default=6)
     ap.add_argument("--maxiter", type=int, default=400)

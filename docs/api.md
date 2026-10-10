@@ -45,7 +45,8 @@ below `eta`. With `margin_tol` it then searches outward for an unsafe point
 and refines the bracket [M, M_upper]. With `eval_tol = 0`, a point is safe when F >= F_T. With `eval_tol > 0`, a
 point is safe only when F > F_T + eval_tol. The continuation and the bracket
 use that same test. A point is unsafe only if F < F_T - eval_tol. A point
-between those bounds is unresolved. The safe radius uses the computed fidelity.
+between those bounds is unresolved. With `eval_tol > 0` every safe radius
+is taken at F - eval_tol, the lowest fidelity the evaluation allows.
 
 | `method` | step | overshoot polish | certificate |
 | :--- | :--- | :--- | :--- |
@@ -60,7 +61,7 @@ between those bounds is unresolved. The safe radius uses the computed fidelity.
 | :--- | :--- |
 | `M_minus`, `M_plus`, `M` | certified margins per ray and their minimum (lower bounds) |
 | `mu_minus`, `mu_plus` | end points of the continuation |
-| `status_minus`, `status_plus` | continuation stop: `eta_band`, `domain_truncated` (margin is at least the distance to the edge of `omega`), `iteration_limit` |
+| `status_minus`, `status_plus` | continuation stop: `eta_band`, `domain_truncated` (margin is at least the distance to the edge of `omega`), `iteration_limit`, `stalled` (no safe point beyond the last; possible with `eval_tol > 0`) |
 | `M_upper_minus`, `M_upper_plus`, `M_upper` | evaluated unsafe witnesses (`inf` if none) |
 | `margin_uncertainty` | `M_upper - M` |
 | `reason_minus`, `reason_plus` | bracket outcome: `bracketed` (width <= eps), `partial` (valid bracket, wider), `unresolved` (an in-band probe stopped refinement), `boundary` (edge of `omega` reached while safe), `exhausted` (no unsafe point found), `zero_gauge` (direction leaves the dynamics unchanged) |

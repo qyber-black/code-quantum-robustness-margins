@@ -25,28 +25,29 @@ Usage: python3 scripts/gen_paper_xqrm_macros.py [--allow-missing] [--print]"""
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import math
 import re
 from pathlib import Path
 
 import numpy as np
+from qrobustness import load_controllers, load_problem
 from qrobustness.kosut import effective_threshold
 
+from _drivers import (
+    ATTACK_STARTS,
+    CTRL,
+    REFINEMENTS,
+    WITNESS_CONTROLLER,
+    WITNESS_STRUCTURE,
+)
 from _paper import col, configure, read
 
 ROOT = Path(__file__).resolve().parents[1]
 
 # Ensemble configuration, as used by the driver invocations.
 THRESHOLD = 0.999
-
-#: Joint uncertainty dimension p of the main ensemble: drift and two
-#: multiplicative control errors.
-N_PARAMS = 3
-# The constant-margin counterexample the paper discusses (controller, structure).
-WITNESS_CONTROLLER = "16"
-WITNESS_STRUCTURE = "H1"
-BUDGET_FACTOR = 1.05
 
 
 # Reported extremes round outward, so a quoted range contains all the data.
@@ -154,6 +155,183 @@ class Macros:
         return len(self.items)
 
 
+def _assign_node(script: str, name: str):
+    """AST of the module-level value bound to ``name`` in ``scripts/<script>``.
+
+    A name unpacked from a tuple assignment is returned as that element.
+    """
+    tree = ast.parse((ROOT / "scripts" / script).read_text())
+    for node in tree.body:
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+            continue
+        target = node.targets[0]
+        if isinstance(target, ast.Name) and target.id == name:
+            return node.value
+        if (
+            isinstance(target, ast.Tuple)
+            and isinstance(node.value, ast.Tuple)
+            and len(target.elts) == len(node.value.elts)
+        ):
+            for elt, value in zip(target.elts, node.value.elts, strict=True):
+                if isinstance(elt, ast.Name) and elt.id == name:
+                    return value
+    raise KeyError(f"{name} not found in {script}")
+
+
+def _setting(script: str, name: str):
+    """Value of the module-level constant ``name`` in ``scripts/<script>``,
+    read without running the driver."""
+    return ast.literal_eval(_assign_node(script, name))
+
+
+def _is_pi(script: str, name: str) -> bool:
+    """True when ``name`` is assigned ``np.pi`` or ``math.pi``."""
+    node = _assign_node(script, name)
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "pi"
+        and isinstance(node.value, ast.Name)
+        and node.value.id in {"np", "math"}
+    )
+
+
+def _module_literal(path: Path, name: str):
+    """Literal module-level assignment in a Python file outside scripts/."""
+    tree = ast.parse(path.read_text())
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+            isinstance(t, ast.Name) and t.id == name for t in node.targets
+        ):
+            return ast.literal_eval(node.value)
+    raise KeyError(f"{name} not found in {path.name}")
+
+
+def _pow10(x: float) -> str:
+    return f"10^{{{int(round(math.log10(x)))}}}"
+
+
+def _matlab_probe_cap() -> int:
+    """The ``probe_cap`` assignment in the MATLAB margin peer."""
+    text = (ROOT / "matlab/+qrobustness/iterative_margin.m").read_text()
+    found = re.findall(r"^\s*probe_cap\s*=\s*(\d+)\s*;", text, re.M)
+    if len(found) != 1:
+        raise SystemExit(
+            f"ERROR: iterative_margin.m must assign probe_cap once, found {found}."
+        )
+    return int(found[0])
+
+
+def _deg(angle: float) -> str:
+    """An angle in degrees, trailing zeros dropped, with a LaTeX unit."""
+    return f"{angle:g}" + r"^\circ"
+
+
+def _quoted_run_settings(m: "Macros") -> None:
+    """Hand-typed run settings: taken from the drivers, not from the prose."""
+    cap = _module_literal(ROOT / "python/src/qrobustness/core.py", "PROBE_CAP")
+    matlab_cap = _matlab_probe_cap()
+    if matlab_cap != cap:
+        raise SystemExit(
+            f"ERROR: MATLAB probe_cap is {matlab_cap} but PROBE_CAP is {cap}."
+        )
+    m.add("xqProbeCap", cap, "{:d}")
+
+    if not _is_pi("run_single_qubit_example.py", "OMEGA") or not _is_pi(
+        "run_algorithm_tests.py", "OMEGA"
+    ):
+        raise SystemExit("ERROR: a single-qubit driver no longer sets Omega = pi.")
+    for name in ("T", "TAU"):
+        example = _setting("run_single_qubit_example.py", name)
+        tests = _setting("run_algorithm_tests.py", name)
+        if example != tests:
+            raise SystemExit(
+                f"ERROR: {name} is {example} in the single-qubit example and "
+                f"{tests} in the algorithm tests."
+            )
+    m.add("xqSingleQubitOmega", r"\pi")
+    m.add("xqSingleQubitTf", _setting("run_single_qubit_example.py", "T"), "{:g}")
+    m.add("xqSingleQubitTau", _setting("run_single_qubit_example.py", "TAU"), "{:d}")
+
+    lo, hi = _setting("run_algorithm_tests.py", "TOUCH_OMEGA")
+    m.add("xqTouchOmegaLo", lo, "{:g}")
+    m.add("xqTouchOmegaHi", hi, "{:g}")
+    m.add(
+        "xqTouchLOverA",
+        _setting("run_algorithm_tests.py", "TOUCH_L_OVER_A"),
+        "{:g}",
+    )
+
+    if len(REFINEMENTS) != 3 or REFINEMENTS[0] != 1:
+        raise SystemExit(
+            "ERROR: REFINEMENTS must be the control grid, then two refinements."
+        )
+    m.add("xqRefineCoarse", REFINEMENTS[1], "{:d}")
+    m.add("xqRefineFine", REFINEMENTS[2], "{:d}")
+
+    rest = ATTACK_STARTS - 2
+    if rest < 0:
+        raise SystemExit("ERROR: ATTACK_STARTS must include the two constant extremes.")
+    m.add("xqAttackStarts", ATTACK_STARTS, "{:d}")
+    m.add("xqAttackSignStarts", rest // 2, "{:d}")
+    m.add("xqAttackRandStarts", rest - rest // 2, "{:d}")
+    fs_starts = _setting("run_fs_validity.py", "FS_STARTS")
+    m.add("xqFsStarts", fs_starts, "{:d}")
+    m.add("xqFsRandStarts", max(fs_starts - 2, 0), "{:d}")
+
+    delta = _setting("run_robust_vs_nominal.py", "DELTA0")
+    n_struct = len(_setting("run_robust_vs_nominal.py", "STRUCTURES"))
+    m.add("xqRobustCorners", 2**n_struct, "{:d}")
+    m.add("xqRobustDelta", _pow10(delta), raw=delta)
+
+    angles = _setting("run_mixed_example.py", "RAY_ANGLES_DEG")
+    m.add("xqMixedAngles", ", ".join(_deg(a) for a in angles))
+    m.add("xqStateHold", _setting("run_state_examples.py", "HOLD"), "{:d}")
+
+    m.add("xqCnotDim", _setting("run_cnot_case_study.py", "DIM"), "{:d}")
+    m.add("xqCnotTf", _setting("run_cnot_case_study.py", "TF"), "{:g}")
+    m.add("xqCnotTau", _setting("run_cnot_case_study.py", "TAU"), "{:d}")
+    m.add(
+        "xqCnotP",
+        len(_setting("run_cnot_case_study.py", "STRUCTURES")),
+        "{:d}",
+    )
+    nq = _setting("run_scaling_example.py", "NQ")
+    scaling_src = (ROOT / "scripts/run_scaling_example.py").read_text()
+    if (
+        'STRUCTURES = ("H0",) + tuple(f"X{q + 1}" for q in range(NQ))'
+        not in scaling_src
+    ):
+        raise SystemExit(
+            "ERROR: the four-qubit structure list is no longer the drift "
+            "plus one control per qubit."
+        )
+    m.add("xqScalingN", 2**nq, "{:d}")
+    m.add("xqScalingTf", _setting("run_scaling_example.py", "TF"), "{:g}")
+    m.add("xqScalingTau", _setting("run_scaling_example.py", "TAU"), "{:d}")
+    m.add("xqScalingP", 1 + nq, "{:d}")
+
+
+def settings(m: "Macros", res: Path) -> None:
+    """Run settings the text quotes: tolerances, counts and test parameters."""
+    tol = _setting("run_multiparameter_case_study.py", "MARGIN_TOL")
+    m.add("xqBracketTol", _pow10(tol), raw=tol)
+    eta = _setting("_drivers.py", "DEFAULT_ETA")
+    m.add("xqEta", _pow10(eta), raw=eta)
+    m.add("xqSphereDirs", _setting("run_algorithm_tests.py", "N_SPHERE"), "{:d}")
+    noise = _setting("run_algorithm_tests.py", "NOISE_AMP")
+    m.add("xqNoiseAmp", _pow10(noise), raw=noise)
+    m.add("xqRevivalFT", _setting("run_algorithm_tests.py", "SQ_FT_LOW"), "{:g}")
+    m.add("xqTouchA", _setting("run_algorithm_tests.py", "TOUCH_A"), "{:g}")
+    m.add("xqTouchFT", _setting("run_algorithm_tests.py", "TOUCH_FT"), "{:g}")
+    freq = _setting("run_algorithm_tests.py", "NOISE_FREQ")
+    m.add("xqNoiseFreq", _pow10(freq), raw=freq)
+    grid = np.load(res / "multiparameter-margin-python/slice_ctrl1_0.999.npz")["mu1"]
+    m.add("xqSliceGrid", grid.size, "{:d}")
+    tf_min = min(_setting("run_duration_sweep.py", "DURATIONS"))
+    m.add("xqDurationMin", tf_min, "{:g}")
+    _quoted_run_settings(m)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument(
@@ -172,6 +350,7 @@ def main() -> None:
 
     res = ROOT / "results"
     m = Macros()
+    settings(m, res)
 
     mp = read(res / "multiparameter-margin-python/multiparam_0.999_angular.csv")
     jg = read(res / "multiparameter-margin-python/joint_gauge_0.999.csv")
@@ -184,9 +363,26 @@ def main() -> None:
     amp = read(res / "lindblad-margin-python/open_amp_0.999.csv")
 
     # -- ensemble ------------------------------------------------------
+    problem = load_problem(CTRL / "problem9.mat")
+    controllers = load_controllers(CTRL / "controllers.csv")
+    durations = {c["tf"] for c in controllers}
+    intervals = {c["tau"] for c in controllers}
+    if len(durations) != 1 or len(intervals) != 1:
+        raise SystemExit("ERROR: the main ensemble does not share tf and tau.")
+    chain_p = sum(name in problem for name in ("H0", "H1", "H2"))
+    m.add("xqChainN", problem["dim"], "{:d}")
+    m.add("xqChainTf", durations.pop(), "{:g}")
+    m.add("xqChainTau", intervals.pop(), "{:d}")
+    m.add("xqChainP", chain_p, "{:d}")
     m.add("xqNumControllers", len(mp), "{:d}")
     m.add("xqThreshold", THRESHOLD, "{:.3f}")
-    m.add("xqBudgetFactor", BUDGET_FACTOR, "{:.2f}")
+    factors = _setting("run_kosut_validity.py", "BUDGET_FACTORS")
+    if factors != _setting("run_fs_validity.py", "BUDGET_FACTORS") or factors[0] != 1.0:
+        raise SystemExit(
+            "ERROR: the validity drivers disagree on the budget factors, "
+            "or the first factor is not 1."
+        )
+    m.add("xqBudgetFactor", factors[1], "{:.2f}")
 
     # -- Scenario J: the gauge regions versus the cross-polytope -------
     # Inradius gain of the joint gauge (C_joint) over the separable
@@ -198,10 +394,10 @@ def main() -> None:
     m.add("xqGaugeTrajGain", np.median(col(jg, "traj_gain")))
     # The gain is an l1-over-l2 ratio, so its ceiling is sqrt(p); percentage
     # of that ceiling reached by the largest diagonal gain.
-    m.add("xqGaugeGainCeiling", np.sqrt(N_PARAMS))
+    m.add("xqGaugeGainCeiling", np.sqrt(chain_p))
     m.add(
         "xqGaugeGainAttainedPct",
-        100.0 * col(jg, "diag_gain_max").max() / np.sqrt(N_PARAMS),
+        100.0 * col(jg, "diag_gain_max").max() / np.sqrt(chain_p),
         "{:.0f}",
     )
 
@@ -266,28 +462,28 @@ def main() -> None:
     # -- adversarial counterexample against constant-scaling ----------------
     witnesses = read(res / "time-bandwidth-bound-python/validity_witness_0.999.csv")
     violations = [row for row in witnesses if row["violated"] == "1"]
-    if not violations:
+    if len(violations) != 1:
         raise SystemExit(
-            "ERROR: no constant-margin counterexample recorded; the paper's "
-            "claim that one exists has no evidence behind it. Rerun "
-            "run_kosut_validity.py."
+            "ERROR: the paper states one controller-structure violation; "
+            f"the validity file records {len(violations)}. Rerun "
+            "run_kosut_validity.py, and change the paper only if the "
+            "recorded identity has changed."
         )
-    # The witness the paper treats in detail must be among the violations;
-    # its time-averaged frequency excess is emitted.
-    named = [
-        r
-        for r in violations
-        if r["controller"] == WITNESS_CONTROLLER and r["structure"] == WITNESS_STRUCTURE
-    ]
-    if len(named) != 1:
+    named = violations[0]
+    if (
+        named["controller"] != str(WITNESS_CONTROLLER)
+        or named["structure"] != WITNESS_STRUCTURE
+    ):
         raise SystemExit(
-            f"ERROR: expected the documented witness (controller "
-            f"{WITNESS_CONTROLLER}, structure {WITNESS_STRUCTURE}) among the "
-            f"{len(violations)} recorded; found {len(named)}. Either the run "
-            "does not reproduce it, or the paper should discuss a different "
-            "one -- do not simply relabel."
+            "ERROR: the recorded violation is controller "
+            f"{named['controller']}, structure {named['structure']}, not "
+            f"{WITNESS_CONTROLLER}, {WITNESS_STRUCTURE}. Do not relabel it."
         )
-    excess = named[0].get("omega_avg_excess")
+    if not re.fullmatch(r"H\d+", WITNESS_STRUCTURE):
+        raise SystemExit(f"ERROR: unexpected structure name {WITNESS_STRUCTURE}.")
+    m.add("xqWitnessController", WITNESS_CONTROLLER, "{:d}")
+    m.add("xqWitnessStructure", "H_{" + WITNESS_STRUCTURE[1:] + "}")
+    excess = named.get("omega_avg_excess")
     if not excess:
         raise SystemExit(
             "ERROR: violating trajectory lacks omega_avg_excess; "
@@ -357,12 +553,19 @@ def main() -> None:
         "{:d}",
     )
 
-    # -- threshold sweep: conservatism at the loose threshold F_T = 0.99 --
+    # -- threshold sweep: conservatism at the loose threshold ---------------
     ts = read(res / "lindblad-margin-python/open_threshold_sweep.csv")
+    sweep_ft = _setting("run_open_threshold_sweep.py", "THRESHOLDS")
+    if len(sweep_ft) != 3 or sweep_ft[1] != THRESHOLD:
+        raise SystemExit(
+            "ERROR: THRESHOLDS must be the loose threshold, the paper "
+            "threshold, and a tighter one."
+        )
     for tag, ch in (("Dephasing", "dephasing"), ("Amp", "amp_damping")):
-        sub = [r for r in ts if r["channel"] == ch and float(r["FT"]) == 0.99]
+        sub = [r for r in ts if r["channel"] == ch and float(r["FT"]) == sweep_ft[0]]
         m.add(f"xq{tag}ConservatismLooseFT", np.median(col(sub, "ratio")), "{:.3f}")
-    m.add("xqLooseThreshold", 0.99, "{:.2f}")
+    m.add("xqLooseThreshold", sweep_ft[0], "{:g}")
+    m.add("xqTightThreshold", sweep_ft[2], "{:g}")
     m.add("xqSweepNum", len({r["controller"] for r in ts}), "{:d}")
 
     dsw = read(res / "cnot-python/duration_sweep_0.999.csv")
@@ -542,6 +745,10 @@ def main() -> None:
     fs_by = {(r["controller"], r["structure"]): float(r["r_fs"]) for r in fsv}
     tv_by = {r["controller"]: r for r in kos_tv}
     ratio, ktv_ratio = [], []
+    if any(int(r["magnus_ok"]) != 1 for r in ber):
+        raise SystemExit(
+            "berberich_comparison: m Delta w_max < pi fails on an instance"
+        )
     for r in ber:
         key = (r["controller"], r["structure"])
         if key not in fs_by:
@@ -595,6 +802,21 @@ def main() -> None:
         "",
     )
 
+    # Angular free region: median certified l2 inradius, and the gain of the
+    # worst directional margin over it and over the cross-polytope inradius.
+    jg_ang = col(
+        read(res / "multiparameter-margin-python/joint_gauge_0.999.csv"),
+        "ang_inradius_cert",
+    )
+    v = float(np.median(jg_ang))
+    e = int(np.floor(np.log10(v)))
+    m.add("xqAngInradius", f"{v / 10**e:.1f}\\times10^{{{e}}}", raw=v)
+    m_worst = np.array([min(float(r[k]) for k in r if k.startswith("M_")) for r in mp])
+    m.add("xqIterGainAng", float(np.median(m_worst / jg_ang)), "{:.1f}")
+    m.add(
+        "xqIterGainPoly", float(np.median(m_worst / col(mp, "inradius_l2"))), "{:.0f}"
+    )
+
     # -- ensemble-wide numerical check of every certificate ------
     # Number of check kinds, instances, probes and failures.
     ver = read(res / "verification-python/verification_0.999.csv")
@@ -620,24 +842,14 @@ def main() -> None:
         raw=max(tol_tc),
     )
 
-    # -- resolved static margin versus the trajectory lower certificates
-    # Range over structures of median M/r_0 and M/r_FS, and median r_0/M^K_tv
-    # per structure. (Not a measure of trajectory-certificate conservatism.)
-    fs_by2 = {(r["controller"], r["structure"]): float(r["r_fs"]) for r in fsv}
-    price_r0, price_fs, r0_over_ktv = [], [], []
+    # -- one-step radius against the universal trajectory margin
+    # Median r_0/M^K_tv per structure.
+    r0_over_ktv = []
     tv_by2 = {r["controller"]: r for r in kos_tv}
-    for i, key in enumerate(("H0", "H1", "H2")):
-        M = col(mp, f"M_+e{i}")
+    for key in ("H0", "H1", "H2"):
         r0 = col(mp, f"r0_{key}")
-        fs = np.array([fs_by2[(r["controller"], key)] for r in mp])
-        price_r0.append(np.median(M / r0))
-        price_fs.append(np.median(M / fs))
         ktv = np.array([float(tv_by2[r["controller"]][f"KM_{key}"]) for r in mp])
         r0_over_ktv.append(np.median(r0 / ktv))
-    m.add("xqPriceRZeroMin", _floor_to(min(price_r0)), "{:.0f}")
-    m.add("xqPriceRZeroMax", _ceil_to(max(price_r0)), "{:.0f}")
-    m.add("xqPriceFsMin", _floor_to(min(price_fs), 2))
-    m.add("xqPriceFsMax", _ceil_to(max(price_fs), 2))
     m.add("xqRZeroOverKosutTvDrift", r0_over_ktv[0])
     m.add("xqRZeroOverKosutTvCtrlOne", r0_over_ktv[1])
     m.add("xqRZeroOverKosutTvCtrlTwo", r0_over_ktv[2])
@@ -648,7 +860,19 @@ def main() -> None:
     Md = np.array([[float(r[f"M_{d}"]) for d in dirs] for r in mp])
     aniso = Md.max(axis=1) / Md.min(axis=1)
     m.add("xqAnisotropyMedian", np.median(aniso))
-    m.add("xqAnisotropyMax", _ceil_to(aniso.max(), 2))
+    m.add("xqAnisotropyMax", aniso.max())
+
+    # Directional margins over the cross-polytope radius along the same
+    # direction, controller 1 (Figure fig_directions): outward range.
+    row = next(r for r in mp if int(float(r["controller"])) == 1)
+    L = np.array([float(row[f"L_H{j}"]) for j in range(3)])
+    # |d| . L: one weight on a coordinate axis, all three over sqrt(3) on a
+    # sign vertex.
+    dL = [L[int(d[2])] if d[1] == "e" else L.sum() / np.sqrt(3.0) for d in dirs]
+    gain = np.array([float(row[f"M_{d}"]) for d in dirs]) * np.array(dL)
+    gain /= float(row["fid"]) - THRESHOLD
+    m.add("xqDirPolyGainMin", _floor_to(gain.min(), 1), "{:.1f}")
+    m.add("xqDirPolyGainMax", _ceil_to(gain.max(), 1), "{:.1f}")
 
     # -- adversarial brackets around the trajectory margin ------------------
     # Number probed and outward range of m_adv/M.
@@ -788,7 +1012,7 @@ def main() -> None:
         for r in tf
         for d in ("minus", "plus")
     ]
-    m.add("xqStateTfimReachPctMin", 100 * min(reach), "{:.2f}")
+    m.add("xqStateTfimReachPctMin", _floor_to(100 * min(reach), 2), "{:.2f}")
     m.add(
         "xqStateTfimEvalsMax",
         max(max(int(r["evals_minus"]), int(r["evals_plus"])) for r in tf),
@@ -874,34 +1098,49 @@ def main() -> None:
         m.add(
             f"xqAuditWidthBand{name}", f"{v / 10**e:.1f}\\times10^{{{e}}}", raw=float(v)
         )
-    ang = {
-        (r["controller"], r["direction"]): r
-        for r in ba
-        if r["rule"] == "angular" and float(r["band"]) == 0
-    }
-    pre = [r for r in ba if r["rule"] == "precursor" and float(r["band"]) == 0]
-    no_more = sum(
-        int(ang[(r["controller"], r["direction"])]["n_evals"]) <= int(r["n_evals"])
-        for r in pre
-    )
-    saving = np.median(
-        [
-            (int(r["n_evals"]) - int(ang[(r["controller"], r["direction"])]["n_evals"]))
-            / int(r["n_evals"])
+    # Angular against precursor evaluation counts on the same runs, with the
+    # band off and on.
+    for suffix, b in (("", 0.0), ("Band", band)):
+        ang = {
+            (r["controller"], r["direction"]): r
+            for r in ba
+            if r["rule"] == "angular" and float(r["band"]) == b
+        }
+        pre = [r for r in ba if r["rule"] == "precursor" and float(r["band"]) == b]
+        no_more = sum(
+            int(ang[(r["controller"], r["direction"])]["n_evals"]) <= int(r["n_evals"])
             for r in pre
-        ]
-    )
-    m.add("xqAuditPrecursorRays", len(pre), "{:d}")
-    m.add("xqAuditNoMorePct", 100 * no_more / len(pre), "{:.0f}")
-    m.add("xqAuditSavingPct", 100 * saving, "{:.1f}")
+        )
+        saving = np.median(
+            [
+                (
+                    int(r["n_evals"])
+                    - int(ang[(r["controller"], r["direction"])]["n_evals"])
+                )
+                / int(r["n_evals"])
+                for r in pre
+            ]
+        )
+        if not suffix:
+            m.add("xqAuditPrecursorRays", len(pre), "{:d}")
+        m.add(
+            f"xqAuditNoMorePct{suffix}",
+            100 * no_more / len(pre),
+            "{:.1f}" if suffix else "{:.0f}",
+        )
+        m.add(f"xqAuditSavingPct{suffix}", 100 * saving, "{:.1f}")
     tm = read(ba_dir / "timing_0.999.csv")
     m.add("xqTimeRepeats", int(tm[0]["repeats"]), "{:d}")
     m.add("xqTimeControllers", len(tm), "{:d}")
     m.add("xqTimePreprocMs", 1e3 * np.median(col(tm, "t_preproc_med")), "{:.1f}")
     m.add("xqTimeEvalMs", 1e3 * np.median(col(tm, "t_eval_med")), "{:.2f}")
     m.add("xqTimeDirS", np.median(col(tm, "t_dir_med")), "{:.2f}")
-    iqr_rel = max(float(r["t_dir_iqr"]) / float(r["t_dir_med"]) for r in tm)
-    m.add("xqTimeDirSpreadPct", 100 * iqr_rel, "{:.1f}")
+    iqr_rel = max(
+        float(r[f"t_{k}_iqr"]) / float(r[f"t_{k}_med"])
+        for r in tm
+        for k in ("preproc", "eval", "dir")
+    )
+    m.add("xqTimeSpreadPct", 100 * iqr_rel, "{:.1f}")
     env = json.loads((ba_dir / "environment.json").read_text())
     m.add("xqTimeCpu", env["cpu"].replace(" Processor", ""), raw=1.0)
 

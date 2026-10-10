@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import sys
 
+from _drivers import ATTACK_STARTS
+
 #: BLAS thread environment for the drivers: one thread, since the matrices
 #: are small and a thread pool only slows them down. Pinning changes BLAS
 #: reduction order, so results move in their last bits (well within the
@@ -47,11 +49,17 @@ DRIVER_RUNS: dict[str, list[list[str]]] = {
     ],
     "run_kosut_validity.py": [
         # A violation is expected, so the run must not fail on it.
-        ["--n-starts", "12", "--starts", "mixed", "--allow-violations"],
+        [
+            "--n-starts",
+            str(ATTACK_STARTS),
+            "--starts",
+            "mixed",
+            "--allow-violations",
+        ],
         # The trajectory class writes validity_<FT>_tv.csv.
         [
             "--n-starts",
-            "12",
+            str(ATTACK_STARTS),
             "--starts",
             "mixed",
             "--allow-violations",

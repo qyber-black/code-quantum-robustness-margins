@@ -224,9 +224,9 @@ distclean: clean
 maintainer-clean: distclean
 	rm -rf $(R)
 
-$(DRIVER_FLAGS): $(ROOT)/scripts/_invocations.py
+$(DRIVER_FLAGS): $(ROOT)/scripts/_invocations.py $(ROOT)/scripts/_drivers.py | install
 	@mkdir -p $(dir $@)
-	@python3 $< --make > $@
+	@PYTHONPATH=$(ROOT)/python/src $(PYTHON) $< --make > $@.tmp && mv $@.tmp $@
 
 # --- Tests ---------------------------------------------------------------
 

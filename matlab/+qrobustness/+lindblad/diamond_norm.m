@@ -32,6 +32,10 @@ function r = diamond_norm(S, varargin)
     degtol = p.Results.degtol;
 
     N = round(sqrt(size(S, 1)));
+    if ~isequal(qrobustness.lindblad.superop_from_choi(qrobustness.lindblad.choi_matrix(S), N), S)
+        error('qrobustness:verificationFailure', ...
+              'the Choi reindexing does not reproduce S exactly');
+    end
     J = qrobustness.lindblad.choi_matrix(S);
     d = N * N;
 
@@ -85,9 +89,15 @@ function x = up(x)
     x = x + abs(x) * eps + realmin;
 end
 
+function x = down(x)
+    % A double at most x: one rounding-down step.
+    x = x - abs(x) * eps - realmin;
+end
+
 function c = chol_error_bound(A)
-%CHOL_ERROR_BOUND Verified c >= ||Delta(A)||_2 for the Cholesky backward error, or -1 if A has a negative diagonal entry.
-%   Rump's entrywise bound, evaluated with upward rounding.
+    % Verified bound c >= ||Delta||_2 on the Cholesky backward error of A
+    % (Rump, BIT 46 (2006), Theorem 2.3, with alpha = gamma_{8(n+1)}); -1 if
+    % a diagonal entry is negative or n is too large.
     n = size(A, 1);
     u = eps / 2;
     k = 8 * (n + 1);
@@ -96,36 +106,50 @@ function c = chol_error_bound(A)
         return
     end
     alpha = up(k * u / (1 - k * u));
-    coef = up(alpha / (1 - alpha));
+    coef = up(alpha / down(1 - alpha));
     dg = real(diag(A));
     if any(dg < 0)
         c = -1;
         return
     end
     v = up(sqrt(dg));
-    if n > 1
-        g = (n - 1) * u / (1 - (n - 1) * u);
-    else
-        g = 0;
-    end
-    tot = up(sum(v) * (1 + g));
+    tot = sum_upward(v);
     main = up(up(coef * max(v)) * tot);
-    eta = realmin;
-    under = up(up(n * (4 * (n + 1))) * eta);
+    % Rump's underflow term: n M eta with M = 3(2n + max a_ii), eta = 2^-1074.
+    M = up(3 * up(2 * n + max(dg)));
+    under = up(up(n * M) * 2^-1074);
     c = up(main + under);
 end
 
 function [t, ok] = shift_diag_down(a, c)
-%SHIFT_DIAG_DOWN Largest stored double t verified to satisfy t <= a - c.
+    % A double t with t <= a - c, checked exactly; ok false if none is found.
     t = a - c;
     ok = false;
+    if ~isfinite(a) || ~isfinite(c)
+        return
+    end
     for it = 1:8
-        if (a - t) >= c
+        if exact_ge(a, t, c)
             ok = true;
             return
         end
         t = t - abs(t) * eps - realmin;
     end
+end
+
+function ok = exact_ge(a, t, c)
+    % True only if a - t >= c holds exactly (error-free transformations).
+    [s, e1] = two_sum(a, -t);
+    [d, e2] = two_sum(s, -c);
+    ok = isfinite(s) && isfinite(d) && ...
+        (d > 2 * (abs(e1) + abs(e2)) || (d >= 0 && e1 == 0 && e2 == 0));
+end
+
+function [s, e] = two_sum(a, b)
+    % s = fl(a + b) and the exact error e = (a + b) - s.
+    s = a + b;
+    bb = s - a;
+    e = (a - (s - bb)) + (b - bb);
 end
 
 function ok = verify_psd(A)
@@ -179,28 +203,49 @@ function [Y0r, Y1r, epsv] = verified_repair(Y0, Y1, J, shift0, d)
 end
 
 function s = sum_upward(v)
-%SUM_UPWARD Upper bound on a sum of floats that are non-negative.
-    n = numel(v);
-    if n == 0
+    % Upper bound on the exact sum of non-negative v, in any summation order.
+    v = v(:);
+    m = numel(v);
+    if m == 0
         s = 0;
         return
     end
-    u = eps / 2;
-    if n > 1
-        g = (n - 1) * u / (1 - (n - 1) * u);
-    else
-        g = 0;
+    s = up(sum(v));
+    if m > 1
+        s = up(s * up(1 + 2 * gam(m - 1)));
     end
-    s = sum(v) * (1 + g);
+end
+
+function g = gam(m)
+    % Upper bound on gamma_m = m u / (1 - m u); requires m u <= 0.01.
+    u = eps / 2;
+    if m * u > 0.01
+        error('qrobustness:verificationFailure', 'summation too long for the error bound');
+    end
+    g = up(1.02 * m * u);
 end
 
 function s = pt_specnorm_upper(Y, N)
-%PT_SPECNORM_UPPER Upper bound on ||Tr_out Y||_2 for Hermitian Y, including partial-trace rounding (Gershgorin).
-    u = eps / 2;
-    M = tr_out(Y, N);
-    A = tr_out(abs(Y), N);
-    ent = abs(M) * (1 + 4 * u) + (N - 1) * u * A * (1 + 4 * u);
-    s = max(sum(ent, 2)) * (1 + (N + 1) * u);
+    % Upper bound on ||tr_out(Y)||_2: real and imaginary parts of each entry
+    % bounded separately, then the larger of the largest row and column sums.
+    if N > 1
+        g = gam(N - 1);
+    else
+        g = 0;
+    end
+    re = part_upper(real(Y), N, g);
+    im = part_upper(imag(Y), N, g);
+    ent = up(sqrt(up(up(re.^2) + up(im.^2))));
+    s = 0;
+    for i = 1:N
+        s = max([s, sum_upward(ent(i, :)), sum_upward(ent(:, i))]);
+    end
+end
+
+function P = part_upper(X, N, g)
+    % Upper bound on |tr_out(X)| entrywise for real X.
+    A = up(tr_out(abs(X), N) * up(1 + 2 * g));
+    P = up(abs(tr_out(X, N)) + up(g * A));
 end
 
 function A = psd_sqrt(A)

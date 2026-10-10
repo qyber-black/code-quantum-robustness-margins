@@ -42,7 +42,7 @@ function result = iterative_margin(fidelity_fn, L, FT, varargin)
 %     converged_minus, converged_plus - false if the iteration limit was
 %                            reached
 %     status_minus, status_plus - stopping rule: 'eta_band',
-%                            'domain_truncated' or 'iteration_limit'
+%                            'domain_truncated', 'iteration_limit' or 'stalled'
 %     safeguard_minus, safeguard_plus - true if the bisection safeguard fired
 %     method                - method used
 %     certificate           - 'segment' (every point from mu0 to the endpoint
@@ -118,12 +118,20 @@ function result = iterative_margin(fidelity_fn, L, FT, varargin)
     end
 
     n_evals = 0;
+    cache_x = zeros(1, 1024);
+    cache_y = zeros(1, 1024);
     counted_fn = @counted_fidelity;
 
     F0 = counted_fn(mu0);
-    if ~(FT < F0)
+    if ~(FT + eval_tol < F0)
         error('qrobustness:margin:Threshold', ...
-            'Require FT < F(mu0); got FT=%g, F=%g.', FT, F0);
+            'Require FT + eval_tol < F(mu0); got FT=%g, eval_tol=%g, F=%g.', FT, eval_tol, F0);
+    end
+
+    if eval_tol > 0
+        % The true fidelity may be as low as F - eval_tol: take radii there.
+        raw_radius = safe_radius_fn;
+        safe_radius_fn = @(F) lower_radius(raw_radius, F, FT, eval_tol);
     end
 
     % Continuation accepts a point as safe only above the evaluation band.
@@ -199,8 +207,20 @@ function result = iterative_margin(fidelity_fn, L, FT, varargin)
     end
 
     function y = counted_fidelity(mu)
+        % Each point is evaluated once; repeats come from the cache.
+        i = find(cache_x(1:n_evals) == mu, 1);
+        if ~isempty(i)
+            y = cache_y(i);
+            return
+        end
         y = fidelity_fn(mu);
         n_evals = n_evals + 1;
+        if n_evals > numel(cache_x)
+            cache_x(2 * n_evals) = 0;
+            cache_y(2 * n_evals) = 0;
+        end
+        cache_x(n_evals) = mu;
+        cache_y(n_evals) = y;
     end
 
 end
@@ -241,7 +261,8 @@ function [M_refined, M_upper, reason, n_unresolved] = certify_direction(fidelity
     frontier = mu_end;
     mu_unsafe = [];
     step = max(margin_tol * scale, 1e-15);
-    for i = 1:200
+    probe_cap = 200; % qrobustness.core.PROBE_CAP
+    for i = 1:probe_cap
         cand = min(max(frontier + sign_step * step, mu_lo), mu_hi);
         if cand == frontier
             M_refined = abs(mu0 - mu_cert);
@@ -283,7 +304,7 @@ function [M_refined, M_upper, reason, n_unresolved] = certify_direction(fidelity
     % or bridged continuation.
     target = max(margin_tol * max(abs(mu_cert - mu0), 1e-300), ...
                  1e-16 * max(1, abs(mu_cert)));
-    for i = 1:200
+    for i = 1:probe_cap
         if abs(mu_unsafe - mu_cert) <= target
             break
         end
@@ -439,6 +460,14 @@ function [M, converged, mu_end, n_steps, status, guard] = one_direction_lipschit
             mu0, mu_next, F_next, FT, eta, mu_lo, mu_hi, k, k_max, strict);
         if done
             mu_end = mu_next;
+            return
+        end
+        if sign_step * (mu_next - mu) <= 4 * eps * max(1, abs(mu))
+            % No progress beyond floating-point resolution: further steps would repeat it.
+            M = abs(mu0 - mu);
+            converged = false;
+            mu_end = mu;
+            status = 'stalled';
             return
         end
         k = k + 1;
@@ -685,6 +714,15 @@ function tf = is_safe(F, FT, strict)
         tf = F > FT;
     else
         tf = F >= FT;
+    end
+end
+
+function r = lower_radius(raw_radius, F, FT, eval_tol)
+    % Safe radius at F - eval_tol; zero unless F - eval_tol exceeds FT.
+    if F - eval_tol > FT
+        r = raw_radius(F - eval_tol);
+    else
+        r = 0;
     end
 end
 

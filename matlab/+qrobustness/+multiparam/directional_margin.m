@@ -59,15 +59,15 @@ function result = directional_margin(fidelity_fn, L, FT, d, varargin)
         zero_gauge = L_dir == 0;
     end
     if zero_gauge
-        % The combined structure vanishes on every interval along d: the whole admissible ray is certified, up to the nearer edge
-        % of omega.
+        % The combined structure vanishes on every interval along d: each ray is certified up to its own end of omega.
         omega = [-Inf, Inf];
         if isfield(extra, 'omega')
             omega = extra.omega;
         end
-        M_zero = min(abs(omega(1)), abs(omega(2)));
-        result = struct('M_minus', M_zero, 'M_plus', M_zero, 'M', M_zero, 'converged_minus', true, 'converged_plus', true, ...
-                        'mu_minus', -M_zero, 'mu_plus', M_zero, 'method', 'zero_gauge', 'status_minus', 'zero_gauge', ...
+        M_lo = abs(omega(1));
+        M_hi = abs(omega(2));
+        result = struct('M_minus', M_lo, 'M_plus', M_hi, 'M', min(M_lo, M_hi), 'converged_minus', true, 'converged_plus', true, ...
+                        'mu_minus', -M_lo, 'mu_plus', M_hi, 'method', 'zero_gauge', 'status_minus', 'zero_gauge', ...
                         'status_plus', 'zero_gauge', 'certificate', 'segment', 'reason_minus', 'zero_gauge', ...
                         'reason_plus', 'zero_gauge', 'M_upper_minus', Inf, 'M_upper_plus', Inf, 'M_upper', Inf, ...
                         'margin_uncertainty', Inf, 'n_unresolved', 0, 'safeguard_minus', false, 'safeguard_plus', false);

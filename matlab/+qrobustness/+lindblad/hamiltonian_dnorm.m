@@ -56,10 +56,12 @@ function r = hamiltonian_dnorm(S, rtol)
         error('qrobustness:lindblad:verification', 'spectral bounds of the Hamiltonian did not verify');
     end
     spread = up(hi - lo);
-    gam = (N * N) * u / (1 - (N * N) * u);
-    diag_err = 4 * u * max(abs(real(diag(B)))) * N;
-    fro = norm(S - qrobustness.lindblad.hamiltonian_superop(B), 'fro');
-    fro = up(up(fro * (1 + 2 * up(gam))) + diag_err);
+    % Only the N^2 diagonal entries B_aa - B_cc of S_B are rounded.
+    diag_err = up(up(4 * u * max(abs(real(diag(B))))) * N);
+    D = S - qrobustness.lindblad.hamiltonian_superop(B);
+    sq = up(up(real(D).^2) + up(imag(D).^2));
+    fro = up(sqrt(sum_upward(sq(:))));
+    fro = up(up(fro * up(1 + 2 * u)) + diag_err);
     v = up(spread + up(N * fro));
     r = struct('value', v, 'raw', raw, 'gap', max(v - raw, 0), 'status', 'analytic', ...
                'value_certified', v, 'feas_shift', 0);
@@ -72,9 +74,15 @@ function x = up(x)
     x = x + abs(x) * eps + realmin;
 end
 
+function x = down(x)
+    % A double at most x: one rounding-down step.
+    x = x - abs(x) * eps - realmin;
+end
+
 function c = chol_error_bound(A)
-%CHOL_ERROR_BOUND Verified c >= ||Delta(A)||_2 for the Cholesky backward error, or -1 if A has a negative diagonal entry.
-%   Rump's entrywise bound, evaluated with upward rounding.
+    % Verified bound c >= ||Delta||_2 on the Cholesky backward error of A
+    % (Rump, BIT 46 (2006), Theorem 2.3, with alpha = gamma_{8(n+1)}); -1 if
+    % a diagonal entry is negative or n is too large.
     n = size(A, 1);
     u = eps / 2;
     k = 8 * (n + 1);
@@ -83,36 +91,50 @@ function c = chol_error_bound(A)
         return
     end
     alpha = up(k * u / (1 - k * u));
-    coef = up(alpha / (1 - alpha));
+    coef = up(alpha / down(1 - alpha));
     dg = real(diag(A));
     if any(dg < 0)
         c = -1;
         return
     end
     v = up(sqrt(dg));
-    if n > 1
-        g = (n - 1) * u / (1 - (n - 1) * u);
-    else
-        g = 0;
-    end
-    tot = up(sum(v) * (1 + g));
+    tot = sum_upward(v);
     main = up(up(coef * max(v)) * tot);
-    eta = realmin;
-    under = up(up(n * (4 * (n + 1))) * eta);
+    % Rump's underflow term: n M eta with M = 3(2n + max a_ii), eta = 2^-1074.
+    M = up(3 * up(2 * n + max(dg)));
+    under = up(up(n * M) * 2^-1074);
     c = up(main + under);
 end
 
 function [t, ok] = shift_diag_down(a, c)
-%SHIFT_DIAG_DOWN Largest stored double t verified to satisfy t <= a - c.
+    % A double t with t <= a - c, checked exactly; ok false if none is found.
     t = a - c;
     ok = false;
+    if ~isfinite(a) || ~isfinite(c)
+        return
+    end
     for it = 1:8
-        if (a - t) >= c
+        if exact_ge(a, t, c)
             ok = true;
             return
         end
         t = t - abs(t) * eps - realmin;
     end
+end
+
+function ok = exact_ge(a, t, c)
+    % True only if a - t >= c holds exactly (error-free transformations).
+    [s, e1] = two_sum(a, -t);
+    [d, e2] = two_sum(s, -c);
+    ok = isfinite(s) && isfinite(d) && ...
+        (d > 2 * (abs(e1) + abs(e2)) || (d >= 0 && e1 == 0 && e2 == 0));
+end
+
+function [s, e] = two_sum(a, b)
+    % s = fl(a + b) and the exact error e = (a + b) - s.
+    s = a + b;
+    bb = s - a;
+    e = (a - (s - bb)) + (b - bb);
 end
 
 function ok = verify_psd(A)
@@ -140,4 +162,27 @@ function ok = verify_psd(A)
     end
     [~, p] = chol(A_test);
     ok = (p == 0);
+end
+
+function s = sum_upward(v)
+    % Upper bound on the exact sum of non-negative v, in any summation order.
+    v = v(:);
+    m = numel(v);
+    if m == 0
+        s = 0;
+        return
+    end
+    s = up(sum(v));
+    if m > 1
+        s = up(s * up(1 + 2 * gam(m - 1)));
+    end
+end
+
+function g = gam(m)
+    % Upper bound on gamma_m = m u / (1 - m u); requires m u <= 0.01.
+    u = eps / 2;
+    if m * u > 0.01
+        error('qrobustness:verificationFailure', 'summation too long for the error bound');
+    end
+    g = up(1.02 * m * u);
 end

@@ -23,6 +23,8 @@ structure:
     structure: amplitude or detuning.
     M, M_upper, delta_star: iterated bracket and analytic crossing.
     r0, r_fs, m_adv: r_0, r_FS and m_adv.
+    adv_violated: 1 if the search found a violation (m_adv is a witness),
+        0 if m_adv is only the search ceiling.
     KM, KM_tv: M^K and M^{K,tri}_tv.
 """
 
@@ -63,7 +65,7 @@ EXACT_TOL = 1e-12
 #: Fractions of the analytic crossing at which that agreement is tested.
 CHECK_FRACTIONS = (0.25, 0.5, 1.0)
 
-#: Adversarial search up to max(M, ADVERSARY_SPAN r_FS), fixed seed.
+#: Adversarial search up to ADVERSARY_SPAN max(M_upper, r_FS), fixed seed.
 ADVERSARY_SPAN = 1.05
 ADVERSARY_SEED = 1
 
@@ -121,7 +123,9 @@ def main() -> None:
             Uf,
             ft,
             fs.r,
-            max(M, ADVERSARY_SPAN * fs.r),
+            # Above the constant crossing a constant perturbation violates, so
+            # the search has a witness to find.
+            ADVERSARY_SPAN * max(float(res.M_upper), fs.r),
             seed=ADVERSARY_SEED,
             n_starts=4,
             starts="legacy",
@@ -152,6 +156,7 @@ def main() -> None:
                 "r0": r0,
                 "r_fs": fs.r_fs,
                 "m_adv": br.m_adv,
+                "adv_violated": int(br.delta_adv is not None),
                 "KM": KM,
                 "KM_tv": KMtv,
             }

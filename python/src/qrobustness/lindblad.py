@@ -240,7 +240,7 @@ class DiamondNorm:
     solver: str = "solver_free"
 
 
-#: Inflation of Rump's real Cholesky backward-error constant for complex arithmetic.
+#: alpha = gamma_{k(n+1)} with this k; Rump's Theorem 2.3 needs only k = 1.
 _CHOL_COMPLEX_FACTOR = 8
 
 
@@ -249,11 +249,53 @@ def _up(x: float) -> float:
     return float(np.nextafter(float(x), np.inf))
 
 
+def _up_array(x: Array) -> Array:
+    """Elementwise :func:`_up`."""
+    return np.nextafter(np.asarray(x, dtype=float), np.inf)
+
+
+def _gamma(m: int) -> float:
+    """Upper bound on ``gamma_m = m u / (1 - m u)``; requires ``m u <= 0.01``."""
+    u = np.finfo(float).eps / 2.0
+    if m * u > 0.01:
+        raise VerificationFailure("summation length too large for the error bound")
+    return _up(1.02 * m * u)
+
+
+def _sum_upward(values) -> float:
+    """Upper bound on the exact sum of non-negative floats, in any summation order.
+
+    The computed sum satisfies sum <= fl(sum)(1 + 2 gamma_{m-1}) for m terms.
+    """
+    v = np.asarray(values, dtype=float).ravel()
+    m = v.size
+    if m == 0:
+        return 0.0
+    s = _up(float(np.sum(v)))
+    if m == 1:
+        return s
+    return _up(s * _up(1.0 + 2.0 * _gamma(m - 1)))
+
+
+def _abs_upper(Z: Array) -> Array:
+    """Elementwise upper bound on ``|z|`` for complex ``Z``."""
+    Z = np.asarray(Z, dtype=complex)
+    sq = _up_array(_up_array(Z.real * Z.real) + _up_array(Z.imag * Z.imag))
+    return _up_array(np.sqrt(sq))
+
+
+def _fro_upper(A: Array) -> float:
+    """Upper bound on the Frobenius norm of ``A``."""
+    A = np.asarray(A, dtype=complex)
+    sq = _up_array(_up_array(A.real * A.real) + _up_array(A.imag * A.imag))
+    return _up(np.sqrt(_sum_upward(sq)))
+
+
 def _chol_error_bound(A: Array) -> Optional[float]:
     """Verified bound ``c >= ||Delta||_2`` on the Cholesky backward error of ``A``.
 
-    Conservative form of Rump's bound, including the diagonal inflation and
-    the underflow term, with all operations rounded upward.
+    Rump's Theorem 2.3 (BIT 46, 2006) with alpha_ij replaced by the larger
+    alpha = gamma_{8(n+1)}, each operation followed by one rounding-up step.
 
     Returns
     -------
@@ -267,17 +309,18 @@ def _chol_error_bound(A: Array) -> Optional[float]:
         return None
     alpha = _up(k * u / (1.0 - k * u))
     # alpha/(1 - alpha) absorbs the diagonal inflation 1/(1 - alpha_ii).
-    coef = _up(alpha / (1.0 - alpha))
+    coef = _up(alpha / float(np.nextafter(1.0 - alpha, -np.inf)))
     d = np.real(np.diag(A))
     if np.any(d < 0.0):
         return None
-    v = np.nextafter(np.sqrt(d), np.inf)  # sqrt is correctly rounded
-    g = (n - 1) * u / (1.0 - (n - 1) * u) if n > 1 else 0.0
-    tot = _up(float(np.sum(v)) * (1.0 + g))
+    v = _up_array(np.sqrt(d))  # sqrt is correctly rounded
+    tot = _sum_upward(v)
     main = _up(_up(coef * float(np.max(v))) * tot)
-    # Underflow allowance: n entries per row, M eta each.
-    eta = np.finfo(float).tiny
-    under = _up(_up(float(n) * float(4 * (n + 1))) * eta)
+    # Underflow term of Rump's Theorem 2.3: M eta in every entry, so n M eta
+    # in the norm, with M = 3(2n + max_i a_ii) and eta = 2^-1074.
+    eta = float(np.nextafter(0.0, 1.0))
+    M = _up(3.0 * _up(2.0 * n + float(np.max(d))))
+    under = _up(_up(float(n) * M) * eta)
     return _up(main + under)
 
 
@@ -288,7 +331,10 @@ def _shift_diag_down(a: float, c: float) -> Optional[float]:
     """
     from fractions import Fraction
 
-    fa, fc = Fraction(float(a)), Fraction(float(c))
+    try:
+        fa, fc = Fraction(float(a)), Fraction(float(c))
+    except (OverflowError, ValueError):
+        return None
     t = float(a) - float(c)
     for _ in range(8):
         if Fraction(t) <= fa - fc:
@@ -371,38 +417,29 @@ def _verified_psd_repair(
     )
 
 
-def _sum_upward(values) -> float:
-    """Upper bound on a sum of non-negative floats (summation error enclosed)."""
-    v = np.asarray(values, dtype=float)
-    n = v.size
-    if n == 0:
-        return 0.0
-    u = np.finfo(float).eps / 2.0
-    g = (n - 1) * u / (1.0 - (n - 1) * u) if n > 1 else 0.0
-    return float(np.sum(v)) * (1.0 + g)
-
-
-def _specnorm_upper(A: Array) -> float:
-    """Upper bound on ``||A||_2`` for Hermitian ``A`` (Gershgorin, rounding enclosed)."""
-    n = A.shape[0]
-    u = np.finfo(float).eps / 2.0
-    rows = np.sum(np.abs(A), axis=1)
-    return float(np.max(rows)) * (1.0 + (n + 1) * u)
-
-
 def _partial_trace_specnorm_upper(Y: Array, N: int) -> float:
     """Upper bound on ``||Tr_out Y||_2`` for Hermitian ``Y`` on output kron input.
 
-    Encloses the partial-trace summation and complex-magnitude rounding,
-    then bounds the spectral norm by Gershgorin row sums.
+    Each entry of the partial trace is a sum of N complex terms; its real and
+    imaginary parts are bounded separately, then the spectral norm by the
+    larger of the largest row and column sums of the entry bounds, which
+    holds for any matrix (||M||_2 <= sqrt(||M||_1 ||M||_inf)).
     """
-    u = np.finfo(float).eps / 2.0
-    Yr = Y.reshape(N, N, N, N)
-    M = np.trace(Yr, axis1=0, axis2=2)
-    A = np.trace(np.abs(Yr), axis1=0, axis2=2)
-    ent = np.abs(M) * (1.0 + 4.0 * u) + (N - 1) * u * A * (1.0 + 4.0 * u)
-    rows = np.sum(ent, axis=1)
-    return float(np.max(rows)) * (1.0 + (N + 1) * u)
+    Yr = np.asarray(Y, dtype=complex).reshape(N, N, N, N)
+    g = _gamma(N - 1) if N > 1 else 0.0
+
+    def part_upper(X: Array) -> Array:
+        s = np.trace(X, axis1=0, axis2=2)
+        a = np.trace(np.abs(X), axis1=0, axis2=2)
+        a_up = _up_array(a * _up(1.0 + 2.0 * g))
+        return _up_array(np.abs(s) + _up_array(g * a_up))
+
+    re = part_upper(Yr.real)
+    im = part_upper(Yr.imag)
+    ent = _up_array(np.sqrt(_up_array(_up_array(re * re) + _up_array(im * im))))
+    return max(
+        max(_sum_upward(row) for row in ent), max(_sum_upward(col) for col in ent.T)
+    )
 
 
 def diamond_norm_free(S: Array, iters: int = 600, degtol: float = 1e-6) -> DiamondNorm:
@@ -425,6 +462,8 @@ def diamond_norm_free(S: Array, iters: int = 600, degtol: float = 1e-6) -> Diamo
     upper bound, ``raw`` the floating objective at the repaired point.
     """
     N = int(round(np.sqrt(S.shape[0])))
+    if not choi_roundtrip_exact(S):
+        raise VerificationFailure("the Choi reindexing does not reproduce S exactly")
     J = choi_matrix(S)
     d = N * N
 
@@ -529,6 +568,8 @@ def diamond_norm(S: Array, solver: Optional[str] = None) -> DiamondNorm:
     import cvxpy as cp
 
     N = int(round(np.sqrt(S.shape[0])))
+    if not choi_roundtrip_exact(S):
+        raise VerificationFailure("the Choi reindexing does not reproduce S exactly")
     J = choi_matrix(S)
     d = N * N
     Y0 = cp.Variable((d, d), hermitian=True)
@@ -685,9 +726,12 @@ def hamiltonian_dnorm(S: Array, rtol: float = 1e-12) -> DiamondNorm:
     spread = _up(hi - lo)
     # Representation term: N ||S - S_B||_F, upward-bounded.
     SB = hamiltonian_superop(B)
-    diag_err = 2.0 * u * 2.0 * float(np.max(np.abs(np.real(np.diag(B))))) * N
-    fro = float(np.linalg.norm(S - SB))
-    fro = _up(_up(fro * (1.0 + 2.0 * _gamma(N * N))) + diag_err)
+    # Only the N^2 diagonal entries B_aa - B_cc of S_B are rounded, each by at
+    # most u |B_aa - B_cc| <= 2u max|B_ii|.
+    diag_err = _up(_up(4.0 * u * float(np.max(np.abs(np.real(np.diag(B)))))) * N)
+    # fl(S - S_B) has relative error u per entry.
+    fro = _fro_upper(S - SB)
+    fro = _up(_up(fro * _up(1.0 + 2.0 * u)) + diag_err)
     rep = _up(N * fro)
     v = _up(spread + rep)
     return DiamondNorm(
@@ -699,12 +743,6 @@ def hamiltonian_dnorm(S: Array, rtol: float = 1e-12) -> DiamondNorm:
         feas_shift=0.0,
         solver="closed_form_spread",
     )
-
-
-def _gamma(m: int) -> float:
-    """Summation error factor ``gamma_m = m u / (1 - m u)``, rounded up."""
-    u = np.finfo(float).eps / 2.0
-    return _up(m * u / (1.0 - m * u))
 
 
 # --------------------------------------------------------------------------
