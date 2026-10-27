@@ -11,10 +11,12 @@ function results = run_all_tests()
         @test_perfect_fidelity_zeta
         @test_iterative_margin_synthetic
         @test_margin_solvers_selectable
+        @test_margin_refinement
         @test_threshold_error
         @test_load_case_study_smoke
         @test_compat_csv
         @test_compat_graphics
+        @test_plotting
         @test_iterative_margin_case_study
         @test_optimize_controller
         @test_dU_dmu_exact

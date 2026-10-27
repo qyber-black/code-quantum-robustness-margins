@@ -13,26 +13,26 @@ function fig = plot_margins_vs_sensitivity(abs_z0, abs_z1, abs_z2, M0, M1, M2, v
     z2 = max(abs_z2(:), realmin);
 
     fig = figure('Visible', p.Results.Visible, 'Color', [1 1 1], ...
-        'Position', [100 100 520 520]);
+        'Position', [100 100 520 430]);
 
-    % Top: H0
-    ax1 = subplot(2, 1, 1, 'Parent', fig);
+    % Bottom: H0
+    ax1 = subplot(2, 1, 2, 'Parent', fig);
     hold(ax1, 'on');
-    plot(ax1, log10(z0), M0(:), 's', 'Color', [0 0 1], 'MarkerFaceColor', [0 0 1], ...
+    plot(ax1, log10(z0), M0(:), 's', 'Color', [0 0.447 0.698], 'MarkerFaceColor', [0 0.447 0.698], ...
         'MarkerSize', 6, 'LineStyle', 'none', 'DisplayName', 'H_0 Perturbation');
     grid(ax1, 'on');
     xlabel(ax1, '|\zeta|');
     ylabel(ax1, 'Robustness margin');
-    legend(ax1, 'Location', 'northwest');
+    legend(ax1, 'Location', 'southwest');
     qrobustness.log10_axis(ax1, 'x', [min(z0)*0.8, max(z0)*1.2]);
     set(ax1, 'YScale', 'linear', 'FontName', 'Helvetica', 'FontSize', 12);
 
-    % Bottom: H1 / H2
-    ax2 = subplot(2, 1, 2, 'Parent', fig);
+    % Top: H1 / H2
+    ax2 = subplot(2, 1, 1, 'Parent', fig);
     hold(ax2, 'on');
-    plot(ax2, log10(z1), M1(:), '>', 'Color', [0 1 0], 'MarkerFaceColor', [0 1 0], ...
+    plot(ax2, log10(z1), M1(:), '>', 'Color', [0 0.620 0.451], 'MarkerFaceColor', 'none', ...
         'MarkerSize', 6, 'LineStyle', 'none', 'DisplayName', 'H_1 Perturbation');
-    plot(ax2, log10(z2), M2(:), '<', 'Color', [1 0 0], 'MarkerFaceColor', [1 0 0], ...
+    plot(ax2, log10(z2), M2(:), '<', 'Color', [0.835 0.369 0], 'MarkerFaceColor', [0.835 0.369 0], ...
         'MarkerSize', 6, 'LineStyle', 'none', 'DisplayName', 'H_2 Perturbation');
     grid(ax2, 'on');
     xlabel(ax2, '|\zeta|');

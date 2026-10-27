@@ -8,7 +8,7 @@
 >
 > SPDX-License-Identifier: AGPL-3.0-or-later
 
-Toolbox for **analysing** (and optionally **synthesising**) piecewise-constant coherent gate controllers under scalar structured Hamiltonian perturbations, accompanying the paper *Fidelity-Based Robustness Margins for Finite-Time Quantum Control*.
+Toolbox for **analysing** (and optionally **synthesising**) piecewise-constant coherent gate controllers under scalar structured Hamiltonian perturbations, accompanying the paper *Fidelity-Based Robustness Margins for Quantum Control*.
 
 > **Scope:** Manuscript figures use the frozen paper controller set under `data/controllers/`. Synthesis writes new ensembles to `results/synth-*` and never overwrites that set. The paper reproduction path uses Algorithm 1 (Lipschitz + bisection); other margin solvers are optional -- see [docs/margin-solvers-notes.md](docs/margin-solvers-notes.md).
 
@@ -167,7 +167,7 @@ If you use this code, please cite the software and the accompanying preprint.
 **Software**
 
 F. C. Langbein, S. P. O'Neil, S. Schirmer, C. A. Weidner, E. A. Jonckheere.
-**Fidelity-Based Quantum Robustness Margins**. Version 1.0.2. Software, 2026.
+**Fidelity-Based Quantum Robustness Margins**. Version 1.0.3. Software, 2026.
 <https://qyber.black/spinnet/code-quantum-robustness-margins>
 (GitHub mirror: <https://github.com/qyber-black/code-quantum-robustness-margins>)
 
@@ -176,7 +176,7 @@ F. C. Langbein, S. P. O'Neil, S. Schirmer, C. A. Weidner, E. A. Jonckheere.
   title   = {Fidelity-Based Quantum Robustness Margins},
   author  = {Langbein, F. C. and O'Neil, S. P. and Schirmer, S.
              and Weidner, C. A. and Jonckheere, E. A.},
-  version = {1.0.2},
+  version = {1.0.3},
   year    = {2026},
   url     = {https://qyber.black/spinnet/code-quantum-robustness-margins},
 }
@@ -185,12 +185,12 @@ F. C. Langbein, S. P. O'Neil, S. Schirmer, C. A. Weidner, E. A. Jonckheere.
 **Paper**
 
 S. P. O'Neil, F. C. Langbein, C. A. Weidner, E. A. Jonckheere, and S. Schirmer.
-**Fidelity-Based Robustness Margins for Finite-Time Quantum Control**.
+**Fidelity-Based Robustness Margins for Quantum Control**.
 Preprint, 2026.
 
 ```bibtex
 @misc{oneil2026fidelity_margins,
-  title  = {Fidelity-Based Robustness Margins for Finite-Time Quantum Control},
+  title  = {Fidelity-Based Robustness Margins for Quantum Control},
   author = {O'Neil, S. P. and Langbein, F. C. and Weidner, C. A.
             and Jonckheere, E. A. and Schirmer, S.},
   year   = {2026},

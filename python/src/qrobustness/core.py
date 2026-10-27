@@ -297,6 +297,9 @@ class MarginResult:
     #: (algorithm1, lipschitz_*); 'endpoint' if only the endpoint is
     #: (doubling, newton_probe -- these probe beyond the Lipschitz radius).
     certificate: str = "unknown"
+    #: Evaluation counts split before and after optional bracket refinement.
+    n_evals_continuation: Optional[int] = None
+    n_evals_refinement: Optional[int] = None
 
 
 @dataclass
@@ -800,7 +803,8 @@ def iterative_margin(
         Required for ``method='newton_probe'``; returns differential sensitivity
         zeta(mu).
     return_diagnostics :
-        If True, populate ``n_evals``, ``n_steps``, and ``method`` on the result.
+        If True, populate ``n_evals``, ``n_steps``, ``method``, and the
+        continuation/refinement evaluation split on the result.
 
     Notes
     -----
@@ -849,6 +853,7 @@ def iterative_margin(
         if method in ("algorithm1", "lipschitz_brent", "lipschitz_toms748")
         else "endpoint",
     )
+    continuation_evals = counter.n_evals
     if margin_tol is not None:
         if not (margin_tol > 0):
             raise ValueError("margin_tol must be positive")
@@ -870,6 +875,8 @@ def iterative_margin(
         result.margin_uncertainty = result.M_upper - result.M
     if return_diagnostics:
         result.n_evals = counter.n_evals
+        result.n_evals_continuation = continuation_evals
+        result.n_evals_refinement = counter.n_evals - continuation_evals
         result.n_steps = steps_m + steps_p
     return result
 

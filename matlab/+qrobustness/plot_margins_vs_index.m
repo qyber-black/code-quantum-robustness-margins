@@ -1,5 +1,5 @@
 function fig = plot_margins_vs_index(err, M0, M1, M2, varargin)
-%PLOT_MARGINS_VS_INDEX Manuscript-style margins vs controller index.
+%PLOT_MARGINS_VS_INDEX Aligned margin and nominal-error panels.
 %
 %   Controllers are ordered by increasing nominal fidelity error.
 %   Vertical axis plots log10(values) on a linear scale (not YScale=log).
@@ -20,28 +20,47 @@ function fig = plot_margins_vs_index(err, M0, M1, M2, varargin)
     M2 = max(real(M2(:)), floor_pos);
 
     fig = figure('Visible', p.Results.Visible, 'Color', [1 1 1], ...
-        'Position', [100 100 528 482]);
-    ax = axes('Parent', fig);
+        'Position', [100 100 499 360], 'PaperPositionMode', 'auto');
+    ax = axes('Parent', fig, 'Position', [0.18 0.459 0.79 0.484]);
     hold(ax, 'on');
 
-    % log10-transformed values on linear axes
-    plot(ax, idx, log10(err_s), '-', 'Color', [0.066 0.443 0.745], ...
-        'LineWidth', 1.2, 'DisplayName', 'nominal fidelity error');
-    plot(ax, idx, log10(M0), 's', 'Color', [0 0 1], 'MarkerFaceColor', [0 0 1], ...
-        'MarkerSize', 6, 'LineStyle', 'none', 'DisplayName', 'H_0 robustness margins');
-    plot(ax, idx, log10(M1), '>', 'Color', [0 1 0], 'MarkerFaceColor', [0 1 0], ...
-        'MarkerSize', 6, 'LineStyle', 'none', 'DisplayName', 'H_1 robustness margins');
-    plot(ax, idx, log10(M2), '<', 'Color', [1 0 0], 'MarkerFaceColor', [1 0 0], ...
-        'MarkerSize', 6, 'LineStyle', 'none', 'DisplayName', 'H_2 robustness margins');
+    plot(ax, idx, log10(M0), 's', 'Color', [0 0.447 0.698], ...
+        'MarkerFaceColor', [0 0.447 0.698], ...
+        'MarkerSize', 3.5, 'LineStyle', 'none', 'DisplayName', 'H_0');
+    plot(ax, idx, log10(M1), '>', 'Color', [0 0.620 0.451], ...
+        'MarkerFaceColor', 'none', ...
+        'MarkerSize', 3.5, 'LineStyle', 'none', 'DisplayName', 'H_1');
+    plot(ax, idx, log10(M2), '<', 'Color', [0.835 0.369 0], ...
+        'MarkerFaceColor', [0.835 0.369 0], ...
+        'MarkerSize', 3.5, 'LineStyle', 'none', 'DisplayName', 'H_2');
 
-    qrobustness.log10_axis(ax, 'y', [1e-7, 1e-1]);
-    set(ax, 'XLim', [1, numel(idx)], 'XScale', 'linear');
+    limits = log10([min([M0; M1; M2])/1.15, max([M0; M1; M2])*1.4]);
+    ticks = [];
+    for exponent = floor(limits(1)):ceil(limits(2))
+        candidates = [1 2 5] * 10^exponent;
+        ticks = [ticks, candidates(log10(candidates) >= limits(1) & ...
+            log10(candidates) <= limits(2))]; %#ok<AGROW>
+    end
+    labels = arrayfun(@(x) sprintf('%.3g', x), ticks, 'UniformOutput', false);
+    set(ax, 'YLim', limits, 'YTick', log10(ticks), 'YTickLabel', labels, ...
+        'XLim', [1 numel(idx)], 'XTickLabel', [], 'XScale', 'linear');
+    ylabel(ax, 'Robustness margin');
+    leg = legend(ax, 'Location', 'northeast', 'Orientation', 'horizontal');
+    set(leg, 'FontSize', 10);
+    text(ax, 0.02, 0.91, '(a)', 'Units', 'normalized', 'Color', [0 0 0]);
+
+    ax_err = axes('Parent', fig, 'Position', [0.18 0.149 0.79 0.263]);
+    plot(ax_err, idx, log10(err_s), '-', 'Color', [0.066 0.443 0.745], ...
+        'LineWidth', 1.2, 'DisplayName', 'nominal fidelity error');
+    qrobustness.log10_axis(ax_err, 'y', [min(err_s)*0.8, max(err_s)*1.2]);
+    set(ax_err, 'XLim', [1 numel(idx)], 'XScale', 'linear');
+    xlabel(ax_err, 'Controller index (increasing nominal error)');
+    ylabel(ax_err, 'Nominal error \epsilon_0');
+    text(ax_err, 0.02, 0.82, '(b)', 'Units', 'normalized', 'Color', [0 0 0]);
+    linkaxes([ax ax_err], 'x');
+    set([ax ax_err], 'FontName', 'Arial', 'FontSize', 11);
     grid(ax, 'on');
-    set(ax, 'XMinorGrid', 'off');
-    xlabel(ax, 'controller index');
-    ylabel(ax, '');
-    legend(ax, 'Location', 'southeast');
-    set(ax, 'FontName', 'Arial', 'FontSize', 14);
+    grid(ax_err, 'on');
     qrobustness.apply_plot_style(fig);
 end
 

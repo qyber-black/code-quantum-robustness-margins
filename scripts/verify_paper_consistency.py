@@ -57,6 +57,8 @@ NEED = (
     "robustness_margins_sensitivity.png",
     "correlations_0.999.tex",
     "margins_table_0.999.csv",
+    "margin_audit_0.999.csv",
+    "margin_audit_0.999.tex",
 )
 
 
@@ -121,7 +123,14 @@ def parse_corr_from_main(path: Path) -> np.ndarray:
     idx = tex.find(r"\label{tab:correlations}")
     if idx < 0:
         raise ValueError("tab:correlations not found in main.tex")
-    chunk = tex[idx : idx + 3000]
+    start = tex.rfind(r"\begin{table}", 0, idx)
+    end = tex.find(r"\end{table}", idx)
+    if start < 0 or end < 0:
+        raise ValueError("tab:correlations is not inside a complete table")
+    chunk = tex[start:end]
+    included = re.search(r"\\input\s*\{([^}]+)\}", chunk)
+    if included:
+        return parse_corr_tex(path.parent / included.group(1))
     rows = []
     for line in chunk.splitlines():
         nums = re.findall(r"\$([+-]?\d+\.\d+)\$", line)

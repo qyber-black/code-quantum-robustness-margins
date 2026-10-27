@@ -46,6 +46,8 @@ BUILD = ROOT / "build"
 
 FT = 0.999
 ETA = 1e-6
+K_MAX = 10000
+AUDIT_MARGIN_TOL = 1e-10
 STRUCTURES = ("H0", "H1", "H2")
 XLIMS = {
     "H0": (-8e-3, 8e-3),
@@ -175,8 +177,127 @@ def write_correlation_tex(rows: list[dict], path: Path) -> None:
                 v = S[i, j]
             cells.append(f"${v:.2f}$")
         lines.append(" & ".join(cells) + r" \\")
-    lines += [r"\bottomrule", r"\end{tabular}"]
+    lines += [
+        r"\midrule",
+        r"\multicolumn{8}{@{}l@{}}{\footnotesize Cells above this table's main diagonal (1.00): Pearson $r$.} \\",
+        r"\multicolumn{8}{@{}l@{}}{\footnotesize Cells below this table's main diagonal (1.00): Spearman $\rho$.} \\",
+        r"\bottomrule",
+        r"\end{tabular}",
+    ]
     path.write_text("\n".join(lines) + "\n")
+
+
+def margin_audit_record(controller: int, structure: str, result) -> dict:
+    """Keep the original continuation endpoints separate from refinement."""
+    minus, plus = abs(result.mu_minus), abs(result.mu_plus)
+    return {
+        "controller": controller,
+        "structure": structure,
+        "M_minus": minus,
+        "M_plus": plus,
+        "M": min(minus, plus),
+        "M_refined_minus": result.M_minus,
+        "M_refined_plus": result.M_plus,
+        "M_refined": result.M,
+        "M_upper_minus": result.M_upper_minus,
+        "M_upper_plus": result.M_upper_plus,
+        "M_upper": result.M_upper,
+        "status_minus": result.status_minus,
+        "status_plus": result.status_plus,
+        "safeguard_minus": int(result.safeguard_minus),
+        "safeguard_plus": int(result.safeguard_plus),
+        "reason_minus": result.reason_minus,
+        "reason_plus": result.reason_plus,
+        "n_evals_continuation": result.n_evals_continuation,
+        "n_evals_refinement": result.n_evals_refinement,
+        "n_evals": result.n_evals,
+    }
+
+
+def write_margin_audit(rows: list[dict], out: Path, ft: float) -> None:
+    """Write measured costs, stopping outcomes and manuscript macros."""
+    with (out / f"margin_audit_{ft:g}.csv").open("w", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=list(rows[0]), lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(rows)
+    widths = [(r["M_upper"] - r["M"]) / r["M"] for r in rows]
+    width = max(widths)
+    exponent = int(np.floor(np.log10(width)))
+    mantissa = np.ceil(width / 10.0**exponent * 10) / 10
+    values = {
+        "Cases": len(rows),
+        "Rays": 2 * len(rows),
+        "KMax": K_MAX,
+        "GuardRays": sum(r["safeguard_" + s] for r in rows for s in ("minus", "plus")),
+        "EtaBandRays": sum(
+            r["status_" + s] == "eta_band" for r in rows for s in ("minus", "plus")
+        ),
+        "BracketedRays": sum(
+            r["reason_" + s] == "bracketed" for r in rows for s in ("minus", "plus")
+        ),
+    }
+    for name, field in (
+        ("Continuation", "n_evals_continuation"),
+        ("Refinement", "n_evals_refinement"),
+    ):
+        data = [r[field] for r in rows]
+        values.update(
+            {
+                name + "Min": min(data),
+                name + "Median": np.median(data),
+                name + "Max": max(data),
+            }
+        )
+    lines = [
+        "% Auto-generated from margin_audit CSV; evaluations are per two-direction case."
+    ]
+    lines += [
+        rf"\newcommand{{\QRMAudit{name}}}{{{value:g}}}"
+        for name, value in values.items()
+    ]
+    lines.append(rf"\newcommand{{\QRMAuditControllers}}{{{len({r['controller'] for r in rows})}}}")
+    for structure, name in (("H0", "DriftSpread"), ("H1", "ControlOneSpread"),
+                            ("H2", "ControlTwoSpread")):
+        data = [r["M"] for r in rows if r["structure"] == structure]
+        lines.append(rf"\newcommand{{\QRMAudit{name}}}{{{max(data) / min(data):.1f}}}")
+    coefficient, power = f"{AUDIT_MARGIN_TOL:.0e}".split("e")
+    lines += [
+        rf"\newcommand{{\QRMAuditRelativeWidth}}{{{mantissa:.1f}\times10^{{{exponent}}}}}",
+        rf"\newcommand{{\QRMAuditTolerance}}{{{coefficient}\times10^{{{int(power)}}}}}",
+    ]
+    (out / f"margin_audit_{ft:g}.tex").write_text("\n".join(lines) + "\n")
+
+
+def plot_results(rows: list[dict], sweeps: dict, ft: float, out: Path) -> None:
+    """Render figures without changing the numerical results."""
+    plot_margins_vs_index(
+        [r["err"] for r in rows],
+        [r["M_H0"] for r in rows],
+        [r["M_H1"] for r in rows],
+        [r["M_H2"] for r in rows],
+        out_path=out / "robustness_margins_fid_err.png",
+    )
+    plot_margins_vs_sensitivity(
+        np.abs([r["zeta_H0"] for r in rows]),
+        np.abs([r["zeta_H1"] for r in rows]),
+        np.abs([r["zeta_H2"] for r in rows]),
+        [r["M_H0"] for r in rows],
+        [r["M_H1"] for r in rows],
+        [r["M_H2"] for r in rows],
+        out_path=out / "robustness_margins_sensitivity.png",
+    )
+    for tag in STRUCTURES:
+        if sweeps[tag]["X"]:
+            plot_fidelity_error_sweeps(
+                sweeps[tag]["X"],
+                sweeps[tag]["Y"],
+                ft,
+                xlabel=rf"$\delta_{tag[-1]}$",
+                xlim=XLIMS[tag],
+                font_size=14,
+                num_xticks=3,
+                out_path=out / f"{tag}_all.png",
+            )
 
 
 def main() -> None:
@@ -219,6 +340,7 @@ def main() -> None:
     problem = load_problem(ctrl_dir / "problem9.mat")
     controllers = load_controllers(ctrl_dir / "controllers.csv", args.max_error)
     rows: list[dict] = []
+    audit_rows: list[dict] = []
     sweeps = {tag: {"X": [], "Y": []} for tag in STRUCTURES}
 
     for i, c in enumerate(controllers):
@@ -228,7 +350,7 @@ def main() -> None:
             "fid": c["fid"],
             "err": c["error"],
         }
-        print(f"Controller {i+1}/{len(controllers)} fid={c['fid']:.6g}", flush=True)
+        print(f"Controller {i + 1}/{len(controllers)} fid={c['fid']:.6g}", flush=True)
         for tag in STRUCTURES:
             if tag == "H0":
                 C = structure_constant("drift", problem["H0"], dt, c["tau"])
@@ -247,19 +369,27 @@ def main() -> None:
                 dt,
                 tag,
             )
-            margin = iterative_margin(fid_fn, L, ft, mu0=0.0, eta=ETA)
+            margin = iterative_margin(
+                fid_fn, L, ft, mu0=0.0, eta=ETA, omega=(-np.inf, np.inf),
+                k_max=K_MAX, method="algorithm1", return_diagnostics=True,
+                margin_tol=AUDIT_MARGIN_TOL,
+            )
+            audit = margin_audit_record(i + 1, tag, margin)
+            audit_rows.append(audit)
             H_list = perturbed_hamiltonians(
                 problem["H0"], problem["H1"], problem["H2"], c["u1"], c["u2"], tag, 0.0
             )
-            dH = dH_structure(problem["H0"], problem["H1"], problem["H2"], c["u1"], c["u2"], tag)
+            dH = dH_structure(
+                problem["H0"], problem["H1"], problem["H2"], c["u1"], c["u2"], tag
+            )
             zeta = differential_sensitivity(H_list, dH, dt, problem["Uf"], n_quad=32)
-            row[f"M_{tag}"] = float(margin.M)
-            row[f"Mm_{tag}"] = float(margin.M_minus)
-            row[f"Mp_{tag}"] = float(margin.M_plus)
+            row[f"M_{tag}"] = float(audit["M"])
+            row[f"Mm_{tag}"] = float(audit["M_minus"])
+            row[f"Mp_{tag}"] = float(audit["M_plus"])
             row[f"zeta_{tag}"] = float(zeta)
 
             if args.sweep:
-                span = 1.05 * max(margin.M_minus, margin.M_plus)
+                span = 1.05 * max(audit["M_minus"], audit["M_plus"])
                 if span <= 0:
                     span = 1e-3
                 x = np.linspace(-span, span, 401)
@@ -271,6 +401,7 @@ def main() -> None:
     out = args.out
     out.mkdir(parents=True, exist_ok=True)
     BUILD.mkdir(parents=True, exist_ok=True)
+    write_margin_audit(audit_rows, out, ft)
 
     csv_name = f"margins_table_{ft:g}.csv"
     fields = list(rows[0].keys())
@@ -296,32 +427,7 @@ def main() -> None:
     if args.no_plots:
         return
 
-    plot_margins_vs_index(
-        [r["err"] for r in rows],
-        [r["M_H0"] for r in rows],
-        [r["M_H1"] for r in rows],
-        [r["M_H2"] for r in rows],
-        out_path=out / "robustness_margins_fid_err.png",
-    )
-    plot_margins_vs_sensitivity(
-        np.abs([r["zeta_H0"] for r in rows]),
-        np.abs([r["zeta_H1"] for r in rows]),
-        np.abs([r["zeta_H2"] for r in rows]),
-        [r["M_H0"] for r in rows],
-        [r["M_H1"] for r in rows],
-        [r["M_H2"] for r in rows],
-        out_path=out / "robustness_margins_sensitivity.png",
-    )
-    if args.sweep:
-        for tag in STRUCTURES:
-            plot_fidelity_error_sweeps(
-                sweeps[tag]["X"],
-                sweeps[tag]["Y"],
-                ft,
-                xlabel=rf"Perturbation strength $\delta_{tag[-1]}$",
-                xlim=XLIMS[tag],
-                out_path=out / f"{tag}_all.png",
-            )
+    plot_results(rows, sweeps, ft, out)
     print(f"Published paper deliverables to {out}")
 
 

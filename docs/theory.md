@@ -220,17 +220,17 @@ bracket refers to the *first* boundary of the nominal safe component: the
 certified end advances to a pointwise-safe sample only when the gap from the
 current certified end is covered by that sample's own safe radius
 `(F - F_T)/L` (or bridged by safe-radius continuation), so with a nonmonotone
-fidelity a safe island beyond the first crossing cannot inflate `M`. On the
-case study `margin_tol=1e-10` reaches `1e-10` in about 90 extra fidelity
-evaluations per controller. `reason_minus/plus` distinguishes `'bracketed'`
+fidelity a safe island beyond the first crossing cannot inflate `M`. The case-study audit records the continuation and refinement evaluation
+counts separately for each controller/structure pair, covering both directions. `reason_minus/plus` distinguishes `'bracketed'`
 (width at tolerance) from `'partial'` (the bracket is rigorous but
 continuation stalled before reaching the tolerance), `'boundary'` (the
 domain edge was reached while still safe -- then the margin is a *domain
 truncation*, and `M_upper = inf`), and `'exhausted'` (no unsafe point
 found; `M_upper = inf`).
 
-The paper drivers do not pass `margin_tol`, so the published tables are
-reproduced exactly; the option is there for anyone who needs the true value.
+The case-study drivers save continuation margins in the margin tables and
+sweeps. Refined endpoints, below-threshold samples, stopping statuses and
+evaluation counts are saved separately in `margin_audit_<FT>.csv`.
 
 ---
 

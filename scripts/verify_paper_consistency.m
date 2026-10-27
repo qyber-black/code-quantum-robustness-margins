@@ -223,7 +223,8 @@ function verify_paper_consistency(varargin)
     %% 10) results deliverables present
     need = {'H0_all.png', 'H1_all.png', 'H2_all.png', ...
         'robustness_margins_fid_err.png', 'robustness_margins_sensitivity.png', ...
-        'correlations_0.999.tex', 'margins_table_0.999.csv'};
+        'correlations_0.999.tex', 'margins_table_0.999.csv', ...
+        'margin_audit_0.999.csv', 'margin_audit_0.999.tex'};
     ok_pub = true;
     for i = 1:numel(need)
         f = fullfile(results_dir, need{i});
@@ -335,7 +336,22 @@ end
 function C = parse_corr_from_main(path)
     tex = fileread(path);
     idx = strfind(tex, '\label{tab:correlations}');
-    chunk = tex(idx(1):min(numel(tex), idx(1) + 3000));
+    if isempty(idx)
+        error('tab:correlations not found in main.tex');
+    end
+    starts = strfind(tex, '\begin{table}');
+    stops = strfind(tex, '\end{table}');
+    starts = starts(starts < idx(1));
+    stops = stops(stops > idx(1));
+    if isempty(starts) || isempty(stops)
+        error('tab:correlations is not inside a complete table');
+    end
+    chunk = tex(starts(end):stops(1)-1);
+    included = regexp(chunk, '\\input\s*\{([^}]+)\}', 'tokens', 'once');
+    if ~isempty(included)
+        C = parse_corr_tex(fullfile(fileparts(path), included{1}));
+        return;
+    end
     lines = qrobustness.compat.split_lines(chunk);
     rows = {};
     for i = 1:numel(lines)

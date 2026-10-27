@@ -147,12 +147,15 @@ compare-octave: venv
 sync-paper-qrm:
 	$(call require_paper,$(PAPER_ROOT),PAPER_ROOT)
 	mkdir -p $(PAPER_FIGURES)
+	mkdir -p $(PAPER_ROOT)/tables
 	cp -f $(LIPSCHITZ_PYTHON)/H0_all.png $(PAPER_FIGURES)/
 	cp -f $(LIPSCHITZ_PYTHON)/H1_all.png $(PAPER_FIGURES)/
 	cp -f $(LIPSCHITZ_PYTHON)/H2_all.png $(PAPER_FIGURES)/
 	cp -f $(LIPSCHITZ_PYTHON)/robustness_margins_fid_err.png $(PAPER_FIGURES)/
 	cp -f $(LIPSCHITZ_PYTHON)/robustness_margins_sensitivity.png $(PAPER_FIGURES)/
-	@echo "Published paper-QRM figures from $(LIPSCHITZ_PYTHON) into $(PAPER_FIGURES)"
+	cp -f $(LIPSCHITZ_PYTHON)/correlations_0.999.tex $(PAPER_ROOT)/tables/
+	cp -f $(LIPSCHITZ_PYTHON)/margin_audit_0.999.tex $(PAPER_ROOT)/tables/
+	@echo "Published paper-QRM figures and table from $(LIPSCHITZ_PYTHON) into $(PAPER_ROOT)"
 
 sync-paper: sync-paper-qrm
 

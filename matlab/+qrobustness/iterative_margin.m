@@ -35,7 +35,7 @@ function result = iterative_margin(fidelity_fn, L, FT, varargin)
 %     status_minus, status_plus, safeguard_minus, safeguard_plus,
 %     M_upper_minus, M_upper_plus, M_upper, margin_uncertainty,
 %     reason_minus, reason_plus
-%     [, n_evals, n_steps]
+%     [, n_evals, n_steps, n_evals_continuation, n_evals_refinement]
 %
 %     'status_*' reports which Algorithm 1 stopping rule fired in that
 %     direction -- 'eta_band', 'domain_truncated' or 'iteration_limit' -- and
@@ -58,11 +58,11 @@ function result = iterative_margin(fidelity_fn, L, FT, varargin)
 %     for the flat, highly robust controllers of interest.  On the paper case
 %     study the default eta=1e-6 leaves about 5e-4 relative error in M.
 %
-%     Set 'margin_tol' to convert that into a margin statement: the safe/unsafe
-%     bracket is refined until (M_upper - M)/M <= margin_tol, so the true
-%     margin lies in [M, M_upper].  M itself is tightened in the process.
-%     margin_tol=1e-10 costs about 90 extra fidelity evaluations per
-%     controller and reaches 1e-10, subject to the fp64 floor.
+%     With 'margin_tol', an unsafe witness is sought and the component-boundary
+%     bracket refined. Safe samples advance the lower endpoint only when their
+%     connection to the nominal safe component is certified. 'partial' reports
+%     a valid bracket whose width has not reached the requested tolerance.
+%     n_evals_continuation and n_evals_refinement separate the two costs.
 %
 %     'certificate' is 'segment' when every point between mu0 and the endpoint
 %     is certified F >= FT (algorithm1, lipschitz_*), and 'endpoint' when only
@@ -70,6 +70,7 @@ function result = iterative_margin(fidelity_fn, L, FT, varargin)
 %     radius, so a dip below FT in between is not excluded).
 %
 %     'reason_*' is 'bracketed' (an unsafe point was located and refined),
+%     'partial' (certified continuation stalled before the requested width),
 %     'boundary' (the domain edge was reached while still safe -- the margin is
 %     a domain truncation, M_upper = Inf), or 'exhausted'.
 
@@ -154,12 +155,13 @@ function result = iterative_margin(fidelity_fn, L, FT, varargin)
     result.reason_minus = 'unknown';
     result.reason_plus = 'unknown';
 
+    continuation_evals = n_evals;
     if ~isempty(margin_tol)
         if ~(margin_tol > 0)
             error('qrobustness:margin:margin_tol', 'margin_tol must be positive.');
         end
-        [lo_m, up_m, why_m] = certify_direction(counted_fn, mu0, mu_minus, FT, 1, omega, margin_tol);
-        [lo_p, up_p, why_p] = certify_direction(counted_fn, mu0, mu_plus, FT, 2, omega, margin_tol);
+        [lo_m, up_m, why_m] = certify_direction(counted_fn, mu0, mu_minus, FT, 1, omega, margin_tol, L);
+        [lo_p, up_p, why_p] = certify_direction(counted_fn, mu0, mu_plus, FT, 2, omega, margin_tol, L);
         % The refined safe ends are tighter lower bounds than the eta-based ones.
         result.M_minus = max(result.M_minus, lo_m);
         result.M_plus = max(result.M_plus, lo_p);
@@ -174,6 +176,8 @@ function result = iterative_margin(fidelity_fn, L, FT, varargin)
 
     if return_diagnostics
         result.n_evals = n_evals;
+        result.n_evals_continuation = continuation_evals;
+        result.n_evals_refinement = n_evals - continuation_evals;
         result.n_steps = steps_m + steps_p;
     end
 
@@ -183,24 +187,22 @@ function result = iterative_margin(fidelity_fn, L, FT, varargin)
     end
 end
 
-function [M_refined, M_upper, reason] = certify_direction(fidelity_fn, mu0, mu_end, FT, ell, omega, margin_tol)
-%CERTIFY_DIRECTION Bracket the true ray margin to relative width margin_tol.
-%   mu_end has F >= FT, so |mu0-mu_end| is a lower bound on the ray margin.
-%   Step outward until F < FT, then bisect, so the true ray margin lies in
-%   [M_refined, M_upper] with M_upper - M_refined <= margin_tol*M_refined.
+function [M_refined, M_upper, reason] = certify_direction(fidelity_fn, mu0, mu_end, FT, ell, omega, margin_tol, L)
+%CERTIFY_DIRECTION Refine a component-boundary bracket with certified promotion.
 
     sign_step = (-1)^ell;
     mu_lo = omega(1);
     mu_hi = omega(2);
     scale = max(abs(mu_end - mu0), 1e-12);
 
-    mu_safe = mu_end;
+    mu_cert = mu_end;
+    frontier = mu_end;
     mu_unsafe = [];
     step = max(margin_tol * scale, 1e-15);
     for i = 1:200
-        cand = min(max(mu_safe + sign_step * step, mu_lo), mu_hi);
-        if cand == mu_safe
-            M_refined = abs(mu0 - mu_safe);
+        cand = min(max(frontier + sign_step * step, mu_lo), mu_hi);
+        if cand == frontier
+            M_refined = abs(mu0 - mu_cert);
             M_upper = Inf;
             reason = 'boundary';
             return;
@@ -209,35 +211,81 @@ function [M_refined, M_upper, reason] = certify_direction(fidelity_fn, mu0, mu_e
             mu_unsafe = cand;
             break;
         end
-        mu_safe = cand;
+        if can_promote(fidelity_fn, cand, mu_cert, FT, L)
+            mu_cert = cand;
+        else
+            mu_cert = continue_toward(fidelity_fn, mu_cert, cand, FT, L, sign_step);
+        end
+        frontier = cand;
         step = step * 2;
     end
     if isempty(mu_unsafe)
-        M_refined = abs(mu0 - mu_safe);
+        M_refined = abs(mu0 - mu_cert);
         M_upper = Inf;
         reason = 'exhausted';
         return;
     end
 
-    target = max(margin_tol * max(abs(mu_safe - mu0), 1e-300), ...
-                 1e-16 * max(1, abs(mu_safe)));
+    target = max(margin_tol * max(abs(mu_cert - mu0), 1e-300), ...
+                 1e-16 * max(1, abs(mu_cert)));
     for i = 1:200
-        if abs(mu_unsafe - mu_safe) <= target
+        if abs(mu_unsafe - mu_cert) <= target
             break;
         end
-        mid = 0.5 * (mu_safe + mu_unsafe);
-        if mid == mu_safe || mid == mu_unsafe
+        mid = 0.5 * (mu_cert + mu_unsafe);
+        if mid == mu_cert || mid == mu_unsafe
             break;  % fp64 floor
         end
-        if fidelity_fn(mid) >= FT
-            mu_safe = mid;
-        else
+        if fidelity_fn(mid) < FT
             mu_unsafe = mid;
+            continue;
+        end
+        if can_promote(fidelity_fn, mid, mu_cert, FT, L)
+            mu_cert = mid;
+        else
+            reached = continue_toward(fidelity_fn, mu_cert, mid, FT, L, sign_step);
+            if reached == mu_cert
+                M_refined = abs(mu0 - mu_cert);
+                M_upper = abs(mu0 - mu_unsafe);
+                reason = 'partial';
+                return;
+            end
+            mu_cert = reached;
         end
     end
-    M_refined = abs(mu0 - mu_safe);
+    M_refined = abs(mu0 - mu_cert);
     M_upper = abs(mu0 - mu_unsafe);
-    reason = 'bracketed';
+    if abs(mu_unsafe - mu_cert) <= max(target, 2e-16 * max(1, abs(mu_cert)))
+        reason = 'bracketed';
+    else
+        reason = 'partial';
+    end
+end
+
+function yes = can_promote(fidelity_fn, cand, cert, FT, L)
+    F = fidelity_fn(cand);
+    yes = F >= FT && abs(cand - cert) <= (F - FT)/L;
+end
+
+function cert = continue_toward(fidelity_fn, cert, target_pt, FT, L, sign_step)
+    for k = 1:64
+        F = fidelity_fn(cert);
+        if F < FT
+            return;
+        end
+        step_r = (F - FT)/L;
+        if step_r <= abs(target_pt - cert)*1e-15 + 1e-300
+            return;
+        end
+        nxt = cert + sign_step * min(step_r, abs(target_pt - cert));
+        if sign_step * (nxt - target_pt) >= 0
+            if fidelity_fn(target_pt) >= FT
+                cert = target_pt;
+            end
+            return;
+        end
+        cert = nxt;
+    end
 end
 
 function [M, converged, mu_end, n_steps, status, guard] = dispatch_one_direction( ...

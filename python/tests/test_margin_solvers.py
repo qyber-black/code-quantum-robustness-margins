@@ -201,7 +201,9 @@ def test_case_study_doubling_and_newton_smoke():
             "H0",
             mu,
         )
-        dH = dH_structure(problem["H0"], problem["H1"], problem["H2"], c["u1"], c["u2"], "H0")
+        dH = dH_structure(
+            problem["H0"], problem["H1"], problem["H2"], c["u1"], c["u2"], "H0"
+        )
         return differential_sensitivity(H_list, dH, dt, problem["Uf"], n_quad=16)
 
     base = iterative_margin(fid_fn, L, FT, mu0=0.0, eta=eta, method="algorithm1")
@@ -226,3 +228,31 @@ def test_case_study_doubling_and_newton_smoke():
     # On this case study, doubling should not be wildly off Algorithm 1.
     assert abs(dbl.M - base.M) / max(base.M, 1e-30) < 0.05
     assert dbl.n_evals is not None and newt.n_evals is not None
+
+
+def test_refinement_cannot_jump_to_a_disconnected_safe_island():
+    import numpy as np
+
+    knots = [0, 1.01, 1.02, 3, 4.1]
+    values = [1, 0.798, 1, 1, 0.78]
+    calls = 0
+
+    def fidelity(mu):
+        nonlocal calls
+        calls += 1
+        return np.interp(abs(mu), knots, values)
+
+    refined = iterative_margin(
+        fidelity, 20.2, 0.8, eta=0.05, margin_tol=0.01, return_diagnostics=True
+    )
+    assert refined.n_evals == calls
+    assert refined.M <= 1 + 1e-12
+    assert refined.M_upper >= 1 and fidelity(refined.M_upper) < 0.8
+    assert refined.n_evals == refined.n_evals_continuation + refined.n_evals_refinement
+    assert refined.n_evals_refinement > 0
+    calls = 0
+    basic = iterative_margin(fidelity, 20.2, 0.8, eta=0.05, return_diagnostics=True)
+    assert basic.n_evals == calls
+    assert basic.n_evals_refinement == 0
+    assert basic.n_evals == basic.n_evals_continuation
+    assert basic.M == min(abs(refined.mu_minus), abs(refined.mu_plus))

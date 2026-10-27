@@ -68,6 +68,9 @@ function run_lipschitz_margin_case_study(varargin)
     nC = numel(controllers);
     structures = {'H0', 'H1', 'H2'};
     FT = opt.FT;
+    k_max = 10000;
+    audit_margin_tol = 1e-10;
+    audit_rows = struct([]);
 
     fprintf('Case study: %d controllers, FT=%g\n', nC, FT);
 
@@ -105,7 +108,26 @@ function run_lipschitz_margin_case_study(varargin)
                 problem.H0, problem.H1, problem.H2, c.u1, c.u2, problem.Uf, dt, tag);
 
             margin = qrobustness.iterative_margin(fid_fn, L, FT, ...
-                'mu0', 0, 'eta', opt.eta);
+                'mu0', 0, 'eta', opt.eta, 'omega', [-Inf Inf], ...
+                'k_max', k_max, 'method', 'algorithm1', ...
+                'return_diagnostics', true, 'margin_tol', audit_margin_tol);
+            a = struct('controller', n, 'structure', tag, ...
+                'M_minus', abs(margin.mu_minus), 'M_plus', abs(margin.mu_plus), ...
+                'M', min(abs(margin.mu_minus), abs(margin.mu_plus)), ...
+                'M_refined_minus', margin.M_minus, 'M_refined_plus', margin.M_plus, ...
+                'M_refined', margin.M, 'M_upper_minus', margin.M_upper_minus, ...
+                'M_upper_plus', margin.M_upper_plus, 'M_upper', margin.M_upper, ...
+                'status_minus', margin.status_minus, 'status_plus', margin.status_plus, ...
+                'safeguard_minus', double(margin.safeguard_minus), ...
+                'safeguard_plus', double(margin.safeguard_plus), ...
+                'reason_minus', margin.reason_minus, 'reason_plus', margin.reason_plus, ...
+                'n_evals_continuation', margin.n_evals_continuation, ...
+                'n_evals_refinement', margin.n_evals_refinement, 'n_evals', margin.n_evals);
+            if isempty(audit_rows)
+                audit_rows = a;
+            else
+                audit_rows(end + 1) = a; %#ok<AGROW>
+            end
 
             H_list = qrobustness.perturbed_hamiltonians( ...
                 problem.H0, problem.H1, problem.H2, c.u1, c.u2, tag, 0);
@@ -113,9 +135,9 @@ function run_lipschitz_margin_case_study(varargin)
                 problem.H0, problem.H1, problem.H2, c.u1, c.u2, tag);
             zeta = qrobustness.differential_sensitivity(H_list, dH, dt, problem.Uf, 32);
 
-            R.(tag).M(n) = margin.M;
-            R.(tag).M_minus(n) = margin.M_minus;
-            R.(tag).M_plus(n) = margin.M_plus;
+            R.(tag).M(n) = a.M;
+            R.(tag).M_minus(n) = a.M_minus;
+            R.(tag).M_plus(n) = a.M_plus;
             R.(tag).zeta(n) = zeta;
             R.(tag).L(n) = L;
             R.(tag).fid(n) = c.fid;
@@ -123,7 +145,7 @@ function run_lipschitz_margin_case_study(varargin)
             R.(tag).converged(n, :) = [margin.converged_minus, margin.converged_plus];
 
             if opt.do_sweep
-                span = 1.05 * max(margin.M_minus, margin.M_plus);
+                span = 1.05 * max(a.M_minus, a.M_plus);
                 if span <= 0
                     span = 1e-3;
                 end
@@ -140,6 +162,7 @@ function run_lipschitz_margin_case_study(varargin)
         'R', 'controllers', 'FT', '-v7');
 
     T = qrobustness.compat.build_margins_table(R, nC);
+    qrobustness.write_margin_audit(audit_rows, out_publish, FT, k_max, audit_margin_tol);
     margins_csv = sprintf('margins_table_%g.csv', FT);
     qrobustness.compat.write_margins_csv(fullfile(out_build, margins_csv), T);
     copyfile(fullfile(out_build, margins_csv), fullfile(out_publish, margins_csv));
@@ -152,8 +175,8 @@ function run_lipschitz_margin_case_study(varargin)
             tag = structures{s};
             fig = qrobustness.plot_fidelity_error_sweeps( ...
                 sweeps.(tag).X, sweeps.(tag).Y, FT, ...
-                'xlabel', sprintf('Perturbation strength \\delta_{%d}', s - 1), ...
-                'xlim', xlims{s});
+                'xlabel', sprintf('\\delta_{%d}', s - 1), ...
+                'xlim', xlims{s}, 'FontSize', 14, 'NumXTicks', 3);
             qrobustness.compat.export_figure(fig, fullfile(out_build, sprintf('%s_all.png', tag)), 300);
             qrobustness.compat.export_figure(fig, fullfile(out_publish, sprintf('%s_all.png', tag)), 300);
             if ~qrobustness.compat.is_octave()
@@ -182,7 +205,7 @@ function run_lipschitz_margin_case_study(varargin)
     close(fig);
 
     tex_name = sprintf('correlations_%g.tex', FT);
-    write_correlation_tex(T, fullfile(out_build, tex_name));
+    qrobustness.write_correlation_tex(T, fullfile(out_build, tex_name));
     copyfile(fullfile(out_build, tex_name), fullfile(out_publish, tex_name));
 
     focal_name = sprintf('focal_tests_%g.csv', FT);
@@ -257,37 +280,6 @@ function write_correlations(T, path)
     fclose(fid);
 end
 
-function write_correlation_tex(T, path)
-    % M_j = min(M_j-, M_j+) is invariant under reversal of the parameter
-    % coordinate while zeta_j changes sign, so |zeta_j| is the
-    % orientation-invariant local comparator; correlating against signed zeta
-    % can hide a relationship by mixing the two signs.  Matches Fig. 3.
-    vars = {'err', 'M_H0', 'M_H1', 'M_H2', 'zeta_H0', 'zeta_H1', 'zeta_H2'};
-    labels = {'$\varepsilon_0$', '$M_0$', '$M_1$', '$M_2$', '$|\zeta_0|$', '$|\zeta_1|$', '$|\zeta_2|$'};
-    X = qrobustness.compat.margins_matrix(T, vars);
-    X(:, 5:7) = abs(X(:, 5:7));
-    [P, S] = qrobustness.compat.correlation_matrices(X);
-    fid = fopen(path, 'w');
-    fprintf(fid, '%% Auto-generated: upper Pearson r, lower Spearman rho; |zeta| (see above)\n');
-    fprintf(fid, '\\begin{tabular}{@{}lccccccc@{}}\n\\toprule\n');
-    fprintf(fid, ' & %s \\\\\n\\midrule\n', strjoin(labels, ' & '));
-    for i = 1:7
-        fprintf(fid, '%s', labels{i});
-        for j = 1:7
-            if i == j
-                v = 1.0;
-            elseif j > i
-                v = P(i, j);
-            else
-                v = S(i, j);
-            end
-            fprintf(fid, ' & $%.2f$', v);
-        end
-        fprintf(fid, ' \\\\\n');
-    end
-    fprintf(fid, '\\bottomrule\n\\end{tabular}\n');
-    fclose(fid);
-end
 
 % SPDX-FileCopyrightText: (C) 2026 F. C. Langbein <frank@langbein.org>
 % SPDX-FileCopyrightText: (C) 2026 S. P. O'Neil <sean.oneil@westpoint.edu>
