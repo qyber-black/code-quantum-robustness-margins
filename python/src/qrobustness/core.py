@@ -477,6 +477,8 @@ class MarginResult:
         ``'endpoint'`` (only the endpoint; ``doubling``, ``newton_probe``).
     n_unresolved :
         Probes within eps_num of F_T, classified neither safe nor unsafe.
+    n_evals_continuation, n_evals_refinement :
+        Evaluations before and during optional bracket refinement.
     n_evals_minus, n_evals_plus :
         Evaluations per ray (with ``return_diagnostics``); ``n_evals`` is
         their sum plus one at mu0.
@@ -506,6 +508,9 @@ class MarginResult:
     n_unresolved: int = 0
     n_evals_minus: Optional[int] = None
     n_evals_plus: Optional[int] = None
+    #: Evaluation counts split before and after optional bracket refinement.
+    n_evals_continuation: Optional[int] = None
+    n_evals_refinement: Optional[int] = None
 
 
 @dataclass
@@ -1254,6 +1259,7 @@ def iterative_margin(
         if method in ("algorithm1", "lipschitz_brent", "lipschitz_toms748")
         else "endpoint",
     )
+    continuation_evals = counter.n_evals
     if margin_tol is not None:
         if not (margin_tol > 0):
             raise ValueError("margin_tol must be positive")
@@ -1300,6 +1306,8 @@ def iterative_margin(
         result.n_evals = counter.n_evals
         result.n_evals_minus = n_m
         result.n_evals_plus = n_p
+        result.n_evals_continuation = continuation_evals
+        result.n_evals_refinement = counter.n_evals - continuation_evals
         result.n_steps = steps_m + steps_p
     return result
 

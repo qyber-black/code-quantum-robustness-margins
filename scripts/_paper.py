@@ -33,6 +33,7 @@ DRIVERS = {
     "kosut_comparison_0.999_angular.csv": "run_time_bandwidth_bound_comparison.py",
     "kosut_comparison_0.999_angular_tv.csv": "run_time_bandwidth_bound_comparison.py",
     "margins_table_0.999.csv": "run_lipschitz_margin_case_study.py",
+    "margin_audit_0.999.csv": "run_lipschitz_margin_case_study.py",
     "mixed_ctrl1.npz": "run_mixed_example.py",
     "multiparam_0.999.csv": "run_multiparameter_case_study.py",
     "multiparam_0.999_angular.csv": "run_multiparameter_case_study.py",

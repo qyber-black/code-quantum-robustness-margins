@@ -14,7 +14,7 @@ Notable changes to this project are listed here. The format follows
 
 ## [1.1.0]
 
-Not released. Changes since 1.0.2.
+Not released. Changes since 1.0.3.
 
 ### Added
 
@@ -127,6 +127,11 @@ Not released. Changes since 1.0.2.
 - `docs/theory.md`, `docs/time-bandwidth-bound.md` and
   `docs/margin-solvers-notes.md`.
 - The `data/legacy/` comparison and `rebase-legacy-reference`.
+
+## [1.0.3] - 2026-10-27
+
+- Add margin audits and generated table keys; improve plots across engines.
+- Align MATLAB/Octave's certified bracket refinement with Python.
 
 ## [1.0.2] - 2026-08-03
 

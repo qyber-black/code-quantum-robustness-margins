@@ -10,7 +10,7 @@
 
 Use this repository to analyse piecewise-constant coherent gate controllers under structured Hamiltonian and Lindbladian uncertainty, and to synthesise them when you need a new ensemble. It holds the code and the numerical results for two papers:
 
-- **QRM** -- *Fidelity-Based Robustness Margins for Finite-Time Quantum Control*, [arXiv:2608.03698](https://arxiv.org/abs/2608.03698). The scalar-perturbation margin: the gate-fidelity sensitivity bound, the Lipschitz constant it induces, and Algorithm 1.
+- **QRM** -- *Fidelity-Based Robustness Margins for Quantum Control*, [arXiv:2608.03698](https://arxiv.org/abs/2608.03698). The scalar-perturbation margin: the gate-fidelity sensitivity bound, the Lipschitz constant it induces, and Algorithm 1.
 - **xQRM** -- *Certified robustness regions under joint, time-dependent, and Lindbladian uncertainty*. In preparation; not yet on arXiv. Joint static regions over several parameters, the Choi-Fubini-Study trajectory certificate, Lindblad rate margins, and the comparison bounds.
 
 `PAPER` selects between them throughout the build: `make run-QRM`, `make verify-xQRM`, and so on.
@@ -196,12 +196,12 @@ F. C. Langbein, S. P. O'Neil, S. Schirmer, C. A. Weidner, E. A. Jonckheere.
 **Paper (QRM)**
 
 S. P. O'Neil, F. C. Langbein, C. A. Weidner, E. A. Jonckheere, and S. Schirmer.
-**Fidelity-Based Robustness Margins for Finite-Time Quantum Control**.
+**Fidelity-Based Robustness Margins for Quantum Control**.
 Preprint, 2026. [arXiv:2608.03698](https://arxiv.org/abs/2608.03698)
 
 ```bibtex
 @misc{oneil2026fidelity_margins,
-  title         = {Fidelity-Based Robustness Margins for Finite-Time Quantum Control},
+  title         = {Fidelity-Based Robustness Margins for Quantum Control},
   author        = {O'Neil, S. P. and Langbein, F. C. and Weidner, C. A.
                    and Jonckheere, E. A. and Schirmer, S.},
   year          = {2026},

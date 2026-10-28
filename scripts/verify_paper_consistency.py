@@ -61,7 +61,7 @@ TOL_TIGHT = 1e-10
 
 #: Bracket refinement as in the drivers, so check [11] reproduces the
 #: table's margin exactly.
-MARGIN_TOL = 1e-8
+MARGIN_TOL = 1e-10
 
 #: Central-difference step for the finite-difference check of zeta.
 FD_STEP = 1e-7
@@ -78,6 +78,8 @@ NEED = (
     "robustness_margins_sensitivity.png",
     "correlations_0.999.tex",
     "margins_table_0.999.csv",
+    "margin_audit_0.999.csv",
+    "margin_audit_0.999.tex",
 )
 
 
@@ -137,6 +139,32 @@ def parse_corr_tex(path: Path) -> np.ndarray:
     C = np.asarray(rows, dtype=float)
     if C.shape != (N_CORR_VARS, N_CORR_VARS):
         raise ValueError(f"parse_corr_tex: size {C.shape}")
+    return C
+
+
+def parse_corr_from_main(path: Path) -> np.ndarray:
+    tex = path.read_text()
+    idx = tex.find(r"\label{tab:correlations}")
+    if idx < 0:
+        raise ValueError("tab:correlations not found in main.tex")
+    start = tex.rfind(r"\begin{table}", 0, idx)
+    end = tex.find(r"\end{table}", idx)
+    if start < 0 or end < 0:
+        raise ValueError("tab:correlations is not inside a complete table")
+    chunk = tex[start:end]
+    included = re.search(r"\\input\s*\{([^}]+)\}", chunk)
+    if included:
+        return parse_corr_tex(path.parent / included.group(1))
+    rows = []
+    for line in chunk.splitlines():
+        nums = re.findall(r"\$([+-]?\d+\.\d+)\$", line)
+        if len(nums) >= 7:
+            rows.append([float(x) for x in nums[:7]])
+        if len(rows) >= 7:
+            break
+    C = np.asarray(rows, dtype=float)
+    if C.shape != (7, 7):
+        raise ValueError(f"parse_corr_from_main: size {C.shape}")
     return C
 
 

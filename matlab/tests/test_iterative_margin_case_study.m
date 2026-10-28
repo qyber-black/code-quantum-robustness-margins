@@ -18,7 +18,7 @@ function test_iterative_margin_case_study()
         problem.H0, problem.H1, problem.H2, c.u1, c.u2, problem.Uf, dt, 'H0');
     % margin_tol as in the driver that generated the margins table compared against.
     res = qrobustness.iterative_margin(fid_fn, L, FT, ...
-        'mu0', 0, 'eta', eta, 'margin_tol', 1e-8);
+        'mu0', 0, 'eta', eta, 'margin_tol', 1e-10);
 
     assert(res.M == min(res.M_minus, res.M_plus));
     assert(res.converged_minus && res.converged_plus);

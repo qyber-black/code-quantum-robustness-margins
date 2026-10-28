@@ -23,9 +23,9 @@ PathLike = Union[str, Path]
 
 # Marker colours matching the MATLAB figures
 COLOR_ERR = (0.066, 0.443, 0.745)
-COLOR_H0 = (0.0, 0.0, 1.0)
-COLOR_H1 = (0.0, 1.0, 0.0)
-COLOR_H2 = (1.0, 0.0, 0.0)
+COLOR_H0 = (0.0, 0.447, 0.698)
+COLOR_H1 = (0.0, 0.620, 0.451)
+COLOR_H2 = (0.835, 0.369, 0.0)
 
 # Line colour order matching the MATLAB figures
 MATLAB_COLOR_ORDER = [
@@ -157,14 +157,13 @@ def plot_margins_vs_index(
     dpi : int
         Resolution for saving.
     ylim : (float, float), optional
-        y limits. The default [1e-7, 1e-1] is kept when the data fits, and
-        widened when a point falls outside.
+        Margin-panel y limits. By default, limits follow the margin data.
 
     Returns
     -------
     matplotlib Figure
     """
-    plt, _, _ = _require_matplotlib()
+    plt, _, FuncFormatter = _require_matplotlib()
     err = np.asarray(err, dtype=float).ravel()
     ord_ = np.argsort(err)
     # Clamp for log10: roundoff can give eps_0 <= 0.
@@ -175,8 +174,15 @@ def plot_margins_vs_index(
     m2 = np.maximum(np.asarray(M2, dtype=float).ravel()[ord_], floor_pos)
     idx = np.arange(1, err_s.size + 1)
 
-    fig, ax = plt.subplots(figsize=(528 / 96, 482 / 96), dpi=96)
-    ax.plot(
+    fig, (ax, ax_err) = plt.subplots(
+        2,
+        1,
+        sharex=True,
+        figsize=(5.2, 3.75),
+        gridspec_kw={"height_ratios": [1.48, 1]},
+        dpi=96,
+    )
+    ax_err.plot(
         idx,
         np.log10(err_s),
         "-",
@@ -192,17 +198,17 @@ def plot_margins_vs_index(
         markerfacecolor=COLOR_H0,
         markersize=6,
         linestyle="none",
-        label=r"$H_0$ robustness margins",
+        label=r"$H_0$",
     )
     ax.plot(
         idx,
         np.log10(m1),
         ">",
         color=COLOR_H1,
-        markerfacecolor=COLOR_H1,
+        markerfacecolor="none",
         markersize=6,
         linestyle="none",
-        label=r"$H_1$ robustness margins",
+        label=r"$H_1$",
     )
     ax.plot(
         idx,
@@ -212,26 +218,37 @@ def plot_margins_vs_index(
         markerfacecolor=COLOR_H2,
         markersize=6,
         linestyle="none",
-        label=r"$H_2$ robustness margins",
+        label=r"$H_2$",
     )
-    log10_axis(
-        ax,
-        "y",
-        list(ylim)
-        if ylim is not None
-        else _span_limits([err_s, m0, m1, m2], (1e-7, 1e-1)),
+    ax.set_ylim(
+        np.log10(min(m0.min(), m1.min(), m2.min()) / 1.15),
+        np.log10(max(m0.max(), m1.max(), m2.max()) * 1.4),
     )
+    lower, upper = ax.get_ylim()
+    ticks = [
+        mantissa * 10.0**exponent
+        for exponent in range(int(np.floor(lower)), int(np.ceil(upper)) + 1)
+        for mantissa in (1, 2, 5)
+        if lower <= np.log10(mantissa * 10.0**exponent) <= upper
+    ]
+    ax.set_yticks(np.log10(ticks))
+    ax.yaxis.set_major_formatter(FuncFormatter(lambda value, _: f"{10.0**value:.3g}"))
+    log10_axis(ax_err, "y", [float(err_s.min()) * 0.8, float(err_s.max()) * 1.2])
+    if ylim is not None:
+        ax.set_ylim(np.log10(ylim))
     ax.set_xlim(1, err_s.size)
-    ax.set_xlabel("controller index")
-    ax.set_ylabel("")
-    ax.legend(loc="lower right")
-    ax.tick_params(labelsize=14)
-    for item in (
-        [ax.title, ax.xaxis.label, ax.yaxis.label]
-        + ax.get_xticklabels()
-        + ax.get_yticklabels()
-    ):
-        item.set_fontsize(14)
+    ax_err.set_xlabel("Controller index (increasing nominal error)")
+    ax.set_ylabel("Robustness margin")
+    ax_err.set_ylabel(r"Nominal error $\varepsilon_0$")
+    ax.legend(loc="upper right", ncol=3, fontsize=10)
+    ax.text(0.02, 0.91, "(a)", transform=ax.transAxes)
+    ax_err.text(0.02, 0.82, "(b)", transform=ax_err.transAxes)
+    for line in ax.lines:
+        line.set_markersize(3.5)
+    for panel in (ax, ax_err):
+        panel.tick_params(labelsize=11)
+        panel.xaxis.label.set_fontsize(11)
+        panel.yaxis.label.set_fontsize(11)
     apply_plot_style(fig)
     fig.tight_layout()
     if out_path is not None:
@@ -272,7 +289,7 @@ def plot_margins_vs_sensitivity(
     Returns
     -------
     matplotlib Figure
-        Top panel: structure 0; bottom panel: structures 1 and 2.
+        Top panel: structures 1 and 2; bottom panel: structure 0.
     """
     plt, _, _ = _require_matplotlib()
     z0 = np.maximum(np.asarray(abs_z0, dtype=float).ravel(), np.finfo(float).tiny)
@@ -282,7 +299,7 @@ def plot_margins_vs_sensitivity(
     m1 = np.asarray(M1, dtype=float).ravel()
     m2 = np.asarray(M2, dtype=float).ravel()
 
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(520 / 96, 520 / 96), dpi=96)
+    fig, (ax2, ax1) = plt.subplots(2, 1, figsize=(520 / 96, 430 / 96), dpi=96)
 
     ax1.plot(
         np.log10(z0),
@@ -296,7 +313,7 @@ def plot_margins_vs_sensitivity(
     )
     ax1.set_xlabel(r"$|\zeta|$")
     ax1.set_ylabel("Robustness margin")
-    ax1.legend(loc="upper left")
+    ax1.legend(loc="lower left")
     log10_axis(ax1, "x", [float(z0.min()) * 0.8, float(z0.max()) * 1.2])
     ax1.tick_params(labelsize=12)
     ax1.ticklabel_format(axis="y", style="sci", scilimits=(-3, -3))
@@ -306,7 +323,7 @@ def plot_margins_vs_sensitivity(
         m1,
         ">",
         color=COLOR_H1,
-        markerfacecolor=COLOR_H1,
+        markerfacecolor="none",
         markersize=6,
         linestyle="none",
         label=r"$H_1$ Perturbation",
@@ -382,7 +399,7 @@ def plot_fidelity_error_sweeps(
     matplotlib Figure
     """
     plt, _, _ = _require_matplotlib()
-    fig, ax = plt.subplots(figsize=(6.5, 4.8), dpi=96)
+    fig, ax = plt.subplots(figsize=(4.0, 3.0), dpi=96)
     xmax = 0.0
     for i, (x, y) in enumerate(zip(X_list, Y_list, strict=True)):
         x = np.asarray(x, dtype=float).ravel()
@@ -392,7 +409,7 @@ def plot_fidelity_error_sweeps(
         xmax = max(xmax, float(np.max(np.abs(x))))
 
     thr = 1.0 - FT
-    ax.plot([-xmax, xmax], [np.log10(thr), np.log10(thr)], "-.", color="r", linewidth=2)
+    ax.axhline(np.log10(thr), linestyle="--", color="black", linewidth=1.2)
     if xlim is None:
         ax.set_xlim(-xmax, xmax)
     else:

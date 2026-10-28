@@ -6,18 +6,18 @@
 %
 % SPDX-License-Identifier: AGPL-3.0-or-later
 function test_plot_ranges()
-%TEST_PLOT_RANGES Historical y limits stay when the data fits, and widen when it does not.
+%TEST_PLOT_RANGES Margin limits follow the data; sweep limits widen as needed.
 
     err = [1e-4; 1e-3];
     inside = [1e-4; 1e-3];
     fig = qrobustness.plot_margins_vs_index(err, inside, inside, inside);
-    yl = ylim_of(fig);
+    yl = margin_ylim_of(fig);
     close(fig);
-    assert(abs(yl(1) - log10(1e-7)) < 1e-12 && abs(yl(2) - log10(1e-1)) < 1e-12, ...
-        'margins kept the historical range');
+    assert(abs(yl(1) - log10(1e-4 / 1.15)) < 1e-12 && ...
+        abs(yl(2) - log10(1e-3 * 1.4)) < 1e-12, 'margin limits follow data');
 
     fig = qrobustness.plot_margins_vs_index(err, [1e-8; 0.2], inside, inside);
-    yl = ylim_of(fig);
+    yl = margin_ylim_of(fig);
     close(fig);
     assert(yl(1) < log10(1e-7) && yl(2) > log10(1e-1), 'margins widened');
 
@@ -37,4 +37,15 @@ end
 function yl = ylim_of(fig)
     ax = get(fig, 'CurrentAxes');
     yl = get(ax, 'YLim');
+end
+
+function yl = margin_ylim_of(fig)
+    ax = findobj(fig, 'Type', 'axes');
+    for k = 1:numel(ax)
+        if strcmp(get(get(ax(k), 'YLabel'), 'String'), 'Robustness margin')
+            yl = get(ax(k), 'YLim');
+            return
+        end
+    end
+    error('Margin panel not found');
 end

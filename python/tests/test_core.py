@@ -154,7 +154,7 @@ def test_iterative_margin_case_study_certificate():
     # margin_tol matches the production driver: the published table compared
     # below is produced with bracket refinement, so without it the
     # two differ by ~5e-4 and the 1e-10 assertions fail.
-    res = iterative_margin(fid_fn, L, FT, mu0=0.0, eta=eta, margin_tol=1e-8)
+    res = iterative_margin(fid_fn, L, FT, mu0=0.0, eta=eta, margin_tol=1e-10)
     assert res.M == min(res.M_minus, res.M_plus)
     assert res.converged_minus and res.converged_plus
     assert fid_fn(-res.M) >= FT - 1e-12

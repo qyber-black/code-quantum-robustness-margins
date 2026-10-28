@@ -23,7 +23,7 @@ results=/home/xis10z/Q/QRM/code-robustness-margins/results/lipschitz-margin-pyth
   PASS
 [4] H2 max|M - min(|Mm|,|Mp|)| = 0.000e+00
   PASS
-[5] F(+/-M) spot: min(F-FT)=2.020e-12 bad=0 max_overshoot=0.000e+00
+[5] F(+/-M) spot: min(F-FT)=8.660e-15 bad=0 max_overshoot=0.000e+00
   PASS
 [6] max rel|zeta-FD|(h=1e-07)=1.432e-04  max|table-recompute|=0.000e+00
   PASS

@@ -208,7 +208,8 @@ function verify_paper_consistency(varargin)
     %% 10) results deliverables present
     need = {'H0_all.png', 'H1_all.png', 'H2_all.png', ...
         'robustness_margins_fid_err.png', 'robustness_margins_sensitivity.png', ...
-        'correlations_0.999.tex', 'margins_table_0.999.csv'};
+        'correlations_0.999.tex', 'margins_table_0.999.csv', ...
+        'margin_audit_0.999.csv', 'margin_audit_0.999.tex'};
     ok_pub = true;
     for i = 1:numel(need)
         f = fullfile(results_dir, need{i});
@@ -229,7 +230,7 @@ function verify_paper_consistency(varargin)
             problem.H0, problem.H1, problem.H2, c.u1, c.u2, problem.Uf, dt, 'H0');
         % Same eta and margin_tol as the driver that wrote the table.
         res = qrobustness.iterative_margin(fid_fn, L, FT, ...
-            'mu0', 0, 'eta', 1e-6, 'margin_tol', 1e-8);
+            'mu0', 0, 'eta', 1e-6, 'margin_tol', 1e-10);
         logmsg(fid, '[11] ctrl1 H0: M-=%.6g M+=%.6g M=%.6g tableM=%.6g conv=[%d %d]\n', ...
             res.M_minus, res.M_plus, res.M, T.M_H0(1), res.converged_minus, res.converged_plus);
         pass = check(pass, fid, abs(res.M - T.M_H0(1)) < 1e-12);

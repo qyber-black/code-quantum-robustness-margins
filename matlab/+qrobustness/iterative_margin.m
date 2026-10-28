@@ -62,6 +62,8 @@ function result = iterative_margin(fidelity_fn, L, FT, varargin)
 %     n_unresolved          - probes within eval_tol of F_T
 %     n_evals, n_steps      - fidelity evaluations and steps (with
 %                            return_diagnostics)
+%     n_evals_continuation, n_evals_refinement - counts before/during refinement
+%                            (with return_diagnostics)
 %     n_evals_minus, n_evals_plus - evaluations per direction (with
 %                            return_diagnostics)
 %
@@ -174,6 +176,7 @@ function result = iterative_margin(fidelity_fn, L, FT, varargin)
     result.reason_plus = 'unknown';
     result.n_unresolved = 0;
 
+    continuation_evals = n_evals;
     if ~isempty(margin_tol)
         if ~(margin_tol > 0)
             error('qrobustness:margin:margin_tol', 'margin_tol must be positive.');
@@ -203,6 +206,8 @@ function result = iterative_margin(fidelity_fn, L, FT, varargin)
         result.n_evals = n_evals;
         result.n_evals_minus = n_m;
         result.n_evals_plus = n_p;
+        result.n_evals_continuation = continuation_evals;
+        result.n_evals_refinement = n_evals - continuation_evals;
         result.n_steps = steps_m + steps_p;
     end
 

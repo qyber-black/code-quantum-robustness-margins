@@ -6,7 +6,7 @@ abstract: >-
   quantum gate controllers under scalar structured Hamiltonian perturbations.
   Implements the gate-fidelity sensitivity bound, the Lipschitz constant it
   induces, and an iterative one-dimensional robustness margin certifying finite
-  perturbations that preserve a prescribed fidelity threshold, with peer Python,
+  perturbations that preserve a prescribed fidelity threshold, with peer MATLAB,
   Octave and Python implementations, cross-language consistency tests, and full
   reproduction of the accompanying paper's three-qubit case study. Also provides
   a supplementary comparison with the Kosut-Lidar-Rabitz fundamental bound
@@ -52,7 +52,7 @@ repository: "https://github.com/qyber-black/code-quantum-robustness-margins"
 url: "https://qyber.black/spinnet/code-quantum-robustness-margins"
 preferred-citation:
   type: unpublished
-  title: "Fidelity-Based Robustness Margins for Finite-Time Quantum Control"
+  title: "Fidelity-Based Robustness Margins for Quantum Control"
   authors:
     - family-names: O'Neil
       given-names: S. P.

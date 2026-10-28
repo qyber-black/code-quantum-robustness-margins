@@ -84,7 +84,7 @@ def _compute_python_record(problem, controllers, idx, tag, FT=0.999, eta=1e-6):
     )
     F0 = fid_fn(0.0)
     # margin_tol matches the driver that produced the peer table.
-    margin = iterative_margin(fid_fn, L, FT, mu0=0.0, eta=eta, margin_tol=1e-8)
+    margin = iterative_margin(fid_fn, L, FT, mu0=0.0, eta=eta, margin_tol=1e-10)
     H_list = perturbed_hamiltonians(
         problem["H0"], problem["H1"], problem["H2"], c["u1"], c["u2"], tag, 0.0
     )

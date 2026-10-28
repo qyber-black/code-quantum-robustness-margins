@@ -53,6 +53,10 @@
 %     load_problem              - read a problem definition
 %     load_controllers          - read controllers, filtered by nominal error
 %
+%   Tables and audits
+%     write_correlation_tex     - Pearson/Spearman table and key
+%     write_margin_audit        - margin audit data and macros
+%
 %   Figures
 %     plot_margins_vs_index     - margins against controller index
 %     plot_margins_vs_sensitivity - two-panel M against |zeta|
